@@ -1,570 +1,401 @@
 # Aquanode Modular
 
-![Aquanode Modular banner](assets/Banner.webp)
+![Aquanode Modular Showcase](aquanode_showcase.png)
 
-Download builds from the [Releases](../../../../releases) page.
-
----
-
-## 📖 Overview
-
-**Aquanode Modular** is a free modular synthesizer for Windows (VST3 plugin and standalone `.exe`) and Android, with an effect version, **Aquanode Modular FX**, as a Windows VST3. The JUCE/C++ source code is included in the download, so it can be compiled for any environment JUCE supports. It was created with the assistance of Claude, the AI by Anthropic.
-
-Inspired by classic hardware and digital modular environments, it is an experimental playground: place modules, drag patch cables, and sculpt complex sounds out of simple building blocks. Other synthesizers and effects of mine, such as Phizmo, VirtualDX7, Aquanova, Tidebreeze and Cove Groove, are built in as plugins, each playable with its own interface or taken apart into modules.
-
-Aquanode Modular works entirely offline. It never connects to the internet - no update checks, no sign-in, no downloads - and the Android app does not even ask for the internet permission.
-
-### Key Features
-* **Feedback Routing:** Aquanode Modular supports true audio feedback loops. You can route an Audio Out back into an Audio In or FM In - even creating self-feedback on a single oscillator. *Warning: feedback loops can get very loud, very quickly!*
-* **Zoomable Canvas:** The patch area zooms from 10% to 200%, so a large patch fits on screen and a fiddly corner can be magnified. Zoom is a pure view transform - nothing is re-laid-out, so knobs, cable drags and module dragging all work exactly as they do at 100%.
-* **139 modules** (138 on Android), from plain utilities to FFT-based spectral processors, physically modelled pianos (Piano in three voicings, and Grand in two), a piano resynthesized from recordings, a **303** bass line synth fitted to recordings of the original hardware, and an impulse-response foundry.
-* **23 built-in plugins** - synths and effects, each as its original interface on one card or as a patch of its own modules.
-* **Preset Generation:** One tap builds a whole new patch of a sound category - Bass, Pad, Pluck, Chord, Bell, FM and more, or completely at random - and every tap is a new one, drawn from engines built on the modules and the built-in plugins.
-* **Preset Mutation:** The built-in Mutator gently (or wildly) randomizes your patch's knob settings, breeds two stored variations, and undoes any step.
-* **Self-Contained Patches:** Patches are saved as `.aqua` files that package all routings, module positions, colours and loaded audio together.
-* **Your Colours:** The patch background, the sidebar, the text and every category have a colour you choose, and every module card can have a colour of its own.
-* **Microtuning:** Aquanode Modular follows an **MTS-ESP** tuning master whenever one runs, always on (see *Microtuning* below).
-* **Render to File:** the top bar's **Render** plays your Piano Rolls through into a WAV or FLAC file, faster than real time, while the live sound goes on.
+Download builds from the [Releases](../../../../releases) page. Current version: 5.15.0.
 
 ---
 
-## 🚀 Quick Start Guide
+## Overview
 
-Getting sound out of a blank canvas takes only a few steps:
+**Aquanode Modular** is a free modular synthesizer for Windows (VST3 plugin and standalone `.exe`) and Android, with an effect version, **Aquanode Modular FX**, precompiled as a Windows VST3. The full JUCE/C++ source code is in this repository and can be compiled for any platform JUCE supports. It was created with the assistance of Claude, the AI by Anthropic.
 
-1. **Add a Sound Source:** Open **Sound Generation** in the left sidebar and add an **Oscillator** to the patch area.
-2. **Add an Output:** Add **Audio Out** from **Input / Output**. *You must have an Audio Out module to hear anything.*
-3. **Patch the Cable:** Drag from the round **Audio Out** socket of your Oscillator to the round **Audio In** socket of your Audio Out module.
-4. **Play:** Play notes on your MIDI keyboard or the on-screen keys. Oscillators and envelopes respond to polyphonic note data on their own.
-5. **Navigate:** Drag on any empty space in the patch area to pan around.
+**This version of Aquanode Modular is the main one and contains many updates over the one in my** *aquanode-plugins* **repository. Some of the enhancements in this version include:**
+- VST3 import using the VST3 module (not in the Android version, as VSTs are not compatible with Android),
+- MPE capability,
+- more of my plugins from the aforementioned repository pre-included in the Plugins section of the sidebar,
+- new plugins like Tidebreeze, a ROMpler-inspired synthesizer,
+- a 303-style bass line synth fitted to recordings of the original hardware,
+- the Vita plugin, a port of Vital, updated, cleaned, and even available in the Android version,
+- a module search bar,
+- more designs and colourways,
+- plugin window and graphic piano roll resizing,
+- more random presets,
+- new physical modelling pianos and more modules in general.
 
-Or start from one of the many presets: whole plugin synths, or the preset generators at the bottom of the sidebar.
+### No Copyrighted / Non-Open Source Material
 
----
-
-## 🔍 Navigating the Canvas
-
-* **Pan:** drag on any empty space.
-* **Zoom:** the mouse wheel over empty canvas zooms about the pointer; a knob under the cursor still takes the wheel itself. On a touch screen, put two fingers on empty canvas and pinch: the view zooms about your fingers and follows them. Trackpad pinch works where the platform reports it.
-* **The `-` and `+` buttons** at the right end of the top bar zoom by steps. The percentage under the title at the top of the sidebar (beside the loaded patch's name) shows the zoom; tap it to go back to 100% at the origin.
-* **Top bar:** when the window is narrower than its buttons, the bar scrolls sideways - drag it - and fades out at the edge that has more.
-* **Sidebar and Keys:** the two buttons at the left of the top bar hide and show the sidebar and the on-screen keyboard, giving the patch area the whole screen.
-* **Keyboard height:** the app opens with the on-screen keyboard as low as it goes. Drag the small blue grip on top of it up or down; tap it twice for the default height.
-* **Key width:** pinch the on-screen keys with two fingers - apart for wider keys, together for narrower ones (the notes under the fingers stop while you pinch). The small **<- ->** pill right of the grip switches the pinch off and on: off, two fingers always play, so two notes can slide at once. With a mouse, hold Shift and drag sideways (right: wider) or turn the wheel; a trackpad pinch works too. The keys under the fingers or the pointer stay where they are, and the app remembers the width.
-* **Drop to patch:** drag a module by its body and let go of it where it should go - its cables stay as they are, and new ones are made:
-  * **Onto a cable** it fits - an effect or filter (Audio In and Audio Out) onto an audio cable, a MIDI processor (Midi In and Midi Out, e.g. an Arp) onto a MIDI cable: it goes in between that cable's two modules, beside the cable, which stays (to have only the module in between, delete the old cable afterwards).
-  * **A listener onto an audio cable** - Tuner, Env Follow, Spectrogram, Spectrum Compare, Record: it listens to that cable, nothing else changes.
-  * **Quantize, Slew, DC Offset or Sample & Hold onto a modulation cable** (also one going to a knob): it goes in series - the cable now runs through it, the old direct one is gone (a knob cable keeps its Amount and Bipolar).
-  * **Into another module** - let go over its card:
-    * **Audio:** a sound source into the **Audio Out**, or an Audio Out into any module with an audio output: that output into the Audio Out. A source into a **Mixer**, Crossfade or Ring Mod: its next free input. An effect, a filter or a Mixer into a sound source: fed by it. A Reroute Return into the Audio Out or a Mixer.
-    * **MIDI:** a module with a Midi Out (Piano Roll, Arp, Keyboard Midi...) into a module with Add Midi In (or Midi In): its Midi Out into that input. A MIDI processor (an Arp, say) into a Piano Roll: fed by it.
-    * **Envelopes** (ADSR, Analog EG, Curve Env, VirtualDX7 Envelope, Gate) into a sound source's **Env In**, Volume's **Vol Mod**, a filter's **EG In** or cutoff input, Wah's **Pedal In**, the FM effect's Env In.
-    * **LFOs** (LFO, Multi LFO, Random LFO, Skew LFO, Draw LFO) into a filter's cutoff (or **MG In**), Wah's Pedal In, a wavetable's **Position In**, a source's **Level In** (tremolo) or **Pitch In** (vibrato).
-    * **KeyTrack** into a filter's cutoff; **Velocity** into a filter's cutoff or a source's Level In.
-    * **Step Seq** into a sound source: Pitch Out into Pitch In and Gate Out into Trig In. **Clock**, **Euclid** or Step Seq into a drum's **Trig In**, or into the **Clock In** of a Euclid, a Step Seq or a Sample & Hold.
-    * **Midi Controls:** Aftertouch into Bowed's Pressure In; Mod Wheel and Sustain into the VirtualDX7 LFO's Wheel In and Hold In. (Pitch Bend reaches every voice on its own, so it is not patched.) The **VirtualDX7 LFO** or **Pitch EG** into a VirtualDX7 Operator: pitch (and AM).
-  * **A modulation source right on a knob** (an LFO, an envelope, a Macro... let go with the pointer on the knob): a knob cable at 25 %, as if you had dragged one there.
-  While you drag, the cable, the modules and the knob that would be connected light up - in the cable's own colour, or the colour of the module you drop into, so it always matches your colourway. This works for a module freshly added from the sidebar as well as for one already patched.
+**A few of these plugins are more or less obviously modelled after other third-party synthesizers, but no reverse engineering or similar happened in the making of Aquanode Modular - only measurements and by-ear finetuning of the modules.**
 
 ---
 
-## 🗂️ The Sidebar
+## About
 
-* **Order:** Input / Output, Sound Generation, Filters, Effects and Utilities; then **Plugins**, the built-in plugins themselves; then Plugin Generators, Plugin Filters, Plugin Effects and Plugin Utilities, the modules the plugins are taken apart into; and at the bottom **Random Preset** and **Add Effect**.
-* **At the top:** the name **Aquanode Modular** (a tap opens the colour panel), under it the loaded patch's name and the zoom (a tap on it resets the view), then the module search.
-* **Folding:** every header opens and closes its list with a tap, and all start folded, so the sidebar stays short.
-* **Groups:** inside each category the modules are grouped by what they do, each group A-Z - for example Audio Routing and MIDI under Input / Output; Oscillators, Wavetables, FM, Physical Models, Drums, Samples & Grains and Noise under Sound Generation; Envelopes, LFOs, MIDI, Sequencers & Clocks, Control, Audio Tools, Routing and Analysis under Utilities. The 303 is under Oscillators, Macro under Routing, Tuner under Analysis, and VST3 Plugin (Windows) in a group of its own under Effects. The plugins' modules are grouped by the plugin they come from (VirtualDX7's Operator, Envelope, Pitch EG and LFO among them).
-* **Search:** type into the field at the top of the sidebar to list every module and plugin whose name, group, category or description matches.
-* **MPE**, the switch at the right of the search: with it on, the on-screen keys play every finger as its own note on a MIDI channel of its own - slide sideways to bend that note alone (a key's width a semitone), up and down the key for its **Slide** (CC 74, top = full), and where the screen reports it, the touch's pressure is the note's pressure. Each finger shows as a glowing mark with a line back to its key and how far it is bent. MPE controllers play the same way: every note on channels 2-16 bends, slides and presses on its own (48 semitones of bend, as MPE has it), channel 1's bend still bends everything. Sliding up and down does nothing by itself: it is a control for you to route. The **MPE** module (Utilities > MIDI) gives each note's Slide, Pressure and Bend as cables - Slide Out into a filter's Cutoff, a Wavetable's position or a Volume, and every note opens, morphs or swells as its own finger moves up its key, while the others stay put (a chord whose top note brightens alone). The app remembers the switch; with it off, every channel plays as before.
-* **Adding modules:** with a mouse, one click adds a module. On a touch screen, **tap twice**, so scrolling the list never drops one into the patch by accident (the first tap highlights the row). A new module appears near the top left of the part of the patch you are looking at, however far you have scrolled or zoomed in, a step further along for each one you add (never right on top of a card already there).
-* **Descriptions:** rest the pointer on a module's name to read what it does.
+Inspired by classic hardware and digital modular environments, Aquanode Modular is an experimental playground to place modules, drag patch cables, and build complex sounds out of simple blocks. Other synthesizers and effects of mine, such as Phizmo or VirtualDX7, are built in as plugins, each playable with its own interface or taken apart into modules.
 
----
+It works entirely offline without update checks, sign-in or downloaders. The Android app doesn't even ask for the internet permission.
 
-## 🎨 Colours
+### Features
 
-* **The colour panel:** tap **Aquanode Modular** at the top of the sidebar. Every colour is a chip with its swatch - pick one and set it in the colour field beside them:
-  * **Patch Background** and **Sidebar Background**
-  * **Light Text** and **Dark Text**: the text on the sidebar, the patch area and the module cards uses one of the two - the dark text on light backgrounds and on the cards, the light text on dark ones (and on a card you give a very dark colour).
-  * **Input / Output, Sound Generation, Filters, Effects, Utilities**: the cards of each category, and its title in the sidebar.
-  * **Plugin Titles** and **Random Preset**: the sidebar titles of those sections.
-* **Skeuomorphic**, at the left of the colourways, gives the module cards a hardware look, after studio gear of the 2000s: each card a satin panel lit from above with a soft header rail, a fine bevel and four small flush screws; its sockets clear glass rings in the category colour around a dark hole; its knobs round silver caps with a white pointer and a blue centre, the value a glowing cyan arc on a dark track; its values and choices small CRT screens (dark glass, scan lines, phosphor-cyan figures); its buttons satin silver, lit cyan when on. It changes only the look, never the colours: the cards, knobs and bars take whatever colours are set (a colourway or your own), and the sidebar's title becomes the Aquanode logo: a ring of water, deep blue to cyan, closed but for a small gap. The sidebar's section headers sit on bars of tinted glass with a gloss over their upper half, the group names inside them on a lighter shading, the top bar's buttons are glossy pills and the cards a touch translucent with a glossy header band. Any colour can still be changed after. On a bright sidebar the title turns glossy white and the logo sits in a bubble of clear glass. A plugin's own panel inside its card keeps its look. Tap again for the flat look; the app remembers which.
-* **Knob Start / Knob End**, the two small chips right of Skeuomorphic: the colours of the Skeuomorphic knobs' value ring, from its start to its end. Tap one and set it in the selector; the colourways and Skeuomorphic leave them as they are.
-* **Colourways** at the top of the panel (one row with Skeuomorphic; on a narrow screen Reset View moves down beside Done to make room) set every colour at once, as a light DAW theme: **Cyan Blue**, **Sakura** (pink) and **Green**, in saturated, slightly deep shades. The top bar and the mutator strip take the colourway too (the sidebar's colour, with buttons in the module colours). Change any colour afterwards as you like.
-* **Grid Markers**, beside Random Preset, switches the "+" markers on the patch area on or off.
-* **Reset View to Origin**, at the top right, takes the patch area back to its origin at 100 % (as a tap on the zoom readout does).
-* **Reset** sets the chosen colour back, **Reset All** every colour. The app keeps your colours, and a patch carries them too: loading a patch brings its colours (a patch without colours of its own leaves them as they are).
-* **One card's own colour:** right-click a module's title, or hold it still (a long press on Android), for a colour picker for that card alone. Its cables wear the colour too. **Module Colour** gives the card its category's colour back, **Done** closes the picker. The colour is saved with the patch.
-* **Plugin colours:** a plugin's card and the modules it is taken apart into share the plugin's colour (Phizmo and PhizmOsc in violet, for example), and VirtualDX7's modules (VirtualDX7 - Operator, - Envelope, - LFO, - Pitch EG) wear its brown. Every other module takes its category's colour.
+- Currently **143 modules** (142 on Android since it has no VST3 import module), from simple utilities to FFT spectral processors, physically modelled pianos, a resynthesized piano and an impulse-response forge.
+- **27 built-in plugins**, each usable as its original interface on one card or as a patch of its own modules.
+- **Feedback routing:** real audio feedback loops, down to an oscillator modulating itself. Careful, loops can get loud fast.
+- **Random patches:** one tap builds a new patch of a category (Bass, Pad, Pluck, Chord, Bell, FM ...), and the **Mutator** varies and breeds patches.
+- **MPE**, **microtuning** (MTS-ESP) and **render to file** (WAV or FLAC, faster than real time).
+- **Self-contained patches:** `.aqua` files hold the routing, positions, colours and all loaded audio.
+- **Your colours:** every part of the interface and every module card can have its own colour, plus a skeuomorphic hardware look.
+- A zoomable patch area (10-200 %) and a resizable window.
 
 ---
 
-## 🎼 Microtuning (MTS-ESP)
+## Quick Start
 
-* **Always on:** Aquanode Modular is an MTS-ESP client, as VirtualDX7 is. When an MTS-ESP master plugin runs in your session, every pitched module plays its scale, live - change the scale and held notes follow. Without a master it is plain equal temperament (A4 = 440 Hz); a computer without MTS-ESP installed is not affected at all.
-* **What follows it:** every module that turns notes into pitch - the oscillators (Dual VCO and PWM Osc included), the 303, the pianos, Pluck, Bowed, Wind and the other models, the Sampler and the Granulator, the Spectral Lock's notes - and Phizmo, PhizmOsc, Aquanova and AlphaBeta taken apart into modules. VirtualDX7 follows it with its own client, as always; the other plugins keep their own tuning.
-* **Keys the master leaves out** of its keyboard map are not played.
-* **The scale's name** shows after the patch name at the top of the sidebar (*MTS-ESP: ...*) while a master is connected.
-* **Android:** there is no MTS-ESP on Android; the app is in equal temperament there.
+1. Open **Sound Generation** in the sidebar and add an **Oscillator**.
+2. Add an **Audio Out** from **Input / Output**. Nothing is heard without one.
+3. Drag a cable from the Oscillator's round **Audio Out** socket to the Audio Out module's **Audio In**.
+4. Play your MIDI keyboard or the on-screen keys.
 
----
-
-## 🔌 Connection & Routing Rules
-
-* **Sockets:** round sockets carry **Audio**, square sockets **Modulation** (LFOs, envelopes), rounded squares with a cyan ring **MIDI**.
-* **Over long distances:** a **Reroute Send** puts what comes in onto one of eight buses, and every **Reroute Return** on that bus plays it, wherever it sits - a cable without the cable (on the same sample; a loop back into its own Send is one sample late, like any loop).
-* **Direction:** sockets on the left of a module are **Inputs**; sockets on the right are **Outputs**.
-* **Knob Modulation:** drag a cable from any output socket onto *any knob* to modulate that parameter. This is the way to move a module's main controls - a Wavetable's Position, a Formant's Vowel, a Panning's Pan - so a module only has inputs for what a knob cable cannot do (audio, FM, envelopes, pitch, gates and triggers, MIDI).
-  * **Range:** every modulated knob shows where its cables can move it: a filled section of a ring around the knob from the lowest to the highest point (both ways around the knob for a bipolar cable, one way for a unipolar one, the knob's whole range for Macro and Curve CV, summed over several cables); a bar shows the stretch along its track.
-  * **Amount:** a new knob cable starts at 25 % of the knob's range. Right-click (or hold) the knob for its cables: an amount from -100 to 100 %, **Bipolar**, Remove. Sources that set the knob themselves (Macro, Curve CV) start at 100 %.
-  * **Bipolar**, as in Vita: on, the knob swings both ways around its own setting (±Amount); off, it moves one way only, up from its setting (down for a negative Amount). A cable starts as its source runs - an LFO both ways, an envelope, a gate, Velocity or a Mod Wheel one way - so a patch made before sounds as it did; switch it to taste. A Macro and a Curve CV set the knob across its range, so they have no Bipolar.
-  * **The Modulation table**, at the very end of the sidebar after a line, lists every knob cable as it is made. Each entry shows the source module with its output under it on the left, the target module with its knob under it on the right, and below them the **Amount** (drag the bar; tap twice for 25 %) and **Bi** (Bipolar, the toggle in the source's colour). A row goes when its cable goes.
-* **Mixing & Splitting:** one output can feed many inputs; several cables into one input are mixed together.
-* **Removing Elements:**
-  * Click a cable twice to delete it.
-  * Click a module or cable once to select it (white outline), then press `Delete` or `Backspace`.
-  * Triple-click a module to clear all of its self-routed cables (loops from the module back into itself).
+**Initialize Patch** in the top bar builds this for you (Oscillator → Polyphony Sum → Audio Out), and the **Random Preset** section at the bottom of the sidebar builds complete patches.
 
 ---
 
-## 🎛️ The Top Bar
+## Using It
 
-* **Undo / Redo:** take back the last change to the patch, or bring it back - a module added, moved or deleted, a cable, a knob, a card's own content (a Piano Roll's notes, a 303 pattern, a drawn curve), a generated patch, a mutation. 32 steps back and 32 forward (**Ctrl+Z**, **Ctrl+Shift+Z** / **Ctrl+Y** on the patch area). The steps live in memory only: an exported patch is the patch as it is now, nothing more. A change made after an undo drops the steps that could have been redone. A knob turned or a card dragged is one step, however long the drag. Colours are not part of the history.
-* **Initialize Patch:** clears the canvas and builds the default patch: *Oscillator* ➡️ *Polyphony Sum* ➡️ *Audio Out* (in Aquanode Modular FX: *Audio In* ➡️ *Audio Out*).
-* **Region Select:** while it is on, dragging on empty space (with a finger or the mouse) draws a box instead of moving the view, and every module the box touches is selected. Drag one of the selected modules and they all move together; **Clone Selected** copies them all, with the cables between them, and **Delete Selected** (or the Delete key) removes them. A tap on empty space selects nothing. While it is on, a dropped module is never patched into the cable or module it lands on. Two fingers still move and zoom the view (with a mouse: the middle button moves it, the wheel zooms). Tap it again to go back to moving the view.
-* **Clone Selected:** duplicates the highlighted module with its exact knob settings (without its cables) - or, with Region Select, every module in the box together with the cables between them; the copies are then the selection, ready to drag away.
-* **Delete Selected:** removes the highlighted module (or every module in the Region Select box) and its cables.
-* **Export / Import Patch:** saves or loads a patch as an `.aqua` file (a zip inside, with everything the patch needs: routings, positions, colours, samples, Piano Roll notes, recordings). Inside, `patch.xml` is plain, readable XML with no encoded data in it: every module's and plugin's settings are written out as what they are (a plugin's own XML as XML, Vita's sound as JSON text, drawn curves and step patterns as numbers), and every sound - loaded samples, wavetables, recordings, Vita's sample and wavetables - is a file of its own in the `samples` folder, named after the module and the sound, which you can take out and play anywhere. `patch.xml` points to each file (`aqua-file:...:samples/12_covegroove_Bass - My Hit.flac`). Export suggests the patch's name with `.aqua` on the end (on Android too, where a name typed without it gets it added). Import opens `.aqua` files, older `.zip` patches (also a zip made of a patch's folder) and a patch's `.xml` on its own - `patch.xml` taken out of a `.aqua`, with its `samples` folder beside it, or one with its samples inside. What the file contains decides, not its ending, so a patch saved without `.aqua` still opens; a file that is not a patch is refused with a message, and the loaded patch stays. On Android every file is offered in the picker.
-* **Render:** renders the patch to a sound file. It is active while at least one **Piano Roll** with notes has its Midi Out patched somewhere. It opens a panel in the top bar's colours: **WAV** or **FLAC** (always at its highest compression), the tempo - **Each its own** (every Piano Roll at the tempo it is set to) or **One for all** (every Piano Roll at the BPM set there) - and the **sample rate** (44.1, 48, 88.2 or 96 kHz); it shows how long the file will be. **Render...** asks where to save it, then renders while you keep playing. All the patched Piano Rolls start together from their beginning, as Play All starts them, and the file lasts as long as the longest of them (a shorter one loops if its Loop is on); whatever plays by itself without a Piano Roll (Always Midi, an Arp on the keys, a 303's own grid) sounds along but does not make the file longer. Then the rolls stop and the tails ring out - up to 8 seconds, ending at the first half second of silence, a tail that never ends (a drone) faded out. 24-bit; **Stop** cancels.
-* **Mutator:** opens the mutation strip, right below the top bar. **Mutate** varies the patch's knob values by the amount you set (never the cables, and never the Input / Output modules, so a mutation cannot blast the master level); **Store A / B** and **Recall A / B** keep two variations, **Breed AxB** crosses them; **Undo** steps back. Mutation never touches the envelopes' and LFOs' **Delay** (a random delay would make notes start late), a Reroute bus or the visualizers.
-* **A card's own Random:** every card has a **Random** button at the left of its top row. It mutates that card's knobs by the Mutator's amount (25 % to start) and then reads **Revert**: a second press brings the knobs back. One step at a time, so every change can be taken back.
+### The patch area
 
----
+- **Pan** by dragging empty space. **Zoom** with the mouse wheel, a two-finger pinch, or the **-** / **+** buttons; the zoom percentage under the sidebar title resets the view when tapped.
+- **Sidebar** and **Keys** in the top bar hide the sidebar and the on-screen keyboard. Drag the blue grip above the keys to change their height, and pinch the keys (or Shift + drag) to change their width.
+- **Drop to patch:** drop a module onto a fitting cable and it's inserted in between (an effect on an audio cable, an Arp on a MIDI cable). Drop it onto another module and the obvious connection is made: a source into Audio Out, an envelope into Env In, an LFO into a filter's cutoff, a modulation source onto a knob, and so on. Whatever would be connected lights up while you drag.
 
-## 💡 Practical Patching Tips
+### The sidebar
 
-* **Shape Your Volume:** connect an **ADSR** module's square output into an oscillator's **Env In** socket to shape the sound's volume over time (Attack, Decay, Sustain, Release). With `Env In` empty, the oscillator drones while a key is held.
-* **Classic FM Synthesis:** route the audio output of Oscillator A into the **FM In** of Oscillator B. A becomes the "Modulator" and B the "Carrier". The **FM Ratio** knob sets their harmonic relationship.
-* **Expressive Polyphonic FM:** to make an FM sound fade out naturally when a key is released, route a single **ADSR** into the **Env In** sockets of *both* oscillators.
-* **MIDI Streams:** every module with a **Midi Out** (Piano Roll, Always Midi, Arp, Midi Add, Graphic Midi Add, Discard Midi, Keyboard Midi) is its own stream. Patch it into as many Midi Ins as you like, and through as many processors as you like - e.g. *Piano Roll → Midi Add → Discard Midi → Arp → Oscillator*. Several Piano Rolls can each drive their own instruments. A processor with nothing in its Midi In works on the keys you play; anything patched into a module's Midi In replaces the played keys there. A chain played only by streams keeps to them: in *Always Midi → Arp → Oscillator*, the Oscillator's envelope, filters, Polyphony Sum and whatever else hangs on that chain follow the Arp alone, so you can play another synth on the keys beside it without the Arp's chain reacting. To keep the keys away from one module by hand, patch a **Discard Midi** with **ALL** lit into its Midi In.
-* **Transwave Sweeps:** draw a shape in a **Curve CV**, set the Transwave's **Position** to 0 and cable the curve onto it at 100% - the curve now scans the table. Any knob works the same way: set it to its lowest value, cable at 100%, and the curve sweeps its whole range.
-* **DX FM by Patching:** each **VirtualDX7 - Operator** (Plugin Generators) is one DX7 operator. Its Audio Out into another one's FM In makes it a modulator; two carriers into Audio Out are a two-carrier algorithm; Feedback gives the classic self-modulated operator.
-* **Wheels and Pedals:** pitch bend and the sustain pedal work everywhere out of the box. **Midi Controls** turns the mod wheel, aftertouch and any CC into cables, and sets the bend range. **Midi Learn** takes one control of your controller - tap **Learn** and move it - and drives any knobs with it, each across its whole range, like a Macro.
-* **Saved With Your Patch:** loaded samples, Piano Roll notes, Record's take and card colours are stored in exported patch files and in your DAW session - the audio itself, never only the path to a file, so a patch plays the same on another computer or phone, and after the original files are gone.
-* **Chords & Polyphony:** **Midi Add** adds up to four extra notes at chosen semitone offsets; **Graphic Midi Add** adds up to seven (-48 to +48 semitones) and shows the chord on a keyboard; its **Chord** menu sets them to a ready chord - the **DnB Chord** it starts with (+4, -1, -5, -15, -27: a lush minor chord around the played note), **Minor 7th**, **Minor 9th**, **6/9** or **Major 7th** - and reads *Custom* once a Note knob is turned by hand. For complex FM patches, route the Midi Add module to both the modulators and the carriers.
-* **Drums From Notes:** Clap, Kick, Hats, Snare, Modal Drum and Pluck play from the keys you play - every note is a hit (velocity included) - and from their Trig In at the same time. Their **Midi In** (Droplets has one too) takes a stream instead of the keys: patch a **Keyboard Midi**, **Piano Roll**, **Arp** or **Always Midi** into it, or a Discard Midi with ALL lit to keep a sequenced drum to its Trig In.
-* **Piano Roll:** the whole roll lives in the module card - drag the grip in its bottom-right corner to make it bigger (the size is saved with the patch). Tap empty space to add a note, drag a note to move it, drag its right edge to stretch it, tap twice or right-click to delete, drag empty space to slide around, click the ruler to jump. **Select** (or Shift held) selects several notes - tap them, or drag a box over them; drag one to move them all, Delete removes them, the velocity slider sets them all. **All** (Ctrl+A) selects every note, Esc lets go, **Clear** deletes every note (Undo brings them back). **Import** / **Export** read and write `.mid` files (on Android through the system file picker). Set **Clock** to *Host Tempo* to lock to your DAW; in the standalone app or on Android it keeps its own Tempo.
-* **Levels:** every sound source at its defaults plays a single note at about -16 dBFS or less over its loudest tenth of a second, its peaks about -6 dBFS or less, so a chord, a few layers and some effects have room before Audio Out. The sources that were louder were brought down to that (the Oscillator, Phase Distort, Noise and the drums by 9 to 14 dB, others less); the quieter ones (VirtualDX7, Hats, the Felt piano and others) stay as they are - a **Volume** module (up to +6 dB) or a **Limiter**'s Gain (up to +24 dB) brings one up. Patches made before keep their levels, and so do the patches **Random Preset** builds (they are balanced on their own: a three-note chord comes out at about -10 to -20 dBFS). The level change applies where a source's sound goes into an audio input, never to its FM: a modulator into FM In or onto a knob keeps its full range. VirtualDX7's Operator stays as it is, since its level is also how deeply it modulates the next operator. **Polyphony Sum** before Audio Out keeps a chord from stacking up, and Audio Out's **Soft Clip** rounds off what is left.
-* **Make Anything Talk:** feed a pad into **Cepstral Morph**'s Carrier and speech into its Modulator. The carrier keeps its own phase and fine structure while wearing the modulator's spectral envelope.
+- Categories: Input / Output, Sound Generation, Filters, Effects, Utilities, then **Plugins** and the modules the plugins can be taken apart into, then **Random Preset** and **Add Effect**. Inside a category, modules are grouped by what they do.
+- **Search** lists every module and plugin matching a name, group or description. Rest the pointer on a module's name to read its description.
+- Click once to add a module (tap twice on a touch screen, so scrolling never adds one by accident).
+- **MPE:** with the switch beside the search on, every finger on the on-screen keys (or every note from an MPE controller) is its own note: slide sideways to bend it, up and down for its Slide (CC 74), with pressure where the screen reports it. The **MPE** module from the sidebar turns each note's Slide, Pressure and Bend into cables.
 
----
+### Cables and modulation
 
-## 🎚️ Aquanode Modular FX
+- Round sockets carry audio, square ones modulation, rounded squares with a cyan ring MIDI. Inputs are on the left, outputs on the right. One output can feed many inputs, and several cables into one input are mixed.
+- **Feeback Routing** is possible: Drag a cable from its output into the input of the same module or earlier modules, creating a loop which can have unpredictable effects (mostly very loud ones, so please use limiters).
+- **Any knob can be modulated:** drag a cable from an output onto it. A new knob cable starts at 25 %; right-click or hold the knob to change its amount, switch **Bipolar** (swing both ways around the setting) or remove it. The ring around a modulated knob shows how far it can move. The **Modulation** table at the end of the sidebar lists every knob cable with its amount.
+- **Reroute Send / Return** carry audio across the patch on eight buses without a visible cable.
+- Click a cable twice to delete it, or select a module or cable and press Delete. Triple-click a module to clear its self-feedback cables.
 
-**Aquanode Modular FX** is the same instrument as an effect plugin, built from exactly the same source code. It sits on a track as an effect: **Audio In** brings in the track's audio, and its default patch is **Audio In ➡️ Audio Out**, a clean pass-through to build an effect chain into. Everything else is identical - every module, every plugin, the preset generators and the Mutator - and it receives MIDI from its track too, so its synth modules can still be played. Build it with `Aquanode_Modular_FX.jucer`, next to the synth's project file (see *Building from Source*).
+### The top bar
 
----
+- **Undo / Redo**: 32 steps (Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y).
+- **Initialize Patch**: the default patch (in the FX version, Audio In → Audio Out).
+- **Region Select**: drag a box to select several modules, then move, **Clone** or **Delete** them together. **Clone Selected** and **Delete Selected** also work on a single module.
+- **Export / Import Patch**: `.aqua` files. Inside is a zip with a plain, readable `patch.xml` and every sound as a file of its own in a `samples` folder.
+- **Render**: plays the patch's Piano Rolls into a WAV or FLAC file (24-bit, 44.1-96 kHz) while you keep playing. The file lasts as long as the longest roll, plus the tails.
+- **Mutator**: varies the knobs by an amount you choose (never the cables or the output level), stores two variations A and B and breeds them. Each card also has its own **Random** button that mutates only that card and can be reverted.
 
-## 🎛️ Random Preset
+### Colours
 
-The **Random Preset** section at the bottom of the sidebar builds whole patches. Each row is a sound category, A-Z: **303, Arp, Bass, Bell, Chord, DAW, FM, FX, Growl, Keys, Kick, Lead, Pad, Perc, Pluck, Synth**, and **Random**. A tap **replaces the whole patch** with a freshly built one of that category (a new one with every tap), then zooms out so you see all of it. Every generated patch is an ordinary patch: edit it, export it, mutate it. All rows work in the synth, the FX version and on Android.
+Tap **Aquanode Modular** at the top of the sidebar for the colour panel: the backgrounds, the text, every category, three ready colourways (Cyan Blue, Sakura, Green), the grid markers and the **Skeuomorphic** look (smooth panels, glass sockets, silver knobs, small CRT screens). Right-click or long-press a module's title to give that card a colour of its own. Patches carry their colours.
 
-**DAW** is not a sound but a template: an empty two-track arrangement to draw into. Two Piano Rolls (4 and 256 bars, 120 BPM) each play a sine Oscillator, one through a **Delay**, one through a **Reverb**. Half the time it comes laid out like a mixer - each Oscillator into a Reroute Send of its own bus, the Returns through the effects into an Audio Out each - and half the time the other way round - each Oscillator through its effect onto one shared bus, whose Return goes to the one Audio Out. Both play exactly the same: the buses add up sample for sample, and Soft Clip works on the whole output. Its Oscillators come at today's levels (the other rows keep the levels their sounds were made with). Draw notes, swap the Oscillators for any sound, add tracks, and **Render** it; the file lasts as long as the longest roll, so shorten the 256-bar one to your song's length first. **Random** never picks DAW.
+### Microtuning
 
-**Engines.** Most categories are made by several engines, and every tap picks one of them at random, so a double tap on *Growl* builds any of the growls. A generated patch is simply named **Random** and its category (*Random Growl*, *Random Pad*).
+Aquanode Modular is an MTS-ESP client. While an MTS-ESP master runs, every pitched module plays its scale, live, and the scale's name shows at the top of the sidebar; keys the master leaves out are silent. VirtualDX7 follows the master with its own client, and the other plugins keep their own tuning. There is no MTS-ESP on Android.
 
-| Engine | What it builds | Categories |
-| :--- | :--- | :--- |
-| **Ambient** | Slow pads, bells, flutes, organic sines and soft textures. | Arp, Bass, Bell, Chord, FX, Keys, Lead, Pad, Perc, Pluck, Synth |
-| **Colorbass** | Colour-bass patches: chord-stacked Chord Wavetable layers, tempo chops and shimmer sweeps from Multi LFOs, a comb tuned to the played note, drive, filter, modulation effects, the 3-Band Compressor and a limiter. Hold a low note (C1-C2). | Chord, Growl, Pad, Pluck |
-| **DnB** | Reese and sine basses, rollers, kicks, lush pads, bells and chords. | Bass, Bell, Chord, FX, Keys, Kick, Lead, Pad, Perc, Synth |
-| **Dub Techno** | Chord stabs and pings drowned in echo, deep pads, kicks and noise. | Bass, Chord, FX, Keys, Kick, Pad, Perc, Pluck, Synth |
-| **Psychill** | Acid and squelch basses, bells, leads, plucks and FX - and, for Bass, Lead and Arp, half the time a mono saw through a screaming 24 dB ladder with a snapping filter envelope: rolling 1/16 basses, squelch leads with an auto-wah and echoes, acid arps. | Arp, Bass, Bell, Chord, FX, Kick, Lead, Pad, Perc, Pluck, Synth |
-| **Slow FM** | Two detuned VirtualDX7 operator pairs with slow envelopes: breathing pads, glassy keys, long inharmonic bells, in chorus, echo and a long hall. | Bell, Keys, Pad |
-| **Tidebreeze** | The Tidebreeze card with a program rolled in a fitting category; for Chord (and some pads, keys and bells) a Graphic Midi Add chord in front. | Arp, Bass, Bell, Chord, Keys, Lead, Pad, Pluck |
-| **Phizmo** | The Phizmo card with one of its logo's random presets of that style. | Arp, Bass, Bell, Keys, Lead, Pad, Pluck |
-| **Pol Sweep** | About one Synth tap in ten, a patch that plays by itself: four Piano Rolls at 84.1 BPM - a G#m11 chord in 31 stabs through a band-pass that a smooth Random LFO sweeps and each stab pushes up by its velocity, then a swept ladder; a short kick tuned near B1; clicks and hiss bursts on 32nds. Recreated from a music snippet with the Reassigned Spectrogram's analysis. | Synth |
-| **Presets** | Hand-made patches, loaded exactly as they were saved (their levels, Piano Rolls and samples; the patch's colours are left out, so yours stay): **DnB Pad (Bells)**, **Metallic Waters Chord (Alpha)** and **Warmth**, each as often as the others. About one Chord tap in eight lands on one of them. They are built into the source (`Source/Presets`). | Chord |
-| **Atmospheric DnB** | Liquid, atmospheric drum & bass: wide drifting pads with minor 9th / 11th chords, maj7, min7 and 9th FM bells, minor e-piano chords through a slow tempo-synced Wah and chorus - long halls, quarter-note echoes, widened. | Bell, Chord, Keys, Pad |
+### Tips
 
-The genre engines (Ambient, DnB, Dub Techno, Psychill) rebuild a sound from a recipe of Aquanode modules: **Warp Osc** layers (with their unison, phase warps and, where a basic shape will not do, a custom harmonic spectrum), filters with key tracking, **Curve Env** amplitude and modulation envelopes, LFOs and **Random LFO**s on cutoff, pitch, wave position, level and pan, and an effect chain (**Echo**, **Shelf EQ**, AquaChorus, Flanger, Phaser, Reverb, Waveshaper, 3-Band Compressor). Levels are matched so every sound arrives at about the same loudness, and each tap varies the sound a little (cutoffs, envelope times, detune, effect amounts), so no two taps are quite the same.
-
-**FM** builds a 6-operator FM voice from modules: six DX Operators wired to the voice's algorithm and laid out like the DX7's algorithm chart (operators folded - tap a card's top tab to open it), plus DX Pitch EG and DX LFO for the pitch envelope, transpose, vibrato and mod-wheel depth. Its arrow (the only one in the section) ticks a sub-category (Bass, Bell, FX, Keys, Lead, Pad, Pluck), and **Load DX7 SysEx (.syx)...** opens any DX7 voice file and lists its voices; loaded files stay in the menu for the session.
-
-**Random**, the row at the top of the section, builds anything: any category, any engine, FM included (the FM tick does not apply).
-
-**303** builds an acid patch, a third of the time each: the **Warp Osc** voice (saw or square, mono with slide) into a resonant 24 dB Ladder Filter snapped open by a short envelope; the **303** module played from the keys; or the 303 playing a hook of its own on its grid (one, two or four bars - a pentatonic arp, octave steps or an acid line, sometimes swung), running as soon as it is built. The 303's knobs are rolled where acid lines live (cutoff low, resonance high, a good deal of Env Mod and Accent). Then drive, a delay and sometimes a little reverb; some of the ones played from the keys have an **Arp** in front (sixteenths over two or three octaves), so holding a note plays an acid line by itself.
-
-**Arp** patches start out arpeggiated: an **Arp** module sits on the keys and its Midi Out feeds every layer, so a held chord plays as an arpeggio (rate, direction, octaves, gate and swing differ from patch to patch).
-
-**Growl** comes in two kinds, picked at random: **Spectral** - the Colorbass growls - and **Random** - two or three **Warp Osc** layers (a wide unison body, a layer an octave or two up, a pulsed sine sub) whose **Random Amp** morph is swept through every note by a Multi LFO, usually one-shot like an envelope, so each hit walks through a scramble of harmonic clusters; chorus, flanger, delay and reverb give the space. Either kind ends in a **Spectral Lock** one time in four, tuned to the major or the minor pentatonic (even odds).
-
-**With Mutation**, the switch beside the section title, runs every generated patch through the Mutator as well: three mutations in a row at 50%, so each patch wanders further from its engine. The Mutator's Undo brings back the patch as it was built.
-
-The generated patch's name shows under the title at the top of the sidebar and is saved with it.
-
-**Add Effect**, the last section, adds to the loaded patch instead of replacing it: **Midi Add** or **Chord** at the start, or **Reverb**, **Delay**, **Modulation**, **Spectral** or **Color** (a Spectral Lock) in front of Audio Out. Every tap is a different take. **Chord** puts a **Graphic Midi Add** in front of every synth of the patch (the sound sources that take notes - not the drums, Noise or Droplets, nor a 303 in Mono or Grid), so each note becomes a chord - the DnB Chord it starts with, as from the sidebar (its Chord menu has the others). Synths played by the same notes share one: those on the keys get a chord of the keys, one played by an Arp or a Piano Roll gets a chord of what that plays. A patch without a synth is left as it is.
+- **Shape the volume:** an **ADSR** into an oscillator's **Env In**. Without one, the oscillator drones while a key is held.
+- **FM:** one Oscillator's Audio Out into another's **FM In**. For FM that fades out naturally, feed one ADSR into both Env Ins. Each **VirtualDX7 - Operator** is a full DX7 operator, so any DX algorithm can be patched by hand.
+- **MIDI streams:** every module with a Midi Out (Piano Roll, Arp, Midi Add, Keyboard Midi ...) is its own stream and can be chained, for example Piano Roll → Midi Add → Arp → Oscillator. Anything patched into a Midi In replaces the played keys there, and a **Discard Midi** with ALL lit keeps the keys away from a module.
+- **Chords:** **Midi Add** adds up to four notes, **Graphic Midi Add** up to seven, with ready chords in its menu.
+- **Drums** (Kick, Clap, Hats, Snare, Modal Drum, Pluck) play from the keys, from Trig In, or from a stream on their Midi In.
+- **Sweeps:** draw a shape in **Curve CV**, set a knob to its minimum and cable the curve onto it at 100 %.
+- **Controllers:** pitch bend and sustain work everywhere. **Midi Controls** turns the mod wheel, aftertouch and CCs into cables, and **Midi Learn** drives any knobs from one control of your controller.
+- **Levels:** sources at their defaults peak around -6 dBFS, so a chord and a few effects have headroom. **Polyphony Sum** before Audio Out keeps chords from stacking up, and Audio Out's **Soft Clip** catches the rest.
+- **Make anything talk:** a pad into **Cepstral Morph**'s Carrier and speech into its Modulator.
 
 ---
 
-## 🔌 Plugins
+## Aquanode Modular FX
 
-The **Plugins** section of the sidebar holds the other Aquanode instruments and effects, built into Aquanode Modular itself - nothing to install, and they work in the synth, the FX version and on Android:
-
-* **Synths:** AliasSynth, Aquanova, Aqua Vibrio, AlphaBeta, CombWeave, Cove Groove, GrainFreeze, NoteAdder, Phizmo, PhizmOsc, SampleField, Slicer, Soundscape Ecology, Tidebreeze, VirtualDX7, Vita.
-* **Effects:** 83ChorusVerb, AlphaBetaFX, AutoMorphEQ, CenterComb, FlowEQ, FullFilter, Phorest, PrecisionUtility, Resonate, TapElectric, Vocode.
-
-**Aquanova** is a loose Supernova-style synth and **Aqua Vibrio** a close Virus/Viper-style synth. **AlphaBeta** is my tribute to LinPlug's **Alpha 3**: its liquid filter and chorus, and as its Original engine a model of the FreeAlpha 3.3 engine measured from the original. LinPlug is no longer around - thank you for a wonderful synth.
-
-An effect plugin added to the synth comes without an Audio In of its own: patch into it what it should process, or drop it onto a cable (Aquanode Modular FX feeds it the track).
-
-Their source code comes with Aquanode Modular, in `Source/PluginSources`, with the small changes the plugins need to run inside it.
-
-Every plugin row has two ways in:
-
-* **GUI** (the row's name, or its **GUI** pill): the original plugin with its whole panel on one card, its own presets and file loading, Midi In (and Audio In / Side In where the plugin has them) like any module. Cards fold like every module card. On Android, the plugins' own file buttons go through the system file picker: picked files are copied into the app's storage first, so preset browsing (prev / next) works as on the desktop. Inside Aquanode Modular the plugins never create folders or files of their own accord (no preset folders in Documents, no factory banks written out, no import reports): files are only read or written when you choose them in a file dialog.
-* **Patch** (the **Patch** pill): the same instrument taken apart into modules named *Plugin - Part* (for example *Phizmo - Voice*, *Aqua Vibrio - Effects*), listed in the sidebar's Plugin Generators / Filters / Effects / Utilities sections, wired up as the plugin is inside. They run the plugin's own engines, so a patch version sounds like its GUI version; from there you can re-patch, modulate any knob with cables, or put Aquanode modules in between. Plugin presets load into both versions (the Patch pill opens a menu of them), and a GUI card's **To Patch** pill swaps the card for its patch version, keeping its current sound.
-* **Notes:** a synth plugin plays from the keys you play while nothing is patched into its Midi In, and from what is patched there otherwise. An effect plugin takes notes only from its Midi In - the keys never reach it - so playing never retunes **Resonate** or moves **FullFilter**'s keytracking; patch a **Keyboard Midi** into its Midi In to play it from the keys on purpose.
-* **Resonate's engines** keep the tuning: switching between Modelled, Native, Crisp and Dark carries the Note, the semitone offsets of II-VII and every Fine over to the engine picked (each engine keeps its other settings).
-* **Aqua Vibrio's banks, as they were made:**
-  1. Set **Engine** to *Original* (a new card starts on *Native*).
-  2. With **Waves**, choose the folder that holds the bank's *Waveforms* and *Wavetables* folders. Their *User* folders hold the hardware's sampled waves (*Wave 03* .. *Wave 64*) and its wavetables, their *Factory* folders the `.fxb` banks' own waves.
-  3. **Load** a `.mid` / `.syx` bank or an `.fxb` bank.
-
-  The waves a sound plays are saved with the patch and with presets, so they travel along; without the folder, waves 3-64 play Aqua Vibrio's own generated waves (or keep them in *Documents/Aqua Vibrio/Waves*) and an `.fxb` bank's own waves a sine. An `.fxb` bank's patches are read back into the hardware's single format by tables measured on the plugin itself (a converted bank imported again comes back the same, but for what the single format has no place for: the reverb modulation and the LFO links); each patch's Master level comes along, and its *Arp Note* mode plays the held notes on every step of the pattern. The Original engine was compared, patch by patch and element by element, with renders of the patches it plays: oscillator sync (Osc 2 restarts a quarter of the way into its cycle), the LFOs' depths, shapes and symmetry, the mod matrix's depths, the low EQ and the chorus land within about 1-2 dB.
-
-**Phizmo's random presets:** tap the PHIZMO logo at the bottom right of Phizmo's card, or the **RANDOM** badge beside the PRESET heading, for a menu of styles - **Pad, Bass, Lead, Pluck, Keys, Bell, Evolving Texture, Arpeggio** and **Surprise Me**. Each tap rolls a new preset of that style: fresh wavetables from the wave archetypes that suit it, and the envelopes, filter, scan, evolution curves, layering (up to three Sounds), arpeggiator and effects to match. The tempo and the engine setting stay as they are, and a roll saves like any Phizmo preset.
-
-**Tidebreeze** is a generative wave synth in the spirit of the classic sample-based synths, with waves of its own: none of its factory waves is a recording, and you can add your own audio files as waves. Every factory wave is a recipe that Tidebreeze renders when a preset needs it - an evolving spectrum with formants, sweeps, breath and noise, click trains or bubbles, looped like a multisample (its motion speeds up as you play higher), some in several zones so voices and strings keep their character across the keyboard. The 35 factory waves include airy and glassy voices, breathy flutes, wave sweeps, strings, bells, organs and a set of water sounds (dolphin clicks, whale song, surf, bubbles, streams). The 39 factory presets come in 13 categories and between them play every factory wave.
-
-* **Presets:** one layer or two (**2 LAYERS**), each with a High and a Low wave split by velocity (Reverse, Skip Attack), octave, transpose, tune, key follow and delay, a filter (resonant low-pass, or low-pass and high-pass) with its own envelope, keytrack and velocity, an amp envelope, and two LFOs; a pitch envelope for both layers, glide, **MONO** / legato and **HOLD**. Then the arpeggio (twelve patterns, among them Bossa, Gallop and Echo Steps), three insert effects in series and two send effects (Phaser, Chorus, Ensemble, Split Chorus, Flanger, Mod Delay, Pattern Delay, Multitap Echo, Drift Filter, Auto Pan, Decimator, Tilt EQ, Hall, Velvet Hall, Bright Plate, Undertow - the sound from under the surface - and Breeze Bands, twelve narrow band-passes on each side wandering on slow random paths of their own, the sound heard through moving windows of air), a master EQ and the preset volume. The four macro knobs (Cutoff, Resonance, Env Depth, Release) shift both layers at once.
-* **On the card:** a cyan CRT screen in a silver frame. Top left the logo and the four macros; in the middle the preset display - tap the preset name for the factory presets by category, step with **<** and **>**; on the right three rows: **PRESET** (**ROLL**, **LOAD**, **SAVE** `.tidebreeze` files), **VOICE** (**2 LAYERS**, **MONO**, **HOLD**, **ARPEGGIO**) and the Glide, Bend and Volume knobs. Right above the screen runs the navigation: **LAYER A** / **LAYER B** over the layers column (a tap on a layer in that column picks it too) and the five pages over the page: **PLAY** (the whole preset at a glance), **LAYER** (waves, pitch, filter and amp of one layer), **MOD** (its filter and amp envelopes, the pitch envelope, and its two LFOs), **EFFECTS** (the five effects, the master EQ and the signal flow) and **WAVES**.
-* **Random presets:** **ROLL** (or a tap on the TIDEBREEZE logo) opens the categories - Currents, Breezes, Pads, Voices & Air, Sea & Shore, Strings, Keys, Bells, Organs, Plucks & Stabs, Leads, Basses, Arps & Ripples - plus **Surprise Me** (any of them) and **Super Random**. Each roll is a new preset of that kind, often with new waves of its own: a body that plays the notes, and in Currents and Sea & Shore often a texture behind it (clicks, sparkle, swishes, a stream). **Breezes** are gentle airy pads heard through moving band-passes: each layer band-passed, its band swaying on a slow random LFO, and always the Breeze Bands, often with a slow phaser, drift filter or auto pan behind them. Many rolls bring extras: slow filter movement (a slow or bar-long LFO on the cutoff, or a long filter sweep) and up to three insert effects - drifting filters, slow phasers, the Undertow, auto pan and more. **Super Random** rolls every part of the preset over its whole range - waves from any type, the filters, envelopes, LFOs, pitch envelope, all five effects, sometimes the arpeggio - with guards that keep it a sound: the filter stays open where the envelope holds it, the amp envelope opens, feedback stays below a howl and the level stays sane.
-* **Random waves:** the **WAVES** page lists every wave and shows it (its zones, length and loop). **ROLL WAVE** makes a new one of a type (Air Pad, Glass Vox, Voice, Breath Flute, Wave Sweep, Clicks, Strings, Super Saw, Ghost, Noise Spectrum, Digital Bell, Bubbles, Surf, Whale) into one of 16 slots; **USE IN LAYER (HIGH / LOW)** puts it in the preset. A preset saves its rolled waves as type and seed, so a `.tidebreeze` file of factory and rolled waves is only a few kB.
-* **Your own waves:** **LOAD FILE** on the **WAVES** page loads an audio file (WAV, AIFF, FLAC, Ogg Vorbis or MP3; mono or stereo, any sample rate, up to 60 s - 30 s on Android) into a user slot: the slot selected in the list, or else the next free one. It becomes a wave like the others - one zone at its root key, read band-limited at any pitch, at the factory waves' loudness. Tidebreeze guesses the **Root Key** (from a note name in the file name, like *Pad C3.wav*, or else from the pitch it plays) and the **Loop** (a sound that fades away plays as a **One-Shot**, one that holds on loops its second part with a crossfade); with the slot selected, **Root Key**, **Loop**, **Loop Start** and **Crossfade** change them. **CLEAR SLOT** empties a slot. A preset keeps its loaded waves as their audio (losslessly, as FLAC), so a `.tidebreeze` file or a patch brings them along to another computer or to Android, and never needs the original file again. On Android the file comes through the system file picker. Like rolled waves, user waves belong to the preset: loading another preset replaces them.
-* Waves render in the background, so the card stays responsive while a preset loads: its waves follow within a fraction of a second (a note played before then leaves the missing layer out), and an offline render waits for them. Several Tidebreeze cards share the waves they have rendered.
-
-**Cove Groove** generates hardgroove loops: eight drum lanes in patterns of up to four bars, with the shuffle, the subtle phasing, the moving band-passes, the dotted repeats and the drive of the genre. Each lane has ten synthesized sounds and a slot for a sample of your own. The first four sounds of each lane were fitted to a set of hardgroove reference hits (the kick's pitch curve and gate, the clap's three bursts, the hats' metallic partials and so on). The last two come from one shaped engine - a falling body, up to three band-passed noise layers with their own decays and width, a gate and a drive - fitted to a second set of recorded hits: gated and dropping kicks, gated and reverbed rumbles and claps, crisp and ringing hats, a dark crash and a swell, gated toms and hits, a gated noise and a reverb hit. Only the fitted numbers are inside, no recordings. The Analog and Hybrid sounds come from a third engine built after the two machines' circuits - two tones with falling pitch, six square oscillators at the analog box's metal frequencies through two band-passes, two noise layers (a clap's in bursts), the trigger's thump, a hold-and-cut gate, filters and a drive - its settings fitted, sound by sound, to recordings of the machines. The rest are kit sounds, made after what a played kit does.
-
-* **Lanes**, eleven sounds each:
-  * **Kick:** Hard, Long, Tight, Round, Analog, Hybrid, Kit, Crunch, Gated, Drop.
-  * **Bass**, the offbeat sub: Sub, Saw, Pulse, Rumble, Analog (a gliding boom that rings), Acid (a resonant low-pass with its own envelope), Reese, Fingered, Gate Rumble, Verb Rumble.
-  * **Clap:** Clap, Snap, Room, Snare, Analog Clap, Hybrid Clap, Hybrid Snare, Kit Snare, Gate Clap, Verb Clap.
-  * **Closed Hat:** Metal, Dark, Noise, Tick, Analog, Hybrid, Kit, Pedal, Crisp, Ring Tick.
-  * **Open Hat:** Metal, Bright, Noise, Sizzle, Analog, Hybrid, Kit, Half Open, Wash, Ring. The closed hat chokes the open one.
-  * **Cymbal:** Ride, Crash, Shaker, Reverse Crash, Analog Cym, Hybrid Ride, Kit Ride, Kit Crash, Dark Crash, Swell.
-  * **Perc:** Conga, Tom, Bongo, Rim, Cowbell, Analog Tom, Clave, Kit Tom, Gate Tom, Gate Hit.
-  * **FX:** Zap, Stab, Noise, Blip, Tamb, Maracas, Riser, Metal, Gate FX, Reverb.
-  * **Sample** in every lane: a sound file of your own (see below).
-  * Each lane has **Level**, **Tune**, **Decay**, **Tone**, **Pan**, a **Send** to the delay, **TOP** (through the top bus) and **M** (mute).
-* **Your own samples:** pick **Sample** as a lane's sound and, while the lane has none, the sample panel opens over the steps (**EDIT** beside the lane's name opens it again).
-  * **LOAD** a sound file: WAV, AIFF, FLAC, Ogg or MP3, mono or stereo, up to 10 s. The silence before the sound is trimmed, so it starts on its attack. On Android it comes through the system file picker.
-  * The **volume curve** is drawn over the waveform (the sample as it is, faint, and as it plays, bright) and shapes it from start to end. Tap to add a point, drag a point to move it (the end points move up and down only), and long-press, double-tap or right-click a point to remove it. **FLAT**, **FADE**, **PUNCH**, **GATE** and **SWELL** set ready shapes.
-  * **PLAY** plays the lane once, **CLEAR** removes the sample, **CLOSE** goes back to the steps.
-  * **Tune** sets the playback rate (pitch and length together), **Decay** shortens it (the curve goes along) and **Tone** tilts it darker below the middle or thinner above. The second note plays it accented.
-  * The samples and their curves are kept in `.covegroove` files, DAW sessions and patches (losslessly, as FLAC), and go into the patch version's drum modules. In an exported patch (`.aqua`) each sample you loaded is a sound file of its own in its `samples` folder (`samples/12_covegroove_Bass - My Hit.flac`), so you can take it out and play it anywhere; `patch.xml` keeps the lane's name and curve. RANDOM never picks Sample.
-* **GENERATE** writes a new groove in a **Style**, with **Density** and **Variation**, over **1**, **2** or **4 bars**. The later bars vary the first, and the last one brings a fill. The kick stays four on the floor.
-  * The styles: **Rolling** (offbeat bass, shakers, conga figures), **Tribal** (toms and rides, sparse claps), **Shuffle** (ghosted claps, swung rides), **Stomp** (straight, hard) and **Rumble** (the bass rolls under the kick on the offbeat and the 16th after it, 16th hats with the offbeats on top, tom figures such as 1-3-5-8-11-13).
-  * The cymbal and FX lanes play after their sound: a ride on the 8ths, a crash (or the dark crash) on the one, a shaker or maracas on 16ths, a tambourine on the offbeats, a riser or the swell climbing into the loop, a reverb hit opening it.
-  * **RND** on a lane rewrites that lane only. **Swing** (50-75 %) pushes the 16th offbeats late.
-* **The steps:** a step's bar is as tall as it is loud, so everything works by touch (there is no shift-click).
-  * Tap an empty slot to set a step; it is as loud as the height you tap at. Tap a step to clear it.
-  * Drag up or down on a step to make it louder or softer. Drag across a row to paint steps, or to clear them if you started on one.
-  * Long-press (or right-click) for a step's second note: the conga's high note, the bass an octave up.
-* **Presets, kits and RANDOM:**
-  * **Thirty factory presets** in six groups: Warehouse (ten presets: the shaped sounds, mostly in the Rumble style at 138 to 142 BPM, swung at 62 to 68 %), Hardgroove, Analog, Hybrid, Kit and Mixed. A new Cove Groove starts on **Warehouse Rumble**. Step through them with **<** / **>**.
-  * **KIT** sets a sound for every lane at once: Hardgroove, Analog, Hybrid, Hybrid Acid, Kit, Crunch, Warehouse or Warehouse Verb.
-  * **FX PRESET** sets the phaser, band-pass, delay and drive together, from ten (Clean, Cove Phase, Tunnel Sweep, Dub Echo...).
-  * **RANDOM** randomizes everything, or one part alone: the groove (style, feel, steps), the kit, the sounds, the effects, the mix, or a preset. The ranges keep it a groove.
-  * **SAVE** / **LOAD** `.covegroove` files keep the whole groove: pattern, sounds (your samples too) and effects.
-* **The look:** saturated blues, cyans and greens on a walnut case and brown faceplates, laid out like a channel rack. Each lane is one strip: its lamp, **M**, name, sound, **RND**, its steps, its six knobs and **TOP** all on one band with the lane's colour down its left edge, every control the same height. The steps are flat bars in the lane's colour, as tall as they are loud, on slots shaded in alternating groups of four. The panels have title strips, the corners are square, and the knobs are steel caps on knurled gunmetal skirts inside a scale that lights in the lane's colour; the lamps, the playhead and the bar lines are cyan.
-* **The busses:**
-  * The lanes with **TOP** lit go through a subtle **Phaser** and the **Moving Band-Pass**. The band-pass has Freq, Reso, Motion (how far it sweeps) and Mix, with one sweep every 1/2 to 8 bars as a sine, a ramp or a random walk.
-  * The **Delay** takes the sends: 1/16 to 1/4 dotted (dotted 1/8 by default), with Feedback, Tone, Mix and Ping-Pong. Its repeats join the top bus.
-  * Everything ends in the **Drive** (Tube, Tape, Fuzz, Crush; Drive, Tone, Mix) and **Volume**.
-* **Playing:** with the DAW playing, Cove Groove follows its transport, locked to the bars. Otherwise **RUN** plays it at its own **Tempo** (Clock: *Own Tempo*) or at the patch's (*Patch Tempo*). Keys **C2** to **G2** play the lanes by hand, and **C3** to **G3** play them with their second note.
-
-**Vocode** is a filter-bank vocoder with up to 256 bands between **Freq Start** and **Freq End** - it starts at **133**, and a tap twice on **Bands** goes back there (at exactly 133 the **Chromatic Lock** button shows: one band on every semitone of the keyboard): the voice on Mod In (or, with nothing there, the carrier itself) opens the same bands of the carrier on Audio In. **Width** sizes the bands against their spacing, so it means the same at 8 bands as at 256: at **1** neighbouring bands meet and the carrier comes through whole, shaped by the voice; lower makes the bands narrower, with gaps between them, until they ring like tuned resonators (about **0.2** gives the bright, metallic narrow-band sound Vocode used to have); higher makes them overlap, up to **4** for wide, washy bands that blur into each other - long chords through a wide vocoder are a dub techno staple. Width can be modulated like any knob in the patch version. The drawn **BW** curve widens or narrows single bands on top of that, **VOL** sets each band's level, **Band Order** steepens every band, and a band rounds off gently instead of cutting hard when the voice is loud. Old patches open at Width 1.
-
-**Vita** is adapted from the Vital synthesizer by Matt Tytel and is used under the GNU General Public License; tap its logo (top left of its card) for the credit. Vita knows only the presets and banks you load into it (Open Preset, Import Bank, Save Preset, Export Bank), and can keep its library inside the Aquanode patch.
-
-| Plugin | Patch version |
-| :--- | :--- |
-| **Aquanova** | Oscillators, noise, ring mod, mixer, filters, amp, envelopes, LFOs, vocoder, EQ and effects as separate modules. |
-| **Aqua Vibrio** | **Voice** (the Original engine's voices: oscillators, filters, envelopes, LFOs, matrix, unison, arpeggiator and note layers) and **Effects** (the whole rack and output stage). The Voice's seven Mod outputs carry the matrix's effect destinations into the rack. Patches made on the Native engine are converted to the Original engine. Note layers with a rack of their own play through the base rack. |
-| **AlphaBeta** | Oscillator, drive, liquid filter, envelopes, LFO, the CRT matrix, amp, chorus and output - on the original's control clock. |
-| **Cove Groove** | The **Sequencer** (the pattern with its step grid - the card's bars and touch gestures - and GENERATE, the clock and Swing; a gate out per lane carrying each step's level and second note), one drum module per lane - **Kick**, **Bass**, **Clap**, **Closed Hat**, **Open Hat**, **Cymbal**, **Perc**, **FX Hits** (Trig In, Choke In, Midi In on its own key, Audio Out and Send Out; its card holds its own sample and volume curve, with LOAD, CLEAR, SHAPE and PLAY, saved with the patch) - and the **Bus** (the top bus's phaser and moving band-pass, the delay, the drive). |
-| **CombWeave** | One **Comb Osc** per oscillator bank (partials, spread, range folding, note lock, envelope and high-pass, with the plugin's engine) into the **Output** (sum and hard limit). Each bank keeps its own five voices. |
-| **GrainFreeze** | The **Player**: the phase vocoder with its sound, waveform (click or drag the playhead), stretch and freeze. A key plays it pitched from C4, Play / Stop runs it without keys. Its "presets" are audio files. |
-| **NoteAdder** | Note Filter, Manual Chord, Scale Chord, Per Note Chord and Transpose as separate MIDI modules, each optional; the patch version builds the chord of the preset's mode. Each chord module carries humanize, add length and its mode's animations, whose knobs show only while that animation is picked. |
-| **Phizmo** | Per active Sound a **Voice** (Phizmo's control engine: envelopes, the evolution scans along the drawn curves, LFO and noise, the modulation matrix, glide and arpeggio, sending pitch, wave position, level and cutoff as cables), two **Osc** modules (one transwave table each), two **Filter** modules and, when the Sound uses ring modulation, a **Ring**; then **Bus**, **Insert FX**, **Reverb** and **Output**. |
-| **PhizmOsc** | Envelopes, pitch envelope, LFOs, scanner, the transwave oscillators, mixer, voice and bus filters, chorus and reverb. |
-| **SampleField** | The **Field**: the pool of samples and its 24 random voices with pan / rate / level randomness, time limit, tempo locks and the per-voice echo. Its "presets" are audio files. |
-| **Slicer** | The slicing player with the sample, its waveform and slices. |
-| **Soundscape Ecology** | One **Field** per active slot (its model, physics, rhythm, population and space, played by the plugin's engine), the **Gate** (the MIDI gate for the whole scene, with Trig / Gate / Pitch outputs for the fields), the **Climate** (temperature, humidity, time of day, niche and weather for every field at once), the **Habitat** and the **Output**. |
-| **Tidebreeze** | Per layer a **Wave** (the High / Low waves by velocity, reverse, skip attack, pitch, key follow, delay, velocity range, glide and voices - with the user waves it plays, and **Load Wave** / **Roll Wave** on the card), a **Filter**, an **Amp**, a filter and an amp **Envelope** and two **LFO**s; a pitch **Envelope** for both layers; the **Arp** when the preset uses it; the **Insert FX** in series, the **Send FX** beside them and the **Output** (master EQ and volume). The modulation inputs come with the card's own depth knobs; the macro knobs are folded into what they move. |
-| **VirtualDX7** | Six DX Operators wired to the voice's algorithm, DX envelopes, pitch EG, LFO, the function settings and the chord / sustain helpers, into the ChorusVerb effects (the native engine; the VDX7 emulation is GUI-only, as it needs your firmware ROM). |
-| **Vita** | **Voice** and **Mono Voice**, **Osc** (up to three), **Sampler**, **Filter** (up to two), **Env**, **LFO** and **Random** (per voice, and as Mono versions for the effects), **Amp**, **Macros**, **Mod**, the effects in the preset's order (Chorus, Compressor, Delay, Distortion, EQ, Effects Filter, Flanger, Phaser, Reverb) and **Output** - each running Vital's own engine code. |
-| **AlphaBetaFX** | **Filter** (drive, filter and filter envelope - Auto or on Midi In - in the Native or Original model; Env Out carries the envelope) into **Chorus** (both models). |
-| **AutoMorphEQ** | Seven **Band** modules in series (each morphing its bell with the plugin's shapes; Morph Out shows where it is) into the **Output** (Wet Only against the dry signal, hard limit). |
-| **FullFilter** | The **Bell Bank**: the harmonic bell stack played by Midi In, with the plugin's own bell display and level / tuning bar editors, the acoustic shapes, square wave and wavetable import. |
-| **Phorest** | The **Phaser**: the plugin's allpass stages, LFO shapes, feedback, detune and Dry Cancel; LFO Out carries the sweep. |
-| **AliasSynth** | The **Oscillator** (AliasSynth's voice: the folded saws, sine or sample, FM, S&H, wavefolder, bits, transpose with glide; its sample saved with the patch) with an **ADSR** on its Env In. |
-| **PrecisionUtility** | The **Utility**: latency up to 10 s, blendable polarity invert, volume and placement per channel - the plugin's processing sample for sample. |
-| **Resonate** | **Resonate - Bank**: all seven resonators as one module - each on or off with its own pitch, fine tune, gain and pan (and with *Per Res* its own decay and colour), the engine, note, decay, colour, shape, filter, width and dry/wet shared. Effects > **Resonator** is one of them on its own. |
-| **83ChorusVerb, CenterComb, FlowEQ, TapElectric, Vocode** | Their stages as effect modules. |
-
-Sounds a plugin loads from files are saved with the patch as audio - in a `.aqua` as files of their own in its `samples` folder (on the GUI card, and in the patch version wherever it plays them) - so a patch brings them along to another computer or to Android: Cove Groove's lane samples, Slicer's and GrainFreeze's sample, SampleField's pool, FullFilter's, FlowEQ's, AlphaBeta's, Phizmo's and PhizmOsc's wavetables, Tidebreeze's user waves, Vita's sample and wavetables, and Aqua Vibrio's sampled waveforms (the classic waves and the sampled wavetables the sound selects) - those stand in for the waveform folder on a device that does not have it.
-
-The plugins' file buttons read sound files by what they contain: on Android a picked file keeps its own name and ending (an `.mp3` stays an `.mp3`), and one whose name has no ending gets the one its contents call for. Cove Groove's samples load even with a wrong or missing ending.
+The same instrument as an effect plugin, built from the same source code. **Audio In** brings in the track's audio and the default patch is Audio In → Audio Out. Everything else is identical, and it receives the track's MIDI too, so its synth modules can still be played.
 
 ---
 
-## 📦 Module List
+## Random Preset
+
+Each row at the bottom of the sidebar is a category: **303, Arp, Bass, Bell, Chord, DAW, FM, FX, Growl, Keys, Kick, Lead, Pad, Perc, Pluck, Synth** and **Random**. A tap replaces the patch with a newly built one of that category, different every time. The result is an ordinary patch you can edit, export and mutate.
+
+The patches come from several engines, picked at random per tap: genre engines (Ambient, Atmospheric DnB, Colorbass, DnB, Dub Techno, Psychill, originally from presets I made by hand for Vital or DX7 clones) that build sounds from Aquanode modules, Slow FM pads and bells from VirtualDX7 operators, the Tidebreeze and Phizmo plugins with a freshly rolled preset, a self-playing Pol Sweep patch, and other hand-made presets.
+
+- **FM** builds a 6-operator DX voice laid out like the DX7's algorithm chart; its menu picks a sub-category or loads any DX7 SysEx file.
+- **303** builds an acid patch: a mono saw or square through a screaming ladder filter, or the 303 module, sometimes playing a hook of its own.
+- **Arp** patches start arpeggiated, and **Growl** builds spectral or random-morph growls.
+- **DAW** is an empty two-track arrangement to draw into and render.
+- **With Mutation**, beside the section title, also mutates every generated patch three times.
+
+**Add Effect** adds to the loaded patch instead: a chord in front of every synth, or reverb, delay, modulation, spectral or colour effects in front of Audio Out.
+
+---
+
+## Plugins
+
+The **Plugins** section holds my other instruments and effects, built in. They work in the synth, the FX version and on Android.
+
+- **Synths:** AliasSynth, Aquanova, Aqua Vibrio, AlphaBeta, CombWeave, Cove Groove, GrainFreeze, NoteAdder, Phizmo, PhizmOsc, SampleField, Slicer, Soundscape Ecology, Tidebreeze, VirtualDX7.
+- Additionally, it contains Vita, a port of Vital without the Vital branding (as intended by the original developer when reusing their code).
+- **Effects:** 83ChorusVerb, AlphaBetaFX, AutoMorphEQ, CenterComb, FlowEQ, FullFilter, Phorest, PrecisionUtility, Resonate, TapElectric, Vocode.
+
+Every plugin can be added two ways:
+
+- **GUI:** the original plugin with its whole panel on one card, its own presets and file loading, and Midi In (plus Audio In where it has one).
+- **Patch:** the same instrument taken apart into modules named *Plugin - Part* (*Phizmo - Voice*, *Vita - Osc* ...) and wired as the plugin is inside. They run the plugin's own engine, so it sounds the same, but you can re-patch it, modulate any knob or put other modules in between. A GUI card's **To Patch** button converts it, keeping its sound.
+
+Synth plugins play from the keys unless something is patched into their Midi In; effect plugins only take notes from their Midi In. Sounds a plugin loads (samples, wavetables, user waves) are saved inside the patch, so it plays the same on another computer or phone. The plugins never create files or folders on their own.
+
+A few notes on individual plugins:
+
+- **Aquanova** is a loose Supernova-style synth, **Aqua Vibrio** a close Virus/Viper-style one. Aqua Vibrio's *Original* engine loads `.mid` / `.syx` and `.fxb` banks and can use a folder of the hardware's sampled waves.
+- **AlphaBeta** is my tribute to LinPlug's **Alpha 3**: its liquid filter and chorus, and an Original engine modelled on FreeAlpha 3.3. LinPlug is no longer around - still, thank you for a wonderful synth.
+- **Tidebreeze** is a 2000s ROMpler-style synth whose waves are all generated, not recorded: 35 factory waves (airy voices, flutes, strings, bells, organs, surf, whale song ...), 39 presets, two layers, an arpeggiator and 17 effects. **ROLL** rolls new presets by category, **ROLL WAVE** new waves, and **LOAD FILE** turns your own audio into a wave.
+- **Cove Groove** generates noisy hardgroove loops: eight drum lanes with ten fitted sounds each plus your own samples, five groove styles, GENERATE / RND, 30 presets, kits, and a phaser, moving band-pass, delay and drive. It follows the DAW's transport or runs on its own tempo.
+- **Phizmo**'s logo (or its RANDOM badge) rolls presets in eight styles.
+- **Vocode** is a filter-bank vocoder with up to 256 bands; **Width** goes from narrow ringing bands to wide washy ones.
+- **Resonate** keeps the tuning when you switch between its four engines.
+- **Vita** is adapted from the Vital synthesizer by Matt Tytel and used under the GNU GPL. It knows only the presets and banks you load into it, and can keep its library inside the patch.
+
+---
+
+## Module List
+
+Click on the text for the full dropdown list!
 
 <details>
-<summary><strong>Click to expand: All 143 modules by category</strong></summary>
+<summary><strong>All 143 modules by category</strong></summary>
 
 | Category | Module | Description |
 | :--- | :--- | :--- |
-| **Input / Output** | Audio In | Passes the host's audio input into the patch, with a level knob. |
-| **Input / Output** | Audio Out | Sends the patch's signal back out to the host, with a **Level** knob and **Soft Clip**: instead of clipping hard at full scale, the output is left as it is below a knee and bends smoothly above it, leveling off at -1 dBFS and never passing 0 dBFS (25 % starts bending at -3 dBFS, 100 % at -12 dBFS, 0 % switches it off). The curve runs at twice the sample rate between linear-phase filters, so pushing it hard does not fold harsh overtones down, and what stays below the knee comes out unchanged (31 samples later - 0.65 ms at 48 kHz - while it is on). It works on the patch's whole output - all its Audio Outs added together, at the highest Soft Clip among them - so a patch with several Audio Outs never passes 0 dBFS either, and sounds as it would with one. On in every patch, also those saved before it existed; off in Aquanode Modular FX, which passes the track through untouched. |
-| **Input / Output** | Keyboard Midi | The notes you play (DAW, controller, on-screen keys) as a cable - patch it into a drum's or Droplets' Midi In to play them from the keyboard. |
-| **Input / Output** | Midi Controls | Pitch bend, mod wheel, aftertouch, any CC and the sustain pedal as modulation cables. Bend Range sets the pitch-bend range for the whole patch (2 semitones without this module); the sustain pedal works without it too. |
-| **Input / Output** | Midi Learn | One control of a MIDI controller (a knob, fader, wheel or pedal: a CC, the pitch bend or the pressure) as a cable into any knobs: tap **Learn** (or its little screen) and move the control, or pick it in the **Control** menu. Like a **Macro**, each knob it is patched into follows the control across its whole range, the cable's depth blending with the knob's own setting (negative turns it round); **Low** and **High** narrow the sweep, **Smooth** takes out the steps. The knobs keep their own settings until the control first moves, and its last position is saved with the patch. One Midi Learn per control; it works with a keyboard or controller plugged into an Android phone or tablet as well. |
-| **Sound Generation** | 303 | A bass line synth fitted to recordings of the original hardware (all five knobs, saw and square, plain and accented notes, up to 20 kHz - the scream of the resonance with the filter wide open included): the saw and the 303's slanted square, its four-pole filter with resonance, the cutoff envelope (Env Mod, Decay - accents always take the short one), the accent sweep that builds up a little on accents in a row, the VCA. **Free** plays it from its Midi In (an accent from a note at least as loud as **Acc Vel**); **Mono** slides into a note played under a held one, **Poly** gives every note its own voice and never slides. **Grid** plays its own 303 pattern of 1-4 bars, edited in the card: lanes for the note, the octave, the accent, the slide and the step's time (note, tie, rest); **RUN**, its own tempo or the host's, **KEY** to transpose, **Swing**; **RANDOM** makes a new hook that loops - of the kind the button beside it picks: a pentatonic **ARP**, **OCT**ave steps, an **ACID** line, or **ANY** of those three; or one of the long, gentle lines of ambient and psychill, always four bars, that wander off their home loop and find it again: **DRIFT** (a flowing sixteenth loop on a pentatonic scale - bar 2 changes a note or two, bar 3 drifts up or down the scale, bar 4 is home), **BLOOM** (a few long notes; each bar adds one or two more until bar 3 is in full bloom, bar 4 folds back) and **TIDE** (a rolling wave up and down the scale that swells over bars 2 and 3, slipping against the bar, and settles on the root in bar 4). Play All / Stop All on a Piano Roll start and stop it with the rolls. Beyond the 303's own knobs (at their defaults it is the 303 as measured): **Acc Decay** (how long an accent's envelope falls), **Acc Sweep** (how fast the accent sweep charges and lets go, so accents in a row build up more or less), **Key Track** (the cutoff follows the note), **Drive** (harder into the filter). **FM In** phase-modulates the oscillator, as on the other oscillators. |
-| **Sound Generation** | Additive | Builds a tone by drawing up to 64 harmonic bars directly, shaped further by Tilt, Odd/Even and Stretch. |
-| **Sound Generation** | Analog Drift | The FM Oscillator with the precision sanded off - per-voice pitch/phase drift, random start phases and up to 7-way unison. |
-| **Sound Generation** | Bowed | Physically-modelled bowed/blown string that sustains for as long as a note is held, patch Pressure In for expression. |
-| **Sound Generation** | Chord Wavetable | Generated chord wavetables (sparse harmonics on Minor 9 / Major 9 / ... chords) with chord-stacked 16-voice unison, pre-rendered spectral morph (Random Amp, Low Pass, High Pass, Phase Disp), Level In for chops and Pitch In; cables onto Position and Morph Amt move the table and the morph. Roll for new tables; presets store the seed. |
-| **Sound Generation** | Clap | Classic analog clap made of three quick noise bursts plus a diffuse tail; plays from the keys and from Trig In, or from the notes on its Midi In (Keyboard Midi, Piano Roll, Arp...). |
-| **Sound Generation** | Complex Osc | West Coast-style FM-into-wavefolder voice with no filter, Timbre controls the fold amount instead of a cutoff. |
-| **Sound Generation** | Droplets | Randomised sine pings whose pitch, chirp and decay follow real bubble acoustics, drip-clocked at Rate with per-drop stereo spread. Runs while a note is held or Gate In is high; notes on its Midi In each run their own drip stream. |
-| **Sound Generation** | Dual VCO | Two VCOs and mixer - Triangle/Saw/Pulse/Noise and Saw/Pulse/Ring Mod, feet like the panel, VCO 2 Pitch. Runs ungated; put the VCA after the filter. |
-| **Plugin Generators** | VirtualDX7 - Operator | One operator of a six-operator FM engine with all 21 DX7 operator controls (EG rates/levels, level, ratio/fixed, coarse/fine/detune, key scaling, rate scaling, AMS, velocity) plus self-feedback, and an envelope display. Patch one into another's FM In to build any DX algorithm. |
-| **Sound Generation** | Formant | Singing oscillator that morphs through vowels A-E-I-O-U with a cable onto Vowel - no modulator signal needed. |
-| **Sound Generation** | Grand | The piano model as a concert grand: long bass strings and three-string unisons, phantom partials that make the bass growl on hard blows, the other strings ringing along (all of them with the sustain pedal down, the undamped top always - **Strings**), and a spaced pair of mics with the lid's reflection (**Mics**, **Lid**) for the width of a recording. **Voicing** picks one of two grands, each voiced after its own recordings: **Felt** (the default: a rounder, darker bass under its stronger second to fourth partials, a darker middle, and a treble that rings longer with a woody tock and a warm thump under it) or **Clear** (brighter and more open). The upper partials die before the low ones, as on real strings, so every note ends on its warm low partials, and the registers sit together: the low bass is no louder than the middle (and no hotter in its peaks than the rest of the keyboard), and the top octave above C7 is softer. Above C6 it is nearly its fundamental alone, as a piano's top is (a strong, stretched second partial there would ring like a bell). Same physical controls as Piano. |
-| **Sound Generation** | Granulator | Granular sampler playing a cloud of pitched grains per note, patch an ADSR into Env In for note-level shaping. Grain Atk / Grain Rel shape each grain's own fade in and out (50 % / 50 % = the classic smooth bell, 0 % = hard clicky edges, 100 % = a long fade). |
-| **Sound Generation** | Hats | Classic analog metallic hi-hats from six detuned square oscillators, Decay sets closed vs. open hat. Plays from the keys and from Trig In, or from the notes on its Midi In. |
-| **Sound Generation** | Kick | Classic analog kick drum with a pitch-drop envelope and drive; plays from the keys and from Trig In, or from the notes on its Midi In (Keyboard Midi, Piano Roll, Arp...). |
-| **Sound Generation** | Modal Drum | Physically-modelled percussion (marimba to bell-like tones) via Inharm and Bright, with Pitch In for melodic tuning. The keys (or the notes on its Midi In) strike it at their own pitch, Trig In alongside. |
-| **Sound Generation** | Noise | Per-voice white/pink noise source, useful as a percussion excitation gated by an ADSR (try feeding it into a Resonator). An optional Midi In makes it answer only to the notes patched there. |
-| **Sound Generation** | Oscillator | The core polyphonic FM operator (DX7-style phase modulation) with FM In and Env In sockets for per-note modulation. |
-| **Sound Generation** | Phase Distort | A phase-distortion oscillator where DCW (a knob that takes cables) morphs the wave shape without moving the pitch. |
-| **Sound Generation** | Piano | Physical model of a piano - felt hammer, stiff coupled unison strings, soundboard, case thump, sympathetic bed and felt dampers, all in real time - in three voicings (**Model**): **Felt** (a muted felt upright: dark, soft, close), **Mid** (a brighter felt piano) and **Hard** (hard hammers: bright and ringing, with a wooden knock). Physical controls (Hardness, Brightness, Strike, Inharm, Unison, Aftersound, Damper...) and Env In. |
-| **Sound Generation** | Resynth Piano | A piano rebuilt from 33 recorded notes in two loudnesses (Resynthesis in the sidebar). Each recording was taken apart into up to 64 partials - every one with its own pitch (the strings' stretch fitted to each note), its level over 48 moments from the strike to 30 s, and its starting phase - plus the hammer's first 60 ms as a sample and the noise between the partials in 16 bands; it plays them back, so no recording ships with it (1 MB for the whole keyboard). A key between two recorded ones blends both, and the velocity blends the soft recordings into the loud ones; played as recorded it matches them within 0.5 dB, decaying alike. **Volume**, **Voices**, **Velocity** (how much the touch matters), **Bright**, **Decay** (shorter or longer rings), **Release** (the dampers; the top keys ring on as on a piano), **Hammer** (the strike sample), **Body** (the strike's noise: the room and the strings' beating between the partials in the first moments, fading out within a few tenths of a second), **Stretch** (the strings' inharmonicity: 0 makes it harmonic), **Beat** (unison beating), **Width** (the keys across the stereo field), **Tune**, **Partials** (fewer for less CPU). FM In bends the pitch. |
-| **Sound Generation** | Pluck | Karplus-Strong plucked string, fully polyphonic from the keyboard, or a mono string driven from a sequencer's Pitch In. The keys (or the notes on its Midi In) pluck it at their own pitch, Trig In alongside. |
-| **Sound Generation** | PWM Osc | A polysynth VCO: Saw/PW/PWM with its own PWM LFO, and the divider-locked square sub-oscillator. Runs ungated. |
-| **Sound Generation** | Sampler | Keyboard-mapped one-shot sample player, root fixed at C4, with its own per-voice Env In. Loads up to 20 minutes of audio (10 on Android). The waveform view zooms and slides: mouse wheel, dragging, pinch, or the **Zoom** and **View Pos** knobs (the way to do it on a touch screen); drag the Start / End markers straight on the waveform, clicking twice for the whole file. |
-| **Sound Generation** | Spectral Resynthesis | A sound taken apart by the FFT, played back from the keys and changed region by region and note by note. The card is in sections. **Sound:** **Volume**, **Load Sound** (WAV, AIFF, FLAC, Ogg, MP3; two minutes, one on Android) or **Record**: press it, play into **Rec In**, press it again (or let it reach two minutes) and the take becomes the sound, as if loaded; both are saved in the patch. **Voices**, **Glide**. **Analysis:** the **Engine**. **Bins** keeps the FFT's bins themselves, level and phase: at Root, Speed 1 and with no edits it plays the sound itself, sample for sample (better than -60 dB); other pitches, speeds and Freeze go through a phase vocoder that moves each peak with the bins around it, so its phases stay locked. **Partials** finds the peaks with the spectral reassignment, joins them into partial tracks played as sine oscillators over a 24-band noise floor (**Hop**, **Window**, **Decimate**, **Floor**, **Peaks**, **Min Len**): smoother to bend and stretch, but a model of the sound rather than the sound. **FFT** 1024-16384 (the frame size; Bins: longer frames hold low notes better, shorter ones keep attacks sharper). **Playback:** **Speed** stretches time without touching the pitch (negative plays backwards), **Start** / **End**, **Loop** (Once, Loop, Ping-Pong), **Freeze** holds the moment at **Position** (modulate it to scan); **Root** and **Fine**, set from the sound's fundamental when it is loaded or recorded, so every key plays it in tune. **Pitch & Tone:** **Transpose**, **Tilt**, **Low / High Cut**; with Partials also **Shift** (Hz added: inharmonic), **Scatter** (each voice detunes its partials at random), **Sines** and **Noise** levels, **Partials** (the N strongest), **Spread**. **Editor:** the spectrogram (Bins: every bin's level in colour; Partials: the partials as lines), the voices' positions, Start / End (drag them); **- / +** and the wheel zoom the frequency axis, Shift + wheel the time axis. The bars along the map's bottom and right edges scroll through the sound and its frequencies (drag a bar) and zoom (drag one of its ends); a double tap shows everything. With **Select**, drag boxes (time x frequency); with **Draw**, draw any shape around what you want - as many regions as you like, a tap on one removes it, **Clear Selection** drops them all - then apply **Delete**, **Keep** (all outside goes), **Reverse** (backwards in time), **Transpose** (by the semitones set), **Rotate** (turned by the degrees set), **Gain** (by the dB set) or **Smear** (what sounds there rings on, fading over the time set, to about -60 dB in seven times it), one after another: each works on what the ones before left. With **Note**, tap any harmonic of a note: its fundamental is found (the harmonics checked against saw, square and triangle patterns) and followed through time, and the note and all its harmonics light up white; **Remove**, **Transpose**, **Gain**, **Unison** (voices and detune), **Fund Only**, **No Fund** and **Odd Only** then act on all of them at once. **Undo** steps back, **Reset** clears the edits; they are saved in the patch. FM In bends the pitch, Env In takes an ADSR. |
-| **Sound Generation** | Snare | Two detuned "shell" tones plus a band-passed noise burst for the wires, Snap balances the two. Plays from the keys and from Trig In, or from the notes on its Midi In. |
-| **Sound Generation** | Transwave | Wavetable oscillator whose table is generated from a seed and one of twelve archetypes, using Phizmo's transwave generator. Roll for new seeds; Position, self-Scan and Pos In move through the table; band-limited playback. Presets store the seed, not the audio. |
-| **Sound Generation** | Unison | A stack of up to nine detuned, panned copies of one note - thickens a single note. |
-| **Sound Generation** | Warp Osc | Band-limited morphing oscillator (Sine > Tri > Saw > Square > Pulse, or two custom spectra) with seven phase warps and up to 16 unison copies; Pitch In and FM In, and a cable onto Shape moves it. **Morph: Random Amp** gives the harmonics random levels - off at 0 % (the default), and further up ever stronger random spectral landscapes (clusters of loud harmonics over quiet stretches, lifted towards the top), a new one every few percent, gliding between them at constant loudness. Always the same for the same amount; put an envelope or LFO on Morph Amt to make it move. |
-| **Sound Generation** | Wavetable | Loads a sample as single-cycle frames and scans through them with Position, morphing timbre without changing pitch. |
-| **Sound Generation** | Wind | Physically-modelled blown pipes: **Flute** (an air jet over an open pipe), **Pan Flute** (a slower jet, a duller pipe, more air) and **Clarinet** (a reed over a cylindrical bore). Breath rises over Attack and falls over Release, velocity sets how hard it starts, and a cable onto Breath moves it - patch Midi Controls' mod wheel or aftertouch there to play it like a wind controller. Tone is dark to bright, Noise is the air around the note, Vibrato fades in after its Delay; Env In replaces the breath envelope. |
-| **Filter** | 3-Bell EQ | Three peaking bells over a graphic curve - drag the dots for frequency and gain, wheel for Q, and every knob takes modulation. |
-| **Filter** | AquaFilter | A tanh-stage ladder in 12/24 dB lowpass plus an extra-saturated 24+ mode, and an SVF for bandpass and highpass, with Drive saturating before the filter. Res Curve reshapes the resonance knob rather than the sound. |
-| **Filter** | Bell | Single peaking EQ band (Freq, Gain, Q) on a stable TPT core, per voice when fed per voice. |
-| **Filter** | Center Comb | Bank of peaking filters spread symmetrically around a centre frequency, with Damp thinning the outer peaks. No delay line, so it colours rather than rings - for the ringing kind, see Comb Filter. |
-| **Filter** | Comb Filter | An actual delay-line comb: one wavelength fed back on itself, so it rings at a pitch. Positive feedback reinforces every harmonic, negative cancels the even ones for a hollow clarinet tone, and the extremes self-oscillate. KeyTrack into Pitch In turns a Noise module into a Karplus-Strong string. |
-| **Filter** | Dual Filter | An HPF > LPF pair with screaming, self-oscillating Peaks and MG/Ext CV inputs per filter. |
-| **Filter** | Formant Filter | The Formant oscillator's vowel bank aimed at incoming audio, a cable onto Vowel morphs A-E-I-O-U and makes any source talk. |
-| **Filter** | Highpass | Clean, stable highpass, 12 or 24 dB/oct, with resonance and a cutoff Mod In. |
-| **Filter** | Ladder Filter | Transistor-ladder 4-pole filter with drive and self-oscillating resonance, switchable between 12/24 dB LP/HP. |
-| **Filter** | Lowpass | Clean, stable lowpass, 12 or 24 dB/oct, with resonance and a cutoff Mod In. |
-| **Filter** | Notch | Narrow band cut with Width in octaves; sweep it with Mod In. |
-| **Filter** | Pitch Lock Filter | Dampens every note NOT on the chosen pitch classes (and can boost the ones that are), musically "re-tuning" the signal. |
-| **Filter** | Resonance Suppressor | Tames resonances as they happen, with no latency: 32 bands (or 64 with **Bands**) from Low to High listen to the sound, and wherever one stands out above its neighbours by more than **Selectivity** allows, a bell cut pulls it back - as far as **Depth** says, following **Attack** and **Release**; **Sharpness** narrows or widens the bands. What has no resonances passes unchanged. **Side In** makes it listen to another sound instead (cutting the main sound where the side one resonates); **Removed Out** and **Delta** give what was taken away. **Reactance** (off and hidden until its button below the display shows it) is a curve you draw over the frequencies, from x0 to x2: how hard each part of the spectrum is cut - flatten it to 0 where nothing should be touched, raise it where resonances should go further; double-tap to make it flat again. It is saved in the patch. |
-| **Filter** | Shelf EQ | Three broad bands: low shelf or low cut, mid peak or notch, high shelf or high cut, with a response curve. |
-| **Filter** | SVF Filter | State-variable filter offering LP/BP/HP, running one instance per voice when fed a per-voice signal. |
-| **Filter** | Warm Ladder | A warm 24 dB ladder with EG Int, Kbd Track and MG Level. |
-| **Effect** | 3-Band Compressor | Three-band upward and downward compressor with per-band gains, Depth and Time. |
-| **Effect** | ADSR Delay | Creative delay/resonator with a shapeable per-cycle envelope and four routing modes including hard ping-pong. |
-| **Effect** | Align | Sub-sample per-channel delay, volume and polarity invert, for phase alignment and Haas-style stereo tricks. |
-| **Effect** | AquaChorus | Liquid chorus/flanger using two LFO-swept delay lines with tunable L/R phase offset and feedback. |
-| **Effect** | AquaReverb | Lush 8-line feedback-delay-network reverb with a Freeze control that holds the tank indefinitely. |
-| **Effect** | Band Splitter | Splits the Audio into three frequency bands. |
-| **Effect** | Bitcrush | Bit-depth reduction for digital grit, continuously variable from subtle warmth to harsh 1-bit crush. |
-| **Effect** | Chorus | Modulated delay line per channel with an LFO phase offset between channels for stereo width. |
-| **Effect** | Compressor | Feedforward stereo-linked compressor with attack/release smoothing and makeup gain. |
-| **Effect** | Cross Delay | Stereo / Cross delay with separate times and feedback, damping and Spread. |
-| **Effect** | Delay | Stereo tempo-synced delay with independent times per channel and a filtered feedback loop. |
-| **Effect** | Free Delay | A delay of any time from a fraction of a sample to 10 seconds. **Time** turns evenly through the decades - a quarter of the way is 56 us, the middle 3.2 ms, three quarters 180 ms - so most of the knob is spent on the short times; type a value (us, ms or s) to set it exactly. Below a sample it reads between the last two samples, above with a 4-point cubic. Short times with **Feedback** are tuned combs, longer ones flangers, slaps and echoes; negative Feedback inverts the repeats (the odd-harmonic comb), **Damp** darkens them, and the loop is softly limited so it never runs away. **Glide** lets a changed time slide there (modulate Time for tape bends), **Spread** sets the right side's time apart (+-50 %), **Mix** the wet share. |
-| **Effect** | Echo | Tape-style delay in ms or tempo, Stereo / PingPong / Mono, band-pass in the feedback loop, gliding time changes, Wobble. |
-| **Effect** | Ensemble | Chorus / Phase / three-phase Ensemble. |
-| **Effect** | Flanger | Short modulated delay with switchable positive/negative feedback for classic jet-swoosh effects. |
-| **Effect** | FM | Cross-modulates two arbitrary signals via phase modulation, ring modulation or self-feedback, patch cables define the routing. |
-| **Effect** | Granulation | The Granulator's engine as a live effect: it keeps recording what comes in and blends a cloud of grains from it with the dry signal, so you can granulate what you play as you play it. |
-| **Effect** | IRForge | Records Rec In or loads a file, forges it into an impulse response (Character = how much harmonic detail survives) and convolves Audio In with it; the IR is saved with the patch. |
-| **Effect** | Limiter | Fast stereo-linked peak limiter with instant attack and zero latency, for catching a patch before it clips. |
-| **Effect** | Phaser | 2 to 12-stage allpass phaser swept by an internal LFO around a centre frequency, with feedback. |
-| **Effect** | Wah | A resonant band-pass swept between Low and High like a pedal: **Auto** opens it with the input's loudness (sensitivity, attack, release), **LFO** sweeps it at a rate or a tempo division, **Pedal** is the Position knob. Pedal In adds a cable's sweep (the mod wheel through Midi Controls makes a hand-held wah); Position Out sends where it is. |
-| **Effect** | Resonator | One resonator with everything Resonate's engines can do: Modelled, Native, Crisp or Dark, Full or Odd harmonics, free or constant decay, the filter, and the Crisp engine's center, exp. decay, 2x, smoothing, chorus and LFO. |
-| **Effect** | Clip Preserve | ClipPreserve's detail-preserving clipper: Drive into a hard clip at Threshold, and Preserve of what was cut off (high- / low-passed) folded back, so transients survive; Side In folds back more where a loud key hits; Delta Out is the detail alone. Acts on its own lane only. |
-| **Effect** | Sidechain Comp | Ducks Audio In by the level of Side In (the key): soft-knee compressor with Key HP, Lookahead, Mix and Listen; Gain Out ducks anything else by the same key. |
-| **Effect** | Reverb | Simple pre-delay plus algorithmic reverb core with decay time and room size controls. |
-| **Effect** | Smooth Hall | Smooth FDN hall with pre-EQ; Reverb Time is the RT60. |
-| **Effect** | Spring Reverb | Physically-modelled spring reverb with up to 7 parallel "coils" and a Chirp control for the springy character. |
-| **Effect** | SR Reduce | Sample-rate reduction (decimator) that aliases the highs into inharmonic digital shimmer. |
-| **Effect** | Stereo Phaser | Stereo phaser with L-R LFO phase, Manual, bipolar Resonance, High Damp. |
-| **Effect** | Stereo Width | Mid/side widener with a Haas micro-delay and a Bass Mono crossover; a cable onto Width makes the image breathe. |
-| **Effect** | Tape Wobble | A worn tape machine: wow, flutter, gain-compensated saturation, dropouts and ducked hiss - Analog Drift for finished signals. |
-| **Effect** | VST3 Plugin | *Windows (and the Linux build) only - not in the Android app.* Any VST3 plugin of yours in the patch: **Load...** and point at its `.vst3` file - nothing is ever scanned. A plugin that is a `.vst3` folder (a bundle) is opened by the `.vst3` file inside it (`Contents\x86_64-win\<name>.vst3`), which loads the whole bundle. Audio In goes into an effect, Midi In (the played keys while nothing is patched there) into a synth, and Audio Out carries its main output; **Window** opens the plugin's own interface in a window of its own, **Unload** takes it out. It runs 32 samples behind the patch (0.7 ms at 48 kHz) and follows the host's tempo and transport. The patch keeps which plugin it was and its whole state; opened on a computer without that plugin, the card says so and keeps everything, so saving there loses nothing. |
-| **Effect** | Vocoder | Classic vocoder: the Mod In signal's spectral envelope shapes Carrier In (voice into Mod, saw into Carrier = robot voice). |
-| **Effect** | Waveshaper | Drive-based distortion with a choice of curves - Tanh, Sine Fold, Hard Clip, Rectify. |
-| **Effect** | Drive | Distortion with character: **Tube** (Bias adds even harmonics), **Tape** (soft, darker as it is pushed), **Fuzz** (hard, asymmetric) or **Crush** (sample-rate and bit reduction). **Tone** drives the top or the low end harder and tilts back after the curve; twice oversampled; **Auto Gain** keeps the loudness, so Drive changes the colour. |
-| **Effect - Spectral** | Cepstral Morph | Cross-synthesis at 4096-point resolution: Carrier keeps its own fine structure and phase while its spectral envelope is bent toward Modulator's. Speech into a pad makes the pad talk. Clarity is the knob that matters - low reads broad formant shapes, 100% is the classic setting, 200% replaces the carrier entirely. Adds 3072 samples of unreported latency, so keep it in series rather than parallel with a dry path. |
-| **Effect - Spectral** | Spectral Delay | Gives each FFT bin its own delay time drawn as a curve, so highs and lows arrive at different times. |
-| **Effect - Spectral** | Spectral Enhance | Boosts quiet bins up to a drawn target curve, or caps loud ones down to it, for spectral exciting or soft limiting. |
-| **Effect - Spectral** | Spectral Filter | A per-bin gain curve drawn freehand - notches, brick walls, or comb shapes. |
-| **Effect - Spectral** | Spectral Freeze | Holds a tiny spectrally smoothed grain of audio and smoothly repeats it, essentially freezing the sound in place. |
-| **Effect - Spectral** | Spectral Gate | Gates each bin independently against a drawn per-bin threshold, Invert turns it into a residual/noise extractor. |
-| **Effect - Pitch** | Pitch Shifter | Shifts the pitch by up to two octaves either way in whole semitones on **Pitch** (and cents on **Fine**) with grains read from a delay line. **Correlated** splices in a new grain every quarter **Grain Size**, each found (a quarter grain either way, to the fraction of a sample) where its waveform lines up with the one before, so steady tones stay steady and chords, drums and noise keep their level; **Crossfade** (10 ms) sets how short the splices are - shorter is punchier, longer smoother. **Grains** lets four overlapping Hann grains fall at random places: airy and shimmering. **Jitter** randomises the grains' timing and length, **Feedback** sends the shifted sound back in (rising or falling shimmer), **Stereo Wide** runs the two sides' grains apart, **Dry Delay Match** delays the dry sound by the wet sound's delay so that **Mix** never combs. Upward shifts are low-passed first, so nothing folds back. |
-| **Effect - Spectral** | Spectral Lock | Filterbank resynthesis retuned by a 12 x 12 note matrix (or the notes on Midi In), with Amount, Isolate, Glide, Shimmer, Spray and Freeze. A new one starts on the minor pentatonic. **Low CPU** (off by default) runs the band bank at half the sample rate for roughly half the processor time. |
-| **Effect - Spectral** | Spectral Pitch Quantizer | A polyphonic FFT pitch quantizer modelled on measurements of Zynaptiq PITCHMAP: a 4096-point STFT hears every tonal partial as a note and moves it where the 12 x 12 matrix says (columns = the note heard, rows = where it goes, the nearest way), keeping the original's smeared, folded FFT tone - a single steady note's partials move each by its own pitch, while chords and gliding notes (vibrato, slides) move note by note. **Tolerance** is a dead zone around each semitone (nothing inside it is corrected), **Intonation** keeps that much of each partial's detune (its vibrato only near the top), **Clean** drops what is not a pure partial, **Glide** slides newly heard notes onto their target, **Warp** bends the moves into one smooth, stretched frequency warp, **Top Fold** folds a note's upper harmonics onto the matrix one by one too (0 % = they stay with their note, a smooth top close to PITCHMAP; 100 % = sparse, piercing and brighter, exactly the module's first version). Noise and notes the matrix leaves alone pass through untouched. A new one starts on C pentatonic folded onto F# pentatonic. Latency 4096 samples. |
-| **Effect - Spectral** | Spectral Morph | Morphs Main In's spectral envelope toward Morph In's envelope, with a drawn curve controlling how much per bin. |
-| **Utility** | ADSR | Per-voice envelope generator, patch its Mod Out into a generator's Env In for classic per-note amplitude shaping. |
-| **Utility** | Always Midi | Holds one note down forever so a generator drones without a keyboard, re-triggering it every "Renew" seconds. |
-| **Utility** | Analog EG | RC envelope with Delay and Hold, curved segments, and a Rev Out. |
-| **Utility** | Arp | Holds a chord and plays it back as an arpeggio via its Midi Out, replacing (not adding to) what a listening generator hears. Arpeggiates the played keys, or any stream patched into its Midi In (e.g. a Piano Roll's chords). **Chance** (how likely each step is to play; the others rest) and **Ratchet** (how often a step becomes a quick burst of **Hits**, 2-4) - at 100 % and 0 % they change nothing. |
-| **Utility** | Audio Thru | Does nothing at all - audio in, identical audio out, purely for bunching cables into a junction or giving a long run a waypoint. |
-| **Utility** | Clock | Tempo-synced pulse generator with swing and gate width, for driving Step Seq, Euclid, S&H and other Trig/Clock inputs. |
-| **Utility** | Crossfade | Equal-power A/B mixer: a cable onto Fade auto-morphs between two sources (an LFO) or hard-switches them (a Gate). |
-| **Utility** | Curve CV | A drawn control curve: place and bend points, choose Curved/Smooth/Step, play in Hz or tempo-synced bars, Loop/Once/Ping-Pong, restart by gate or note. Patch it into any knob - e.g. a Transwave's Position. |
-| **Utility** | Curve Env | Per-voice DAHDSR envelope with curves on attack, decay and release, bipolar Amount and Velocity, with a shape display. |
-| **Utility** | DAW Mod | Exposes a host-automatable parameter as a modulation source, up to twelve instances can be active at once. One DAW Mod can be cabled to as many knobs as you like - round knobs, stepped knobs (Note, Rate, Delay Time...) and bar sliders all take it. |
-| **Utility** | DC Offset | Shifts and scales a signal (Out = In x Gain + Offset), handy for turning a bipolar LFO into a unipolar one or inverting a mod signal. |
-| **Utility** | DC Blocker | VirtualDX7's leaky-integrator DC block: follows a sound's DC offset and takes it off (a one-pole high-pass at Corner, 0 = off); Removed Out is the offset. |
-| **Utility** | Discard Midi | Twelve toggle boxes, one per note class - every class switched on never sounds, so wrong notes stop existing for a listening generator - and **ALL**, which discards every note: patched into a module's Midi In, it keeps the keys away from it. Filters the played keys, or any stream patched into its Midi In. |
-| **Utility** | Draw LFO | An LFO whose 1024-point shape you draw by hand, with a stepped read mode that turns it into a step sequencer for modulation. |
-| **Plugin Utilities** | VirtualDX7 - Envelope | The DX7 4-rate / 4-level envelope as a modulation source. |
-| **Plugin Utilities** | VirtualDX7 - LFO | The DX7 LFO with pitch and amplitude outputs and mod-wheel depth. |
-| **Plugin Utilities** | VirtualDX7 - Pitch EG | The DX7 pitch envelope and transpose as a Pitch In signal. |
-| **Utility** | Macro | One knob that turns many: patch Macro Out into any knobs, of any modules. Each follows the Macro across its whole range (0 % = the knob's minimum, 100 % = its maximum); the cable's depth blends between the knob's own setting and the Macro, a negative depth turns it the other way. The Macro knob takes cables itself (an LFO, Midi Controls, DAW Mod). |
-| **Utility** | Env Follow | Turns any audio signal into a modulation signal by rectifying and smoothing it - the basis for sidechain-style ducking. |
-| **Utility** | Euclid | Euclidean rhythm generator that spreads a chosen number of pulses as evenly as possible across a chosen number of steps. **Chance** (how likely each pulse is to play) and **Ratchet** (how often a pulse becomes a quick burst of **Hits**, 2-4) - at 100 % and 0 % they change nothing. |
-| **Utility** | Gate | Outputs 1 while a voice's note is held and 0 after release, with a small anti-click ramp. |
-| **Utility** | KeyTrack | Outputs each voice's note pitch as a modulation signal, scaled for exact 1-octave-per-octave tracking at 100% depth. |
-| **Utility** | L/R Splitter | Splits a stereo signal into separate left- and right-only outputs. |
-| **Utility** | LFO | Per-voice low-frequency oscillator that re-triggers its phase on every note-on, so each note gets the same modulation shape. |
-| **Utility** | Logic | Combines two gate/modulation signals with boolean or comparison operators (AND, OR, XOR, etc.) for generative triggers. |
-| **Utility** | Midi Add | For any note it hears (the played keys, or any stream on its Midi In), emits the note plus four extra notes at chosen semitone offsets. Chains freely. |
-| **Utility** | Graphic Midi Add | Plays every note it hears plus up to seven more, -48 to +48 semitones away (0 = off); notes that would fall off the keyboard (outside C-1 to G9) are left out. A keyboard on the card shows the chord built on the **Visual (Reference Only)** note, which changes nothing in the sound. |
-| **Utility** | Mixer | Four audio inputs each with its own level knob, summed to a master output. |
-| **Utility** | Multi LFO | Tempo-synced shape LFO with twelve colour-bass shapes plus Rolled random shapes, Retrigger or One Shot, Min/Max range and an inverted output. |
-| **Utility** | Panning | Stereo balance control; an LFO cable onto Pan is auto-panning. |
-| **Utility** | Tuner | Shows the pitch of what comes into Audio In - the note, the cents it is off (with a needle) and the frequency - and passes the audio straight through. Against **A4** (415-466 Hz) in equal temperament, or against the nearest key of an MTS-ESP master when one is connected. One steady note, 25 Hz to 4 kHz. |
-| **Utility** | Piano Roll | Looping note sequencer you draw into, right inside its resizable card (time across, pitch up, up to 256 bars). **Select** / **All** / **Clear** for several notes at once (a box or taps; drag one to move them all). Play/Pause, Tempo or lock to the host tempo (falls back safely when there is none), MIDI file import/export, **Swing** (the second sixteenth of every pair later, up to three to one). **Play All / Stop All** starts every Piano Roll of the patch from its start on the same sample, or stops them all and takes them back to the start (it reads *Stop All* while any of them plays). Its Midi Out feeds any Midi In. |
-| **Utility** | Polyphony Sum | Counts the voices actually sounding and scales the level to match, so a chord does not arrive several times louder than one note. Amount sets the law: 0.5 = 1/sqrt(N) for ordinary chords, 1.0 = 1/N for unison stacks, 0 = bypass. Smooth ramps the gain so voice-count steps don't click. Released voices keep counting until their tail finishes. Where a whole-patch signal (a synth through a Delay) meets voices, the sum there is made once for the patch, counting the voices that reach it. Voices Out reports the live count as modulation. |
-| **Utility** | Quantize | Snaps a pitch-scaled modulation signal to the nearest note of a chosen scale - pair a random S&H and a Pluck with this for instant melodies. |
-| **Utility** | Random LFO | Smooth, Sine, Steps or Random (Lorenz) random modulation per voice, in Hz or tempo-synced. |
-| **Utility** | Record | Start and Stop to Record whatever sound this module reaches, and save it as audio file to your system. The take is stored with the patch (preset files and DAW sessions) until Delete throws it away. |
-| **Utility** | Ring Mod | Multiplies two audio signals together, with Depth blending from clean input A to full ring modulation. |
-| **Utility** | S&H | Clocked sample & hold, samples an internal random source when nothing is patched into Signal In, giving the classic burbling random voltage. |
-| **Utility** | Skew LFO | Skew-morph LFO, Tri and Pulse outs, global, free or tempo-locked. |
-| **Utility** | Slew Limiter | Rate-limits how fast a signal can rise and fall, useful for portamento, custom AR shapes, or softening a square LFO into a trapezoid. |
-| **Utility** | Step Seq | A 16-step pitch/gate sequencer, edited directly in its own step display and running from the host tempo or an external clock. **Chance** (how likely each step is to play) and **Ratchet** (how often a step becomes a quick burst of **Hits**, 2-4) - at 100 % and 0 % they change nothing. |
-| **Utility** | Velocity | Outputs each voice's note-on velocity as a modulation signal, e.g. for touch-sensitive volume or brightness. |
-| **Utility** | Note Random | A value of its own for every note played (Utilities > MIDI): **Mod Out** holds it for the note, so the same key played again comes out a little different - into a Tune for a slight pitch change per note, a Cutoff, a Pan, a Volume or a Drive. **Amount** sets how far it goes (start low: 5-20 %). **Mode**: *Every Note* draws anew each time, *Per Key* gives each key a value that stays (an instrument slightly out of tune with itself), *Both* mixes the two. **Spread** *Centred* keeps most notes close to the middle, *Even* spreads them evenly; **Polarity** both ways or up only. **Drift** lets the value wander slowly while the note is held (**Drift Rate**), **Glide** eases from one note's value to the next, **Seed** picks another set of Per Key values. |
-| **Utility** | MPE | Each note's own expression, with the MPE switch on: **Slide Out** (how far up the key the finger is, CC 74), **Press Out** (pressure) and **Bend Out** (the note's own bend, -1..1 = -48..+48 semitones), per voice - from the on-screen keys (every finger its own note) or an MPE controller. **Smooth** evens out the controllers' steps. |
-| **Utility** | Vector | A joystick for four sources, as on the vector synths: **X** and **Y** place a dot in a square, and the square turned by 45 degrees inside it has **A** (left), **B** (top), **C** (right) and **D** (bottom) at its corners. On a corner only that one sounds, in the middle all four a quarter each, along an edge the two at its ends. Mixes **A-D In** into **Audio Out** by those shares and sends the shares as modulation (**A-D Out**, 0..1, always 1 together) for oscillators' levels, filters or sends to follow. Cable LFOs, envelopes or the Mod Wheel into X and Y to move the dot (per voice when the cables are); **Glide** smooths jumps. The card draws the square, the diamond and the dot (drag it; a double tap centres it), the dot where the cables have moved it, and each corner's share. |
-| **Utility** | Reassigned Spectrogram | SpectralResolve's scrolling spectrogram with spectral reassignment (time and frequency), three inputs in cyan, magenta and yellow whose colours add up where they overlap; any range on a log or linear axis, frequency labels, a tap reads out the frequency and note, Decimation Auto for the finest resolution in a low range. |
-| **Utility** | Reroute Send / Reroute Return | AudioReroute: a Send puts its input onto one of eight buses, every Return on that bus plays it, anywhere in the patch. |
-| **Utility** | Spectrum Compare | SpectralCompare's periodogram: two sources (green, purple) and their difference (yellow), or the difference alone, as a graph or bars, in FFT or reassigned precision; Smooth, Hold, any range, a tap reads out both levels. |
-| **Utility** | Volume | Level control with a multiplicative modulation input that reads as 1.0 when unpatched, so an ADSR into Mod In becomes a per-voice amplitude envelope. |
+| Input / Output | Audio In | The host's audio input, with a level knob. |
+| Input / Output | Audio Out | The patch's output, with Level and Soft Clip, an oversampled soft limiter that never passes 0 dBFS (off in the FX version). |
+| Input / Output | Keyboard Midi | The notes you play as a cable, for a drum's or Droplets' Midi In. |
+| Input / Output | Midi Controls | Pitch bend, mod wheel, aftertouch, any CC and the sustain pedal as cables; sets the bend range. |
+| Input / Output | Midi Learn | One control of your MIDI controller driving any knobs across their range, like a Macro. |
+| Sound Generation | 303 | Bass line synth fitted to recordings of the original hardware. Plays from MIDI (Free, Mono with slide, Poly) or its own 1-4 bar pattern grid, with RANDOM hooks (arps, octaves, acid lines, ambient drifts). |
+| Sound Generation | Additive | Draw up to 64 harmonics, shaped by Tilt, Odd/Even and Stretch. |
+| Sound Generation | Analog Drift | The FM Oscillator with per-voice drift, random phases and up to 7-voice unison. |
+| Sound Generation | Bowed | Physically modelled bowed or blown string that sustains while a note is held. |
+| Sound Generation | Chord Wavetable | Generated chord wavetables with 16-voice chord-stacked unison and spectral morphs. |
+| Sound Generation | Clap | Analog clap from three noise bursts and a tail. |
+| Sound Generation | Complex Osc | West Coast-style FM into a wavefolder, no filter. |
+| Sound Generation | Droplets | Random sine pings following real bubble acoustics. |
+| Sound Generation | Dual VCO | Two VCOs and a mixer, panel-style. |
+| Sound Generation | Formant | Singing oscillator morphing through the vowels A-E-I-O-U. |
+| Sound Generation | Grand | The piano model as a concert grand with sympathetic strings, mics and lid, in two voicings (Felt, Clear). |
+| Sound Generation | Granulator | Granular sampler with a cloud of pitched grains per note; Grain Atk / Rel shape each grain's fade. |
+| Sound Generation | Hats | Analog hi-hats from six detuned squares; Decay goes from closed to open. |
+| Sound Generation | Kick | Analog kick with a pitch-drop envelope and drive. |
+| Sound Generation | Modal Drum | Physically modelled percussion, from marimba to bell. |
+| Sound Generation | Noise | White or pink noise per voice. |
+| Sound Generation | Oscillator | The core polyphonic FM operator with FM In and Env In. |
+| Sound Generation | Phase Distort | Phase-distortion oscillator; DCW morphs the wave without moving the pitch. |
+| Sound Generation | Piano | Real-time physical piano model in three voicings: Felt, Mid and Hard. |
+| Sound Generation | Pluck | Karplus-Strong plucked string. |
+| Sound Generation | PWM Osc | Polysynth VCO with PWM and a square sub-oscillator. |
+| Sound Generation | Resynth Piano | A piano rebuilt from 33 recorded notes as partials, hammer samples and noise (no recordings inside, 1 MB). |
+| Sound Generation | Sampler | Keyboard-mapped sample player with a zoomable waveform. |
+| Sound Generation | Spectral Resynthesis | A sound taken apart by the FFT and played from the keys: time-stretch, freeze, and spectral editing by region or by note, drawn on its spectrogram. |
+| Sound Generation | Snare | Two shell tones and a noise burst for the wires. |
+| Sound Generation | Transwave | Wavetable oscillator generated from a seed and one of twelve archetypes. |
+| Sound Generation | Unison | Up to nine detuned, panned copies of a note. |
+| Sound Generation | Warp Osc | Band-limited morphing oscillator with seven phase warps, 16-voice unison and a Random Amp spectral morph. |
+| Sound Generation | Wavetable | Scans a sample as single-cycle frames. |
+| Sound Generation | Wind | Physically modelled flute, pan flute and clarinet. |
+| Filter | 3-Bell EQ | Three bells on a draggable curve. |
+| Filter | AquaFilter | Saturating ladder and SVF in several modes. |
+| Filter | Bell | A single peaking band. |
+| Filter | Center Comb | Peaking filters spread around a centre frequency. |
+| Filter | Comb Filter | Delay-line comb that rings at a pitch. |
+| Filter | Dual Filter | HPF into LPF with self-oscillating peaks. |
+| Filter | Formant Filter | The vowel bank applied to any audio. |
+| Filter | Highpass | 12 or 24 dB highpass. |
+| Filter | Ladder Filter | Transistor-ladder filter with drive. |
+| Filter | Lowpass | 12 or 24 dB lowpass. |
+| Filter | Notch | Narrow band cut. |
+| Filter | Pitch Lock Filter | Dampens every note not in the chosen pitch classes. |
+| Filter | Resonance Suppressor | Finds and cuts resonances as they happen, with no latency; optional sidechain and a drawable sensitivity curve. |
+| Filter | Shelf EQ | Low shelf, mid peak and high shelf. |
+| Filter | SVF Filter | State-variable LP / BP / HP. |
+| Filter | Warm Ladder | A warm 24 dB ladder. |
+| Effect | 3-Band Compressor | Upward and downward compression in three bands. |
+| Effect | ADSR Delay | Delay with a shapeable envelope per repeat. |
+| Effect | Align | Sub-sample delay, volume and polarity per channel. |
+| Effect | AquaChorus | Liquid chorus / flanger. |
+| Effect | AquaReverb | 8-line FDN reverb with Freeze. |
+| Effect | Band Splitter | Splits audio into three bands. |
+| Effect | Bitcrush | Bit-depth reduction. |
+| Effect | Chorus | Stereo chorus. |
+| Effect | Clip Preserve | Clipper that folds back the detail it cuts, so transients survive. |
+| Effect | Compressor | Stereo-linked compressor. |
+| Effect | Cross Delay | Stereo / cross delay. |
+| Effect | Delay | Tempo-synced stereo delay. |
+| Effect | Drive | Tube, tape, fuzz or crush distortion with auto gain. |
+| Effect | Echo | Tape-style delay with wobble. |
+| Effect | Ensemble | Chorus, phase and three-phase ensemble. |
+| Effect | Flanger | Classic flanger. |
+| Effect | FM | Cross-modulates two signals. |
+| Effect | Free Delay | Any delay time from a fraction of a sample to 10 seconds, from combs to echoes. |
+| Effect | Granulation | The Granulator's engine as a live effect. |
+| Effect | IRForge | Turns a recording or file into an impulse response and convolves with it. |
+| Effect | Limiter | Zero-latency peak limiter. |
+| Effect | Phaser | 2-12 stage phaser. |
+| Effect | Resonator | One resonator with all of Resonate's engines. |
+| Effect | Reverb | Algorithmic reverb. |
+| Effect | Sidechain Comp | Ducks the input by the level of Side In. |
+| Effect | Smooth Hall | Smooth FDN hall. |
+| Effect | Spring Reverb | Physically modelled spring reverb. |
+| Effect | SR Reduce | Sample-rate reduction. |
+| Effect | Stereo Phaser | Stereo phaser with resonance. |
+| Effect | Stereo Width | Mid/side widener with bass mono. |
+| Effect | Tape Wobble | Wow, flutter, saturation and dropouts. |
+| Effect | VST3 Plugin | Loads one of your VST3 plugins into the patch, with its own window (not on Android). |
+| Effect | Vocoder | Classic vocoder. |
+| Effect | Wah | Auto, LFO or pedal wah. |
+| Effect | Waveshaper | Distortion with selectable curves. |
+| Effect - Pitch | Pitch Shifter | Grain-based pitch shifter, ±2 octaves. |
+| Effect - Spectral | Cepstral Morph | Cross-synthesis: the carrier takes on the modulator's spectral envelope. |
+| Effect - Spectral | Spectral Delay | A drawn delay time per FFT bin. |
+| Effect - Spectral | Spectral Enhance | Pushes bins toward a drawn target curve. |
+| Effect - Spectral | Spectral Filter | A drawn per-bin gain curve. |
+| Effect - Spectral | Spectral Freeze | Freezes the sound in place. |
+| Effect - Spectral | Spectral Gate | Per-bin gate against a drawn threshold. |
+| Effect - Spectral | Spectral Lock | Filterbank resynthesis retuned by a note matrix or by MIDI. |
+| Effect - Spectral | Spectral Morph | Morphs one spectral envelope toward another. |
+| Effect - Spectral | Spectral Pitch Quantizer | Polyphonic FFT pitch mapper modelled on measurements of Zynaptiq PITCHMAP: moves every partial to the note a 12 × 12 matrix says. |
+| Utility | ADSR | Per-voice envelope. |
+| Utility | Always Midi | Holds one note forever so a generator drones. |
+| Utility | Analog EG | RC envelope with delay and hold. |
+| Utility | Arp | Arpeggiator with chance and ratchets. |
+| Utility | Audio Thru | Passes audio unchanged, as a cable junction. |
+| Utility | Clock | Tempo-synced pulses with swing. |
+| Utility | Crossfade | Equal-power A/B mixer. |
+| Utility | Curve CV | A drawn control curve, looped or one-shot. |
+| Utility | Curve Env | DAHDSR envelope with curves. |
+| Utility | DAW Mod | A host-automatable parameter as a modulation source. |
+| Utility | DC Blocker | Removes DC offset. |
+| Utility | DC Offset | Shifts and scales a signal. |
+| Utility | Discard Midi | Blocks chosen note classes, or all notes. |
+| Utility | Draw LFO | An LFO you draw by hand. |
+| Utility | Env Follow | Turns audio into a modulation signal. |
+| Utility | Euclid | Euclidean rhythm generator with chance and ratchets. |
+| Utility | Gate | 1 while a note is held. |
+| Utility | Graphic Midi Add | Adds up to seven notes, shown on a keyboard. |
+| Utility | KeyTrack | The note's pitch as modulation. |
+| Utility | L/R Splitter | Splits stereo into left and right. |
+| Utility | LFO | Per-voice LFO. |
+| Utility | Logic | Boolean and comparison logic on gates. |
+| Utility | Macro | One knob that turns many. |
+| Utility | Midi Add | Adds up to four notes at fixed intervals. |
+| Utility | Mixer | Four-channel mixer. |
+| Utility | MPE | Each note's Slide, Pressure and Bend as cables. |
+| Utility | Multi LFO | Tempo-synced shape LFO with colour-bass shapes. |
+| Utility | Note Random | A random value per note or per key. |
+| Utility | Panning | Stereo balance. |
+| Utility | Piano Roll | Resizable looping note sequencer, up to 256 bars, with MIDI file import/export. |
+| Utility | Polyphony Sum | Scales the level to the number of voices so chords don't get louder. |
+| Utility | Quantize | Snaps a pitch signal to a scale. |
+| Utility | Random LFO | Smooth, stepped or chaotic random modulation. |
+| Utility | Reassigned Spectrogram | Scrolling spectrogram with spectral reassignment, three inputs in three colours. |
+| Utility | Record | Records whatever reaches it; the take is saved with the patch. |
+| Utility | Reroute Send / Reroute Return | Audio across the patch on eight buses, without a cable. |
+| Utility | Ring Mod | Multiplies two signals. |
+| Utility | S&H | Clocked sample & hold. |
+| Utility | Skew LFO | Skew-morph LFO. |
+| Utility | Slew Limiter | Limits how fast a signal changes. |
+| Utility | Spectrum Compare | Two spectra and their difference. |
+| Utility | Step Seq | 16-step pitch and gate sequencer with chance and ratchets. |
+| Utility | Tuner | Shows the note, cents and frequency of the input. |
+| Utility | Vector | Vector-synth joystick mixing four sources. |
+| Utility | Velocity | Note velocity as modulation. |
+| Utility | Volume | Level control with a modulation input. |
+
 </details>
 
 <details>
-<summary><strong>Click to expand: the plugins' 163 modules</strong></summary>
+<summary><strong>The plugins' 163 modules</strong></summary>
 
-Every plugin is one module as its **GUI** card (27 cards), and its **Patch** version is made of the modules below (136 in all), each named *Plugin - Part* in the sidebar (for example *Vita - Osc*). What each part does is described under [Plugins](#-plugins).
+Every plugin is one GUI card (27 in all), and its patch version is made of the modules below (136 in all), each named *Plugin - Part* in the sidebar.
 
 | Plugin | Patch-version modules |
 | :--- | :--- |
-| **83ChorusVerb** | Chorus, Delay, Phaser, Reverb |
-| **AliasSynth** | Oscillator |
-| **AlphaBeta** | Oscillator, Balance & Drive, Filter, Envelope, LFO, Mod Matrix, Amp, Chorus, Output |
-| **AlphaBetaFX** | Filter, Chorus |
-| **Aqua Vibrio** | Voice, Effects |
-| **Aquanova** | Oscillator, Noise, Ring Mod, Mixer, Filter, Amp, Envelope, LFO, Vocoder, EQ, Distortion, Comb, Chorus, Delay, Reverb, Effects Mix, Panner, Output, Arpeggiator |
-| **AutoMorphEQ** | Band, Output |
-| **CenterComb** | Comb Bank |
-| **CombWeave** | Comb Osc, Output |
-| **Cove Groove** | Sequencer, Kick, Bass, Clap, Closed Hat, Open Hat, Cymbal, Perc, FX Hits, Bus |
-| **FlowEQ** | Bell, Flow Curve |
-| **FullFilter** | Bell Bank |
-| **GrainFreeze** | Player |
-| **NoteAdder** | Note Filter, Chord, Transpose, Manual Chord, Scale Chord, Per Note Chord |
-| **Phizmo** | Sound, Voice, Osc, Filter, Ring, Bus, Insert FX, Reverb, Output |
-| **PhizmOsc** | Transwave Osc, Scanner, Mixer, Voice Filter, Bus Filter, Envelope, Pitch Env, LFOs, Voice Bus, Chorus, Reverb |
-| **Phorest** | Phaser |
-| **PrecisionUtility** | Utility |
-| **Resonate** | Bank |
-| **SampleField** | Field |
-| **Slicer** | Slice Player |
-| **Soundscape Ecology** | Slot, Field, Gate, Climate, Habitat, Output |
-| **TapElectric** | Hum, Tape Noise, Tape In |
-| **Tidebreeze** | Wave, Envelope, LFO, Filter, Amp, Arp, Insert FX, Send FX, Output |
-| **VirtualDX7** | Operator, Envelope, Pitch EG, LFO, Function, Chord |
-| **Vita** | Voice, Osc, Sampler, Filter, Amp, Env, LFO, Random, Macros, Mod, Mono Voice, Mono Env, Mono LFO, Mono Random, Chorus, Compressor, Delay, Distortion, EQ, Effects Filter, Flanger, Phaser, Reverb, Output |
-| **Vocode** | Vocoder |
+| 83ChorusVerb | Chorus, Delay, Phaser, Reverb |
+| AliasSynth | Oscillator |
+| AlphaBeta | Oscillator, Balance & Drive, Filter, Envelope, LFO, Mod Matrix, Amp, Chorus, Output |
+| AlphaBetaFX | Filter, Chorus |
+| Aqua Vibrio | Voice, Effects |
+| Aquanova | Oscillator, Noise, Ring Mod, Mixer, Filter, Amp, Envelope, LFO, Vocoder, EQ, Distortion, Comb, Chorus, Delay, Reverb, Effects Mix, Panner, Output, Arpeggiator |
+| AutoMorphEQ | Band, Output |
+| CenterComb | Comb Bank |
+| CombWeave | Comb Osc, Output |
+| Cove Groove | Sequencer, Kick, Bass, Clap, Closed Hat, Open Hat, Cymbal, Perc, FX Hits, Bus |
+| FlowEQ | Bell, Flow Curve |
+| FullFilter | Bell Bank |
+| GrainFreeze | Player |
+| NoteAdder | Note Filter, Chord, Transpose, Manual Chord, Scale Chord, Per Note Chord |
+| Phizmo | Sound, Voice, Osc, Filter, Ring, Bus, Insert FX, Reverb, Output |
+| PhizmOsc | Transwave Osc, Scanner, Mixer, Voice Filter, Bus Filter, Envelope, Pitch Env, LFOs, Voice Bus, Chorus, Reverb |
+| Phorest | Phaser |
+| PrecisionUtility | Utility |
+| Resonate | Bank |
+| SampleField | Field |
+| Slicer | Slice Player |
+| Soundscape Ecology | Slot, Field, Gate, Climate, Habitat, Output |
+| TapElectric | Hum, Tape Noise, Tape In |
+| Tidebreeze | Wave, Envelope, LFO, Filter, Amp, Arp, Insert FX, Send FX, Output |
+| VirtualDX7 | Operator, Envelope, Pitch EG, LFO, Function, Chord |
+| Vita | Voice, Osc, Sampler, Filter, Amp, Env, LFO, Random, Macros, Mod, Mono Voice, Mono Env, Mono LFO, Mono Random, Chorus, Compressor, Delay, Distortion, EQ, Effects Filter, Flanger, Phaser, Reverb, Output |
+| Vocode | Vocoder |
+
 </details>
 
-
 ---
 
-## 🛠️ Building from Source
+## Building from Source
 
-The source download holds one source tree (`Source/`) and two Projucer projects for JUCE 9:
+The repository holds one source tree (`Source/`) and two Projucer projects for JUCE 9+:
 
-| Project | Builds |
-| :--- | :--- |
-| `Aquanode_Modular.jucer` | **Aquanode Modular**: the Windows VST3 and standalone `.exe` (Visual Studio 2026 exporter) and the Android app (Android Studio exporter). |
-| `Aquanode_Modular_FX.jucer` | **Aquanode Modular FX**: the Windows VST3 effect (Visual Studio 2026 exporter), built into `Builds_FX/`. Both project files share `JuceLibraryCode/`: resave the one you are about to build in Projucer right before building. |
+- `Aquanode_Modular.jucer`: the synth as Windows VST3 and standalone (Visual Studio 2026 exporter) and the Android app (Android Studio exporter).
+- `Aquanode_Modular_FX.jucer`: the effect version as a Windows VST3, built into `Builds_FX/`.
 
-Both compile exactly the same source files. The FX project differs only in its plugin settings (name, plugin code, an effect that takes MIDI) and in one preprocessor definition, `AQUANODE_FX_BUILD=1`, whose only effect is the default patch: Audio In ➡️ Audio Out instead of Oscillator ➡️ Polyphony Sum ➡️ Audio Out. Both project files sit side by side and share `JuceLibraryCode/`, which Projucer always writes next to the project file: before building, delete `Builds/`, `Builds_FX/` and `JuceLibraryCode/`, then save the project you want in Projucer.
+Both compile the same source files. The FX project only differs in its plugin settings and the define `AQUANODE_FX_BUILD=1`, which changes the default patch.
 
 1. Open a project in Projucer and point the exporter's module paths at your JUCE `modules` folder.
-2. Save the project, open the generated Visual Studio solution (or Android Studio project), and build.
+2. Save it, then open the generated Visual Studio solution or Android Studio project and build.
 
-When you add source files, add them to both project files. The project's file groups mirror the folders below.
+Both projects write to the same `JuceLibraryCode/` folder, so before switching between them, delete `Builds/`, `Builds_FX/` and `JuceLibraryCode/` and save the project you want to build. New source files have to be added to both projects.
 
----
+### Where things are
 
-## 🧭 Finding Your Way Around the Source
-
-| Folder | What is in it |
+| Folder | Contents |
 | :--- | :--- |
-| `Source/Engine` | The audio processor, split by job: `PluginProcessor` (set-up, parameters, the module catalogue), `ProcessorAudio` (the audio callback), `ProcessorVoices` (notes, voices, MIDI streams), `ProcessorPatch` (building and changing a patch), `ProcessorGraph` (cables, the render order, feedback), `ProcessorState` (saving and loading), `ProcessorHistory` (undo / redo); `PatchStateFiles` (`.aqua` files), `PatchRender` (Render to File), `Tuning` (MTS-ESP), `Mutation.h` (the Mutator). |
-| `Source/Editor` | The interface, one file per part: `PluginEditor` (the window and top bar), `PatchCanvas` (the patch area, cables, zoom), `ModuleCard` (a module's card), `Sidebar` (with `SidebarHeader`), `ThemePanel` (colours), `MutatorPanel`, `ModulationTable`, `RenderToFile`, `KeyboardBar` and `ExpressiveKeyboard` (the on-screen keys, MPE); `EditorShared.h` holds the layout constants and the Skeuomorphic look they share. |
-| `Source/Modules` | Every module, in folders named like the sidebar: `InputOutput`, `SoundGeneration`, `Filters`, `Effects`, `Utilities`, each with its groups (`SoundGeneration/Oscillators`, `Utilities/LFOs`, ...). `Core` has the module base classes (`ModuleCore`) and the list of all modules (`ModuleRegistry.cpp`); `Shared` the DSP several modules use. A module is a `.h` / `.cpp` pair named after it (`WahModule.h`), its description and knobs at the end of the `.cpp`. |
-| `Source/Plugins` | The built-in plugins as Aquanode sees them: one folder per plugin with its card wrapper (`Plugin<Name>.cpp`) and its patch version (`<Name>Patch.cpp`); `Host` holds the plugin catalogue (`PluginCatalog.cpp`, the sidebar's descriptions), the shared patch-version helpers and the VST3 host module. |
-| `Source/PluginSources` | The plugins' own sources, one folder each (`aquavibrio`, `virtualdx7`, `vita`, ...), with the small changes they need to run inside Aquanode Modular. |
-| `Source/Presets` | Random Preset and Add Effect: the engines, the genre recipes, the DX7 voice generator and the hand-made presets. |
-| `Source/Platform` | Android only: the system file picker and the app's document folders. |
-| `Source/Resources` | The app icon. |
+| `Source/Engine` | The audio processor: audio callback, voices and MIDI, patch building, cable graph, saving and loading, undo, Render to File, MTS-ESP, the Mutator. |
+| `Source/Editor` | The interface: window and top bar, patch canvas, module cards, sidebar, colour panel, Mutator, Modulation table, on-screen keyboard. |
+| `Source/Modules` | Every module, in folders named like the sidebar. `Core` has the base classes and the module list (`ModuleRegistry.cpp`), `Shared` the shared DSP. |
+| `Source/Plugins` | The built-in plugins' card wrappers and patch versions, the plugin catalogue and the VST3 host. |
+| `Source/PluginSources` | The plugins' own sources, with the small changes needed to run inside Aquanode Modular. |
+| `Source/Presets` | Random Preset and Add Effect: the engines, genre recipes, DX7 voice generator and hand-made presets. |
+| `Source/Platform` | Android only: the system file picker and document folders. |
+
+### Vita
+
+Vita is a copy of the GPL Vital sources (the `measured-1.5.5` branch) in `Source/PluginSources/vita/Source`, compiled as one unity build by `Source/Plugins/Vita/PluginVita.cpp`. Vital's name, logo and everything online are removed. The card draws with `juce::Graphics` instead of OpenGL, so it's sharp at any zoom. Its patch version (`PluginVitaPatch.h`) runs Vital's own modules per Aquanode voice in 32-sample blocks and matches the card within about 0.5 dB on the init preset; it has no 2x oversampling and no tuning files.
 
 ---
 
-## 🌀 Vita, for Developers
+## Credits
 
-* **Sources:** a flat copy of the GPL Vital sources (the `measured-1.5.5` branch) in `Source/PluginSources/vita/Source`, compiled once by `Source/Plugins/Vita/PluginVita.cpp`, a unity build inside `namespace aqp_vita` (its context in `PluginVitaConfig.h`; the catalogue id is `"vita"`). Vital's name and logo are gone (the logo is a sine ring, the word mark reads VITA), and so is everything online: no update check, no sign-in, no downloads, no preset browser of folders on disk.
-* **The card:** no OpenGL. Every `OpenGlComponent::render` draws with `juce::Graphics` (`vita_gfx.h/.cpp` keeps the little of Vital's shader code that computes curves), in one pass at the screen's own pixel scale, so it is sharp at any zoom; about 230 ms to open, 30 fps on the desktop and 24 on Android, slower while nothing moves. Menus are the app's own `juce::PopupMenu`s (`FullInterface::popupSelector` / `dualPopupSelector` in `full_interface.cpp`, shown by `showVitaMenu`). The Random Amplitudes morph has Vital 1.5's die (`RandomizeSeedButton` in `oscillator_section.h`). No splash and no resizing: a tap on the logo shows the credit (`header_section.cpp`).
-* **Its library** (`vita_library.h/.cpp`): Vita knows only what was loaded into it - Open Preset (`.vital`), Import Bank (`.vitalbank`), Save Preset, Export Bank; switching presets keeps the edits of the one left, and *Keep in Patch* (on by default) stores the whole library in the Aquanode patch.
-* **The patch version** (`Source/Plugins/Vita/PluginVitaPatch.h`, compiled at the end of `PluginVita.cpp`): Voice → Osc 1-3 / Sampler → Filter 1 / 2 → Amp → the effects in the preset's order → Output, with Env, LFO, Random, Voice and Macros cabled onto knobs (through *Vita - Mod* when a modulation is bipolar, curved, remapped or modulated itself). Every per-voice module keeps one Vital module per Aquanode voice and runs it in 32-sample blocks; knobs are Vital's controls in Vital's units, and a cable of depth d is a Vital modulation of amount d. Effects driven by a voice source get a *Mono* copy of it that follows the newest note. Checked with `plugin_patch_test` against the card: the init preset within 0.5 dB, at about 1.7 times the card's CPU. It differs from the card in having no 2x oversampling, in modulation arriving once per 32-sample block (an audio input one block late), in hearing stereo modulation as the mean of its sides, and in mono legato not keeping envelopes running; tuning files are not used.
-
----
-
-## 🙏 Credits
-
-* **Vita** is adapted from the Vital synthesizer by Matt Tytel, under the GNU GPL v3 (`Source/PluginSources/vita/VITAL_LICENSE` and `VITAL_README.md`).
-* **VirtualDX7**'s VDX7 emulation is VDX7 by chiaccona, under the GNU GPL v3. It uses **libsamplerate** by Erik de Castro Lopo (2-clause BSD) and the **MTS-ESP** client library by ODDSound (a permissive licence), whose licences are beside them in `Source/PluginSources/virtualdx7/Source/External`. Aquanode Modular's own microtuning uses the same MTS-ESP client.
-* **AlphaBeta** is a tribute to LinPlug's Alpha 3.
-* Vita's sources bring their own libraries (kissfft, concurrentqueue and others), each with its licence in its folder.
+- **Vita** is adapted from the Vital synthesizer by Matt Tytel, under the GNU GPL v3 (`Source/PluginSources/vita/VITAL_LICENSE`). Its bundled libraries (kissfft, concurrentqueue and others) carry their own licences.
+- **VirtualDX7**'s VDX7 emulation is VDX7 by chiaccona, under the GNU GPL v3. It uses **libsamplerate** by Erik de Castro Lopo (BSD) and the **MTS-ESP** client library by ODDSound, whose licences are in `Source/PluginSources/virtualdx7/Source/External`.
+- **AlphaBeta** is a tribute to LinPlug's Alpha 3.
 
 ---
 
-## 📜 Licence
+## Licence
 
-Aquanode Modular includes Vita, which is adapted from the Vital synthesizer by Matt Tytel and licensed under the GNU General Public License, version 3. Because Vital is GPL, Aquanode Modular is too: the synth, the FX version, the Android app, their source code and every adaptation of them are licensed under the GNU GPL v3 for as long as they include Vita (see `LICENSE`). You may use, share and change them under the same licence, and whoever passes on a build passes on its complete source with it.
+Aquanode Modular (the synth, the FX version, the Android app and their source code) is licensed under the GNU AGPL v3, in line with JUCE’s open-source licence (see LICENSE). It includes Vita, adapted from Vital by Matt Tytel, and VirtualDX7’s VDX7 emulation by chiaccona, both under the GNU GPL v3. Those parts keep their licence, which permits combining them with AGPL v3 code (GPL v3, section 13). You may use, share and change it under the same licence; whoever passes on a build passes on its source with it.
