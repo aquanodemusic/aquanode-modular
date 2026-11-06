@@ -2,7 +2,7 @@
 
 ![Aquanode Modular Showcase](aquanode_showcase.png)
 
-Download builds from the [Releases](../../../../releases) page. Current version: 5.15.0.
+Download builds from the [Releases](https://github.com/aquanodemusic/aquanode-modular/releases) page. Current version: 5.15.0.
 
 ---
 
@@ -10,7 +10,7 @@ Download builds from the [Releases](../../../../releases) page. Current version:
 
 **Aquanode Modular** is a free modular synthesizer for Windows (VST3 plugin and standalone `.exe`) and Android, with an effect version, **Aquanode Modular FX**, precompiled as a Windows VST3. The full JUCE/C++ source code is in this repository and can be compiled for any platform JUCE supports. It was created with the assistance of Claude, the AI by Anthropic.
 
-**This version of Aquanode Modular is the main one and contains many updates over the one in my** *aquanode-plugins* **repository. Some of the enhancements in this version include:**
+**This version of Aquanode Modular is the main one and contains many updates over the one in my** [aquanode-plugins](https://github.com/aquanodemusic/aquanode-plugins) **repository. Some of the enhancements in this version include:**
 - VST3 import using the VST3 module (not in the Android version, as VSTs are not compatible with Android),
 - MPE capability,
 - more of my plugins from the aforementioned repository pre-included in the Plugins section of the sidebar,
