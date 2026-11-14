@@ -92,25 +92,64 @@ struct ThemeColours
     }
 
     juce::Colour colour[NumSlots];
+    juce::Colour glassCol[NumSlots];   // the Glass look's own palette (its slots mean what glassName says)
     bool showGrid { true };   // the "+" markers on the patch area
+    bool wireLines { false };  // the cables drawn as straight lines instead of hanging down
+    bool fallingLeaves { true };   // Glass: the leaves drifting down over the patch area
+    // (Grid, Wire and Leaves are kept in the app's settings and in every patch)
     // the Skeuomorphic look: the module cards shaded like hardware panels, their
     // knobs as glossy caps, their readouts as small green screens (the colours
     // stay the colourway's). Not touched by Reset All.
     bool skeuomorphic { false };
+    // the Glass look (after the Soundscape Ecology plugin): a jungle gradient
+    // under the patch, frosted translucent cards and panels, luminous knob arcs,
+    // white text - in its own palette of greens, lagoon blues and aqua while
+    // it is on (the colourway is kept and comes back with it off). Never on
+    // together with Skeuomorphic.
+    bool glass { false };
 
-    ThemeColours() { resetAll(); }
+    ThemeColours() { resetAll(); resetGlass(); }
     void resetAll() { for (int i = 0; i < NumSlots; ++i) colour[i] = defaultColour (i); showGrid = true; }
-    juce::Colour get (int slot) const { return colour[slot]; }
+    void resetGlass() { for (int i = 0; i < NumSlots; ++i) glassCol[i] = glassDefault (i); }
+    juce::Colour get (int slot) const { return glass ? glassCol[slot] : colour[slot]; }
+    // the palette the colour panel edits: the Glass one while Glass is on
+    juce::Colour& edited (int slot) { return glass ? glassCol[slot] : colour[slot]; }
+    juce::Colour editedDefault (int slot) const { return glass ? glassDefault (slot) : defaultColour (slot); }
+    const char* label (int slot) const { return glass ? glassName (slot) : name (slot); }
+
+    // the Glass look's palette (Soundscape Ecology's greens, lagoon blues and
+    // aqua). Its two backgrounds are the jungle gradient's top and bottom (the
+    // bottom also tints the frosted bars and panes); Sound Generation, Filters
+    // and Effects colour the gradient's middle and, with Input / Output, its
+    // light blooms; the knob slots are the drifting leaves and the glass sheen.
+    static juce::Colour glassDefault (int slot)
+    {
+        static const juce::uint32 argb[NumSlots] = {
+            0xff32a1a8, 0xff0c482e, 0xffffffff, 0xff0c2a24,
+            0xff5fe3e0, 0xff2fd17a, 0xff17b8d4, 0xffa8f05a, 0xffe0a86a,   // aqua, canopy, lagoon, new growth, warm bark
+            0xffc8f5d8, 0xff5fe3e0,
+            0xffeafff2, 0xffffffff };
+        return juce::Colour (argb[slot]);
+    }
+    static const char* glassName (int slot)
+    {
+        static const char* names[NumSlots] = {
+            "Gradient Top", "Gradient Bottom", "Light Text", "Dark Text",
+            "Input / Output", "Sound Generation", "Filters", "Effects", "Utilities",
+            "Plugin Titles", "Random Preset", "Leaves", "Sheen" };
+        return names[slot];
+    }
 
     // text on a background: the Dark Text colour on light ones, the Light Text
     // colour on dark ones (above `threshold` perceived brightness counts as light)
     juce::Colour textOn (juce::Colour background, float threshold = 0.55f) const
     {
-        return background.getPerceivedBrightness() > threshold ? colour[DarkText] : colour[LightText];
+        return background.getPerceivedBrightness() > threshold ? get (DarkText) : get (LightText);
     }
     // module cards keep dark text on every default card colour; only a card
     // given a really dark colour of its own switches to the light text
-    juce::Colour textOnCard (juce::Colour card) const { return textOn (card, 0.33f); }
+    // (Glass: the cards are frosted glass over the green - white text on all)
+    juce::Colour textOnCard (juce::Colour card) const { return glass ? juce::Colours::white.withAlpha (0.94f) : textOn (card, 0.33f); }
 };
 
 inline ThemeColours& themeColours()
@@ -144,7 +183,7 @@ inline juce::Colour familyColour (ModuleFamily f, ModuleSection fallback)
 // sidebar's colour in a colourway (or any sidebar colour of your own)
 inline bool barsAreThemed()
 {
-    return themeColours().get (ThemeColours::Sidebar) != ThemeColours::defaultColour (ThemeColours::Sidebar);
+    return themeColours().glass || themeColours().get (ThemeColours::Sidebar) != ThemeColours::defaultColour (ThemeColours::Sidebar);
 }
 inline juce::Colour barColour()
 {
@@ -192,6 +231,18 @@ struct ParamSpec
     {
         visibleWhenParamId = paramId;
         visibleWhenEquals = equals;
+        return *this;
+    }
+    // a second condition, both must hold (e.g. an engine's knob that also
+    // waits for a mode)
+    juce::String visibleWhen2ParamId;
+    float visibleWhen2Equals { 0.0f };
+    ParamSpec& alsoVisibleWhen (const juce::String& paramId, float equals)
+    {
+        if (visibleWhenParamId.isEmpty())
+            return visibleWhen (paramId, equals);
+        visibleWhen2ParamId = paramId;
+        visibleWhen2Equals = equals;
         return *this;
     }
 
@@ -896,6 +947,14 @@ static constexpr int kMaxDriverEventsPerSample = 160;
 // What the host said about its transport this block. In the standalone app,
 // on Android and in hosts that report nothing, hasBpm stays false - anything
 // offering "lock to host tempo" must fall back to its own tempo then.
+// A plugin that can ask for the tempo of the patch it sits in to change (Fruit DAW; an Aquanode
+// Modular nested in one hands the request on). See SynthModule::takeTempoRequest.
+struct TempoRequester
+{
+    virtual ~TempoRequester() = default;
+    virtual double takeTempoRequest() = 0;          // audio thread; 0: none
+};
+
 struct HostTransport
 {
     bool hasBpm { false };
@@ -949,10 +1008,13 @@ public:
         paramMod.assign (n, 0.0f);
         paramMin.resize (n);
         paramMax.resize (n);
+        paramStepped.resize (n);
         for (size_t i = 0; i < n; ++i)
         {
             paramMin[i] = d.params[i].minValue;
             paramMax[i] = d.params[i].maxValue;
+            const auto t = d.params[i].type;
+            paramStepped[i] = (t == ParamType::Combo || t == ParamType::RotarySteppedList || t == ParamType::Button) ? 1 : 0;
         }
         for (auto& f : inputConnectedFlags) f.store (false, std::memory_order_relaxed);
     }
@@ -963,6 +1025,10 @@ public:
     virtual void prepare (double newSampleRate) { sampleRate = newSampleRate; }
     virtual void reset() {}                            // wipe transient state (voices/filters/delays), no reallocation
     virtual void blockStart() {}                       // once per processBlock (latch buffers etc.)
+    // A tempo this module wants the patch to take (Fruit DAW's "set the song's tempo to this
+    // sample's"); 0: none. Asked once a block, audio thread; it goes into the BPM box, or up to
+    // the host of a nested Aquanode.
+    virtual double takeTempoRequest() { return 0.0; }
     virtual void setTempo (double bpm) { tempoBpm = bpm; }
     void setHostTransport (const HostTransport& t) { hostTransport = t; }
     void setMidiControls (const MidiControlState* state) { midiControls = state; }
@@ -1085,6 +1151,15 @@ public:
     // called once per voice with that voice's own signals.
     virtual VoiceMode voiceMode() const { return VoiceMode::Global; }
 
+    // A per-voice modulation source that can just as well run on its own (the
+    // LFOs). Run per voice, it only exists while voices sound - so on a knob of
+    // a module in the global lane (a 303 playing its own notes, a delay, a
+    // reverb) it did nothing between notes and was summed over the voices
+    // while they played. When nothing it feeds runs per voice, the graph puts
+    // such a module in the global lane instead, where it free-runs through
+    // processSample. Its processSample must then work without note-ons.
+    virtual bool freeRunsWhenGlobal() const { return false; }
+
     // Global lane. inputs/outputs indexed by descriptor input/output order.
     // Audio sockets use both channels; Modulation sockets use channel 0 only.
     // A module in the global lane that wants to know how many voices are
@@ -1121,6 +1196,12 @@ public:
     // module's voices sound. -1: none (every other module). Audio thread.
     virtual int globalTapInput() const { return -1; }
     virtual void globalTapSample (const StereoFrame& frame) { juce::ignoreUnused (frame); }
+
+    // How many samples late this module's audio comes out (an FFT's frame).
+    // The engine adds them up along every path from Audio In to Audio Out and
+    // reports the longest to the host, so a DAW lines the track up; inside the
+    // patch, a module with a Dry/Wet keeps its own dry path in step.
+    virtual int latencySamples() const { return 0; }
 
     // how long this module keeps a voice audible after note-off (e.g. an
     // ADSR's release). The engine keeps the voice alive for the patch's max.
@@ -1220,8 +1301,12 @@ public:
     {
         const float base = paramValues[(size_t) index].load (std::memory_order_relaxed);
         const float mod = paramMod[(size_t) index];
-        return mod == 0.0f ? base
-                           : juce::jlimit (paramMin[(size_t) index], paramMax[(size_t) index], base + mod);
+        if (mod == 0.0f)
+            return base;
+        const float v = juce::jlimit (paramMin[(size_t) index], paramMax[(size_t) index], base + mod);
+        // a list / switch moves to the nearest choice: modulated either way it
+        // steps at the half-way points (most modules read it as (int) value)
+        return paramStepped[(size_t) index] != 0 ? std::round (v) : v;
     }
 
     // polyphony limit for sound generators that expose a "voices" knob;
@@ -1386,12 +1471,69 @@ public:
     virtual int preferredModuleWidth() const { return 0; }
     virtual int extraContentHeight() const { return 0; }
 
+    //=== the card's live graph (filters' visualizer) ============================
+    // While a card shows its graph, the engine copies the module's first input
+    // and first output (mono, all voices summed) into this ring, sample by
+    // sample; the card reads the newest stretch of it. The ring is made on the
+    // message thread before the tap is switched on, and kept from then on.
+    struct Tap
+    {
+        static constexpr int size = 8192;   // a power of two
+        float in[size] {}, out[size] {};
+        std::atomic<int> pos { 0 };
+    };
+    std::atomic<bool> tapOn { false };
+    void enableTap (bool on)
+    {
+        if (on && tap == nullptr)
+            tap = std::make_unique<Tap>();
+        tapOn.store (on && tap != nullptr, std::memory_order_release);
+    }
+    void tapWrite (float in, float out) noexcept
+    {
+        auto& t = *tap;
+        const int p = t.pos.load (std::memory_order_relaxed);
+        t.in[p] = in;
+        t.out[p] = out;
+        t.pos.store ((p + 1) & (Tap::size - 1), std::memory_order_release);
+    }
+    // the newest n samples (oldest first), into in / out
+    void tapRead (float* in, float* out, int n) const
+    {
+        if (tap == nullptr) return;
+        const int end = tap->pos.load (std::memory_order_acquire);
+        for (int i = 0; i < n; ++i)
+        {
+            const int p = (end - n + i) & (Tap::size - 1);
+            in[i] = tap->in[p];
+            out[i] = tap->out[p];
+        }
+    }
+    std::unique_ptr<Tap> tap;
+    double tapSampleRate() const { return sampleRate; }
+
+    //=== the static curve (a filter card's Graph pill) =======================
+    // The response the knobs set - worked out from the filter's own maths, no
+    // signal involved: its gain in dB at each of n frequencies (Hz), from the
+    // knobs as set (cable modulation left out). A drive that saturates rather
+    // than amplifies is left out too: the curve is the filter's shape at
+    // ordinary levels. False: this module has no curve (no Graph pill).
+    // Message thread.
+    virtual bool magnitudeResponseDb (const float* hz, float* db, int n) const
+    {
+        juce::ignoreUnused (hz, db, n);
+        return false;
+    }
+
     //=== custom state ========================================================
     // For data too big or too structured to live as parameters - e.g. Draw
     // LFO's 1024-point curve, which as hidden params would mean 1024 XML
     // elements per instance. Returning a non-empty string from saveCustomState
     // gets it stored in the patch (and copied on clone) and handed back to
     // loadCustomState. Message thread only.
+    // Cards that belong together (Fruit DAW's four parts): modules with the same
+    // non-empty group are deleted together and are not cloned. Message thread.
+    virtual juce::String linkGroup() const { return {}; }
     virtual juce::String saveCustomState() const { return {}; }
     virtual void loadCustomState (const juce::String& state) { juce::ignoreUnused (state); }
 
@@ -1482,6 +1624,7 @@ private:
     const ModuleDescriptor* descriptor { nullptr };
     std::unique_ptr<std::atomic<float>[]> paramValues;
     std::vector<float> paramMod, paramMin, paramMax;   // paramMod: audio thread only
+    std::vector<uint8_t> paramStepped;                  // a list / switch (param() rounds it)
     std::map<juce::String, float> legacyValues;          // removed depth knobs (message thread)
     int voicesParamIndex { -1 };
     int outTrimParamIndex { -1 };
@@ -1513,6 +1656,30 @@ private:
     JUCE_DECLARE_WEAK_REFERENCEABLE (SynthModule)
     JUCE_DECLARE_NON_COPYABLE (SynthModule)
 };
+
+//==============================================================================
+// shutdownSafe<T>() - one T for the whole app, like a function's static, but
+// deleted when JUCE shuts down (the last plugin instance closing) instead of
+// when the plugin's DLL is unloaded. A static that holds images, typefaces or
+// other GUI resources must not outlive JUCE: on Windows its Direct2D bitmap
+// would be released after Direct2D itself is gone, and a DAW closing would
+// crash. If JUCE starts again (a new instance), a new T is made.
+//==============================================================================
+template <typename T>
+T& shutdownSafe()
+{
+    struct Holder final : public juce::DeletedAtShutdown
+    {
+        T object;
+        ~Holder() override { slot() = nullptr; }
+        static Holder*& slot() { static Holder* h = nullptr; return h; }
+    };
+    JUCE_ASSERT_MESSAGE_THREAD
+    auto*& h = Holder::slot();
+    if (h == nullptr)
+        h = new Holder();
+    return h->object;
+}
 
 //==============================================================================
 // ModuleFactory - Meyer's singleton, self-registration target

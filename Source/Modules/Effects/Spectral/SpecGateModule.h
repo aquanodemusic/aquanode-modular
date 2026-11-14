@@ -20,7 +20,7 @@ protected:
     void processSpectrum (int channel, std::complex<float>* bins, const std::complex<float>*) override
     {
         float maxMag = 1.0e-4f;
-        for (int b = 0; b < kNumBins; ++b)
+        for (int b = 0; b < numBins; ++b)
             maxMag = juce::jmax (maxMag, std::abs (bins[b]));
 
         const bool invert = param (pInvert) > 0.5f;
@@ -29,9 +29,9 @@ protected:
         const float smoothMs = param (pSmooth);
         const float coeff = smoothMs < 0.5f
             ? 1.0f
-            : 1.0f - std::exp ((float) (-(double) kHop / (smoothMs * 0.001 * sampleRate)));
+            : 1.0f - std::exp ((float) (-(double) hop / (smoothMs * 0.001 * sampleRate)));
 
-        for (int b = 0; b < kNumBins; ++b)
+        for (int b = 0; b < numBins; ++b)
         {
             const float threshDB = binCurve[b] * 63.0f - 60.0f;
             const float thresh = maxMag * std::pow (10.0f, threshDB / 20.0f);
@@ -49,7 +49,7 @@ protected:
     void spectralReset() override
     {
         for (int c = 0; c < 2; ++c)
-            for (int b = 0; b < kNumBins; ++b)
+            for (int b = 0; b < numBins; ++b)
                 gateGain[c][b] = 0.0f;
     }
 

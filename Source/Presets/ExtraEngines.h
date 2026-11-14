@@ -16,4 +16,8 @@ namespace aquanode::presets
     };
 
     const std::vector<ExtraEngine>& extraEngines();
+
+    // the Spectra pad (remade from a reference pad): variation 0 builds the
+    // reference as measured, 1 the Random Preset's spread around it
+    juce::String buildSpectraPad (AquanodeModularAudioProcessor& p, juce::uint32 seed, float variation);
 }

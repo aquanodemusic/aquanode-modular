@@ -18,13 +18,13 @@ public:
 protected:
     void processSpectrum (int, std::complex<float>* bins, const std::complex<float>*) override
     {
-        for (int b = 0; b < kNumBins; ++b)
+        for (int b = 0; b < numBins; ++b)
             bins[b] *= gainCache[b];
     }
 
     void curveChanged() override
     {
-        for (int b = 0; b < kNumBins; ++b)
+        for (int b = 0; b < numBins; ++b)
         {
             const float db = binCurve[b] * 72.0f - 60.0f;   // -60 .. +12 dB
             gainCache[b] = db <= -59.5f ? 0.0f : std::pow (10.0f, db / 20.0f);

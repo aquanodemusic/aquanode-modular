@@ -1,4 +1,5 @@
 #include "FormantFilterModule.h"
+#include "../../Core/FilterResponse.h"
 
 using namespace aquanode;
 
@@ -21,6 +22,41 @@ namespace
         { 1.0f, 0.45f, 0.10f },
         { 1.0f, 0.28f, 0.08f }
     };
+}
+
+// the three Chamberlin band-passes (low += f band; high = x - low - q band;
+// band += f high), whose band out is f (1 - z^-1) / ((1 - z^-1)^2 +
+// f q z^-1 (1 - z^-1) + f^2 z^-1); their weighted sum through the soft clip
+// (0.9 at ordinary levels) and Level, mixed with the dry input
+bool FormantFilterModule::magnitudeResponseDb (const float* hz, float* db, int n) const
+{
+    const float vowelPos = juce::jlimit (0.0f, 1.0f, getParameterBase (pVowel) * 0.01f) * (kVowels - 1);
+    const int i0 = juce::jlimit (0, kVowels - 1, (int) vowelPos);
+    const int i1 = juce::jmin (kVowels - 1, i0 + 1);
+    const float t = vowelPos - (float) i0;
+    const double sizeScale = std::pow (2.0, getParameterBase (pSize) / 12.0);
+    const double damping = juce::jlimit (0.02, 1.0, 1.0 - getParameterBase (pResonance) * 0.0098);
+    const double wet = juce::jlimit (0.0, 1.0, getParameterBase (pDryWet) * 0.01);
+    const double level = getParameterBase (pLevel);
+
+    double fq[kFormants], lvl[kFormants];
+    for (int f = 0; f < kFormants; ++f)
+    {
+        const double centre = (kFreq[i0][f] * (1.0f - t) + kFreq[i1][f] * t) * sizeScale;
+        const double fc = juce::jlimit (60.0, sampleRate * 0.22, centre);
+        fq[f] = 2.0 * std::sin (juce::MathConstants<double>::pi * fc / sampleRate);
+        lvl[f] = kLevel[i0][f] * (1.0f - t) + kLevel[i1][f] * t;
+    }
+    for (int i = 0; i < n; ++i)
+    {
+        const auto z1 = response::zInv (hz[i], sampleRate);
+        const auto d1 = 1.0 - z1;
+        response::C sum = 0.0;
+        for (int f = 0; f < kFormants; ++f)
+            sum += lvl[f] * fq[f] * d1 / (d1 * d1 + fq[f] * damping * z1 * d1 + fq[f] * fq[f] * z1);
+        db[i] = response::db ((1.0 - wet) + wet * 0.9 * level * sum);
+    }
+    return true;
 }
 
 void FormantFilterModule::renderLane (int lane, const StereoFrame* inputs, StereoFrame* outputs)

@@ -2,7 +2,7 @@
 
 <JUCERPROJECT id="GZWYPf" name="Aquanode Modular" projectType="audioplug" useAppConfig="0"
               pluginName="Aquanode Modular" pluginManufacturerCode="Aqnd" pluginCode="Aqmo"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="5.15.0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="6.2.1"
               companyName="aquanodemusic" companyCopyright="none" companyEmail="node.aqua@gmail.com"
               pluginFormats="buildStandalone,buildVST3" pluginCharacteristicsValue="pluginIsSynth,pluginProducesMidiOut,pluginWantsMidiIn">
   <MAINGROUP id="m2RO6u" name="Aquanode Modular">
@@ -62,6 +62,8 @@
           <FILE id="UaTqLz" name="DelayModule.h" compile="0" resource="0" file="Source/Modules/Effects/Delays/DelayModule.h"/>
           <FILE id="b58786" name="EchoModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Delays/EchoModule.cpp"/>
           <FILE id="d32585" name="EchoModule.h" compile="0" resource="0" file="Source/Modules/Effects/Delays/EchoModule.h"/>
+          <FILE id="aq895819" name="DubEchoModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Delays/DubEchoModule.cpp"/>
+          <FILE id="aq8aac71" name="DubEchoModule.h" compile="0" resource="0" file="Source/Modules/Effects/Delays/DubEchoModule.h"/>
           <FILE id="aqFD1c" name="FreeDelayModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Delays/FreeDelayModule.cpp"/>
         </GROUP>
         <GROUP id="{DABF68B1-34D1-5039-2563-64236BF0333E}" name="Distortion">
@@ -73,9 +75,12 @@
           <FILE id="aqb01h" name="SRReduceModule.h" compile="0" resource="0" file="Source/Modules/Effects/Distortion/SRReduceModule.h"/>
           <FILE id="aqg6c" name="WaveshaperModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Distortion/WaveshaperModule.cpp"/>
           <FILE id="aqg6h" name="WaveshaperModule.h" compile="0" resource="0" file="Source/Modules/Effects/Distortion/WaveshaperModule.h"/>
+          <FILE id="aqspf1" name="SplineFolderModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Distortion/SplineFolderModule.cpp"/>
         </GROUP>
         <GROUP id="{73A27EF5-A430-45C0-6479-F036A353FD6A}" name="Dynamics">
           <FILE id="aqx08c" name="CompressorModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Dynamics/CompressorModule.cpp"/>
+          <FILE id="aqopt1" name="OptoCompModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Dynamics/OptoCompModule.cpp"/>
+          <FILE id="aqfet1" name="FetCompModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Dynamics/FetCompModule.cpp"/>
           <FILE id="aqx08h" name="CompressorModule.h" compile="0" resource="0" file="Source/Modules/Effects/Dynamics/CompressorModule.h"/>
           <FILE id="aqa04c" name="LimiterModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Dynamics/LimiterModule.cpp"/>
           <FILE id="aqa04h" name="LimiterModule.h" compile="0" resource="0" file="Source/Modules/Effects/Dynamics/LimiterModule.h"/>
@@ -99,6 +104,10 @@
           <FILE id="aqn4c" name="LiquidChorModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Modulation/LiquidChorModule.cpp"/>
           <FILE id="aqn4h" name="LiquidChorModule.h" compile="0" resource="0" file="Source/Modules/Effects/Modulation/LiquidChorModule.h"/>
           <FILE id="r13KLR" name="PhaserModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Modulation/PhaserModule.cpp"/>
+          <FILE id="aq59d584" name="RotaryModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Modulation/RotaryModule.cpp"/>
+          <FILE id="aq497ade" name="RotaryModule.h" compile="0" resource="0" file="Source/Modules/Effects/Modulation/RotaryModule.h"/>
+          <FILE id="aq1f16a4" name="CirculatorModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Modulation/CirculatorModule.cpp"/>
+          <FILE id="aq8493c2" name="CirculatorModule.h" compile="0" resource="0" file="Source/Modules/Effects/Modulation/CirculatorModule.h"/>
           <FILE id="upfuaa" name="PhaserModule.h" compile="0" resource="0" file="Source/Modules/Effects/Modulation/PhaserModule.h"/>
           <FILE id="0b8fcd" name="StereoPhaserModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Modulation/StereoPhaserModule.cpp"/>
           <FILE id="8c0754" name="StereoPhaserModule.h" compile="0" resource="0" file="Source/Modules/Effects/Modulation/StereoPhaserModule.h"/>
@@ -119,6 +128,12 @@
           <FILE id="aqn2h" name="AquatonReverbModule.h" compile="0" resource="0" file="Source/Modules/Effects/Reverbs/AquatonReverbModule.h"/>
           <FILE id="94324d" name="IRForgeModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/IRForgeModule.cpp"/>
           <FILE id="5a8dac" name="IRForgeModule.h" compile="0" resource="0" file="Source/Modules/Effects/Reverbs/IRForgeModule.h"/>
+          <FILE id="aq37a609" name="ConvolverModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/ConvolverModule.cpp"/>
+          <FILE id="aq550cd4" name="ConvolverModule.h" compile="0" resource="0" file="Source/Modules/Effects/Reverbs/ConvolverModule.h"/>
+          <FILE id="aqe22f9c" name="BandpassModule.cpp" compile="1" resource="0" file="Source/Modules/Filters/Filters/BandpassModule.cpp"/>
+          <FILE id="aq0e7c91" name="ClipFoldModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Dynamics/ClipFoldModule.cpp"/>
+          <FILE id="aqa917d8" name="NotesModules.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Notes/NotesModules.cpp"/>
+          <FILE id="aq794560" name="FilterGraph.h" compile="0" resource="0" file="Source/Editor/FilterGraph.h"/>
           <FILE id="tu736V" name="ReverbModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/ReverbModule.cpp"/>
           <FILE id="ngQkv1" name="ReverbModule.h" compile="0" resource="0" file="Source/Modules/Effects/Reverbs/ReverbModule.h"/>
           <FILE id="315b54" name="SmoothHallModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/SmoothHallModule.cpp"/>
@@ -168,6 +183,7 @@
         </GROUP>
         <GROUP id="{970C1AAC-5DC4-E1E2-110F-2637FDF94653}" name="EQ">
           <FILE id="aqb02c" name="BellEQModule.cpp" compile="1" resource="0" file="Source/Modules/Filters/EQ/BellEQModule.cpp"/>
+          <FILE id="aqpeq1" name="ProgramEQModule.cpp" compile="1" resource="0" file="Source/Modules/Filters/EQ/ProgramEQModule.cpp"/>
           <FILE id="aqb02h" name="BellEQModule.h" compile="0" resource="0" file="Source/Modules/Filters/EQ/BellEQModule.h"/>
           <FILE id="7b1d4b" name="ResonanceSuppressorModule.cpp" compile="1" resource="0" file="Source/Modules/Filters/EQ/ResonanceSuppressorModule.cpp"/>
           <FILE id="5222e2" name="ShelfEQModule.cpp" compile="1" resource="0" file="Source/Modules/Filters/EQ/ShelfEQModule.cpp"/>
@@ -244,6 +260,8 @@
           <FILE id="aqn03h" name="ComplexOscModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Oscillators/ComplexOscModule.h"/>
           <FILE id="97b0bf" name="DualVcoModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/DualVcoModule.cpp"/>
           <FILE id="198e33" name="DualVcoModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Oscillators/DualVcoModule.h"/>
+          <FILE id="aqb1b7ef" name="DualVcoAnalogModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/DualVcoAnalogModule.cpp"/>
+          <FILE id="aqaf556d" name="DualVcoAnalogModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Oscillators/DualVcoAnalogModule.h"/>
           <FILE id="aqn05c" name="FormantModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/FormantModule.cpp"/>
           <FILE id="aqn05h" name="FormantModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Oscillators/FormantModule.h"/>
           <FILE id="l3swYo" name="OscillatorModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/OscillatorModule.cpp"/>
@@ -255,6 +273,7 @@
           <FILE id="aqn04c" name="UnisonModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/UnisonModule.cpp"/>
           <FILE id="aqn04h" name="UnisonModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Oscillators/UnisonModule.h"/>
           <FILE id="2ae930" name="WarpOscModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/WarpOscModule.cpp"/>
+          <FILE id="r4nd01" name="RandomPresetModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/RandomPresetModule.cpp"/>
           <FILE id="26594a" name="WarpOscModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Oscillators/WarpOscModule.h"/>
         </GROUP>
         <GROUP id="{049A0FCD-13DF-ECFE-7C2D-F0342E4118E8}" name="PhysicalModels">
@@ -310,6 +329,9 @@
           <FILE id="154cd6" name="SpectralAnalysis.h" compile="0" resource="0" file="Source/Modules/Utilities/Analysis/SpectralAnalysis.h"/>
           <FILE id="616fa5" name="SpectrogramModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Analysis/SpectrogramModule.cpp"/>
           <FILE id="56013d" name="SpectrumCompareModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Analysis/SpectrumCompareModule.cpp"/>
+          <FILE id="aqwfv1" name="WaveformViewerModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Analysis/WaveformViewerModule.cpp"/>
+          <FILE id="aq77686b" name="InspectorModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Analysis/InspectorModule.cpp"/>
+          <FILE id="aq3c970b" name="InspectorModule.h" compile="0" resource="0" file="Source/Modules/Utilities/Analysis/InspectorModule.h"/>
           <FILE id="tun0m1" name="TunerModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Analysis/TunerModule.cpp"/>
           <FILE id="tun0m2" name="TunerModule.h" compile="0" resource="0" file="Source/Modules/Utilities/Analysis/TunerModule.h"/>
         </GROUP>
@@ -441,6 +463,16 @@
         <FILE id="8c8416" name="PluginAquanova.cpp" compile="1" resource="0" file="Source/Plugins/Aquanova/PluginAquanova.cpp"/>
         <FILE id="84d9e0" name="PluginAquanovaConfig.h" compile="0" resource="0" file="Source/Plugins/Aquanova/PluginAquanovaConfig.h"/>
       </GROUP>
+      <GROUP id="{3A9C51E2-7B04-4D6E-9F21-8C0D5B6A4E17}" name="AquaMassif">
+        <FILE id="a9m00p" name="AquaMassifPatch.cpp" compile="1" resource="0" file="Source/Plugins/AquaMassif/AquaMassifPatch.cpp"/>
+        <FILE id="a9m01c" name="PluginAquaMassif.cpp" compile="1" resource="0" file="Source/Plugins/AquaMassif/PluginAquaMassif.cpp"/>
+        <FILE id="a9m02h" name="PluginAquaMassifConfig.h" compile="0" resource="0" file="Source/Plugins/AquaMassif/PluginAquaMassifConfig.h"/>
+      </GROUP>
+      <GROUP id="{7C2E4A91-3B5D-4F08-A6E2-91D4C0B7F5A3}" name="Reflex">
+        <FILE id="rfx00p" name="ReflexPatch.cpp" compile="1" resource="0" file="Source/Plugins/Reflex/ReflexPatch.cpp"/>
+        <FILE id="rfx01c" name="PluginReflex.cpp" compile="1" resource="0" file="Source/Plugins/Reflex/PluginReflex.cpp"/>
+        <FILE id="rfx02h" name="PluginReflexConfig.h" compile="0" resource="0" file="Source/Plugins/Reflex/PluginReflexConfig.h"/>
+      </GROUP>
       <GROUP id="{7C1BE1FC-CFEA-7D6A-1FD0-617FE42E2F7E}" name="AquaVibrio">
         <FILE id="490324" name="AquaVibrioPatch.cpp" compile="1" resource="0" file="Source/Plugins/AquaVibrio/AquaVibrioPatch.cpp"/>
         <FILE id="35bcb5" name="PluginAquaVibrio.cpp" compile="1" resource="0" file="Source/Plugins/AquaVibrio/PluginAquaVibrio.cpp"/>
@@ -485,6 +517,9 @@
         <FILE id="01cba0" name="GrainFreezePatch.cpp" compile="1" resource="0" file="Source/Plugins/GrainFreeze/GrainFreezePatch.cpp"/>
         <FILE id="a9bcc8" name="PluginGrainFreeze.cpp" compile="1" resource="0" file="Source/Plugins/GrainFreeze/PluginGrainFreeze.cpp"/>
         <FILE id="4d8364" name="PluginGrainFreezeConfig.h" compile="0" resource="0" file="Source/Plugins/GrainFreeze/PluginGrainFreezeConfig.h"/>
+        <FILE id="aqf6c36c" name="PluginAudioStretcher.cpp" compile="1" resource="0" file="Source/Plugins/AudioStretcher/PluginAudioStretcher.cpp"/>
+        <FILE id="aq93ff3b" name="PluginAudioStretcherConfig.h" compile="0" resource="0" file="Source/Plugins/AudioStretcher/PluginAudioStretcherConfig.h"/>
+        <FILE id="aqa2924a" name="RubberBandSingle.cpp" compile="1" resource="0" file="Source/PluginSources/audiostretcher/Rubberband/single/RubberBandSingle.cpp"/>
       </GROUP>
       <GROUP id="{94DFC9BC-A829-C5E0-3C98-E10A91FEC744}" name="Host">
         <FILE id="extp01" name="ExternalPluginModule.cpp" compile="1" resource="0" file="Source/Plugins/Host/ExternalPluginModule.cpp"/>
@@ -497,6 +532,7 @@
         <FILE id="765a06" name="PatchWidgets.h" compile="0" resource="0" file="Source/Plugins/Host/PatchWidgets.h"/>
         <FILE id="07f7db" name="PluginCatalog.cpp" compile="1" resource="0" file="Source/Plugins/Host/PluginCatalog.cpp"/>
         <FILE id="a093af" name="PluginCatalog.h" compile="0" resource="0" file="Source/Plugins/Host/PluginCatalog.h"/>
+        <FILE id="r4nd02" name="RandomPresetSources.h" compile="0" resource="0" file="Source/Plugins/Host/RandomPresetSources.h"/>
         <FILE id="abefa7" name="PluginPrelude.h" compile="0" resource="0" file="Source/Plugins/Host/PluginPrelude.h"/>
       </GROUP>
       <GROUP id="{A25047C4-CE17-C00C-5570-AE507BF06091}" name="NoteAdder">
@@ -518,6 +554,12 @@
         <FILE id="38c4c4" name="PhorestPatch.cpp" compile="1" resource="0" file="Source/Plugins/Phorest/PhorestPatch.cpp"/>
         <FILE id="da1ca0" name="PluginPhorest.cpp" compile="1" resource="0" file="Source/Plugins/Phorest/PluginPhorest.cpp"/>
         <FILE id="19a370" name="PluginPhorestConfig.h" compile="0" resource="0" file="Source/Plugins/Phorest/PluginPhorestConfig.h"/>
+        <FILE id="aqd5000d" name="PluginSpringer.cpp" compile="1" resource="0" file="Source/Plugins/Springer/PluginSpringer.cpp"/>
+        <FILE id="aq2bca4f" name="PluginSpringerConfig.h" compile="0" resource="0" file="Source/Plugins/Springer/PluginSpringerConfig.h"/>
+        <FILE id="aqa75271" name="SpringerPatch.cpp" compile="1" resource="0" file="Source/Plugins/Springer/SpringerPatch.cpp"/>
+        <FILE id="aqe222f6" name="PluginTabla.cpp" compile="1" resource="0" file="Source/Plugins/Tabla/PluginTabla.cpp"/>
+        <FILE id="aq6c7c25" name="PluginTablaConfig.h" compile="0" resource="0" file="Source/Plugins/Tabla/PluginTablaConfig.h"/>
+        <FILE id="aq2c07f1" name="TablaPatch.cpp" compile="1" resource="0" file="Source/Plugins/Tabla/TablaPatch.cpp"/>
       </GROUP>
       <GROUP id="{EDAAD4E5-4874-C207-0AE7-E3D92FBA06AD}" name="PrecisionUtility">
         <FILE id="ddb8ad" name="PluginPrecisionUtility.cpp" compile="1" resource="0" file="Source/Plugins/PrecisionUtility/PluginPrecisionUtility.cpp"/>
@@ -573,6 +615,51 @@
         <FILE id="6d5ec1" name="PluginVocode.cpp" compile="1" resource="0" file="Source/Plugins/Vocode/PluginVocode.cpp"/>
         <FILE id="20da95" name="PluginVocodeConfig.h" compile="0" resource="0" file="Source/Plugins/Vocode/PluginVocodeConfig.h"/>
         <FILE id="fcc604" name="VocodePatch.cpp" compile="1" resource="0" file="Source/Plugins/Vocode/VocodePatch.cpp"/>
+      </GROUP>
+      <GROUP id="{277582F0-93F5-0C2C-488E-44F94ECC6C7F}" name="FM12">
+        <FILE id="aq687fea" name="PluginFM12.cpp" compile="1" resource="0" file="Source/Plugins/FM12/PluginFM12.cpp"/>
+        <FILE id="aq61254c" name="PluginFM12Access.cpp" compile="1" resource="0" file="Source/Plugins/FM12/PluginFM12Access.cpp"/>
+        <FILE id="aq6170d5" name="PluginFM12Config.h" compile="0" resource="0" file="Source/Plugins/FM12/PluginFM12Config.h"/>
+      </GROUP>
+      <GROUP id="{A0F112CB-9FDF-89E0-4E5F-52552170A758}" name="AdditiveKeys">
+        <FILE id="aq641394" name="PluginAdditiveKeys.cpp" compile="1" resource="0" file="Source/Plugins/AdditiveKeys/PluginAdditiveKeys.cpp"/>
+        <FILE id="aq607978" name="PluginAdditiveKeysConfig.h" compile="0" resource="0" file="Source/Plugins/AdditiveKeys/PluginAdditiveKeysConfig.h"/>
+      </GROUP>
+      <GROUP id="{20D3EE8E-38F4-5CF9-F0F6-5FCD10E38E58}" name="EcoSee">
+        <FILE id="aq68663a" name="PluginEcoSee.cpp" compile="1" resource="0" file="Source/Plugins/EcoSee/PluginEcoSee.cpp"/>
+        <FILE id="aq6fbc23" name="PluginEcoSeeConfig.h" compile="0" resource="0" file="Source/Plugins/EcoSee/PluginEcoSeeConfig.h"/>
+      </GROUP>
+      <GROUP id="{B8A537A4-8EE1-4FFD-065A-5B1B0894F0D4}" name="FrequencyDrawer">
+        <FILE id="aq6225ca" name="PluginFrequencyDrawer.cpp" compile="1" resource="0" file="Source/Plugins/FrequencyDrawer/PluginFrequencyDrawer.cpp"/>
+        <FILE id="aq6cc5aa" name="PluginFrequencyDrawerConfig.h" compile="0" resource="0" file="Source/Plugins/FrequencyDrawer/PluginFrequencyDrawerConfig.h"/>
+      </GROUP>
+      <GROUP id="{13DFA667-F124-4D85-75DF-773AF8BC1C60}" name="BandpassModulator">
+        <FILE id="aq6c0e84" name="PluginBandpassModulator.cpp" compile="1" resource="0" file="Source/Plugins/BandpassModulator/PluginBandpassModulator.cpp"/>
+        <FILE id="aq637d2d" name="PluginBandpassModulatorConfig.h" compile="0" resource="0" file="Source/Plugins/BandpassModulator/PluginBandpassModulatorConfig.h"/>
+      </GROUP>
+      <GROUP id="{F993C0C6-7B38-6B87-821B-CA1C0BC9879B}" name="SpectralCompress">
+        <FILE id="aq60d316" name="PluginSpectralCompress.cpp" compile="1" resource="0" file="Source/Plugins/SpectralCompress/PluginSpectralCompress.cpp"/>
+        <FILE id="aq625bdf" name="PluginSpectralCompressConfig.h" compile="0" resource="0" file="Source/Plugins/SpectralCompress/PluginSpectralCompressConfig.h"/>
+      </GROUP>
+      <GROUP id="{C2E3A5A1-B53C-B43F-AC4B-82C823DEEF3C}" name="SpectralStereoize">
+        <FILE id="aq670fa7" name="PluginSpectralStereoize.cpp" compile="1" resource="0" file="Source/Plugins/SpectralStereoize/PluginSpectralStereoize.cpp"/>
+        <FILE id="aq60a8fa" name="PluginSpectralStereoizeConfig.h" compile="0" resource="0" file="Source/Plugins/SpectralStereoize/PluginSpectralStereoizeConfig.h"/>
+      </GROUP>
+      <GROUP id="{4A1B3384-3D86-D4B6-DE5B-616715CB9830}" name="SpectralCompare">
+        <FILE id="aq6a75b8" name="PluginSpectralCompare.cpp" compile="1" resource="0" file="Source/Plugins/SpectralCompare/PluginSpectralCompare.cpp"/>
+        <FILE id="aq615cf6" name="PluginSpectralCompareConfig.h" compile="0" resource="0" file="Source/Plugins/SpectralCompare/PluginSpectralCompareConfig.h"/>
+      </GROUP>
+      <GROUP id="{B94AA7AD-D1D9-5732-516A-92CD86DFBCEB}" name="Aquanode">
+        <FILE id="aq663347" name="PluginAquanode.cpp" compile="1" resource="0" file="Source/Plugins/Aquanode/PluginAquanode.cpp"/>
+      </GROUP>
+      <GROUP id="{74D318E4-8898-83F1-04BD-737512424610}" name="FruitGUI">
+        <FILE id="aq6377d6" name="FruitEditor.cpp" compile="1" resource="0" file="Source/Plugins/FruitGUI/FruitEditor.cpp"/>
+        <FILE id="aq6dc909" name="FruitEditor.h" compile="0" resource="0" file="Source/Plugins/FruitGUI/FruitEditor.h"/>
+        <FILE id="aq65bbed" name="FruitModules.cpp" compile="1" resource="0" file="Source/Plugins/FruitGUI/FruitModules.cpp"/>
+        <FILE id="aq6c51cd" name="FruitModules.h" compile="0" resource="0" file="Source/Plugins/FruitGUI/FruitModules.h"/>
+        <FILE id="aq649e31" name="FruitProcessor.cpp" compile="1" resource="0" file="Source/Plugins/FruitGUI/FruitProcessor.cpp"/>
+        <FILE id="aq6175f1" name="FruitProcessor.h" compile="0" resource="0" file="Source/Plugins/FruitGUI/FruitProcessor.h"/>
+        <FILE id="aq64a305" name="PluginFruitGUI.cpp" compile="1" resource="0" file="Source/Plugins/FruitGUI/PluginFruitGUI.cpp"/>
       </GROUP>
     </GROUP>
     <GROUP id="{7E375E4D-8169-9FEB-D4F9-B09213DF7C9C}" name="PluginSources">
@@ -674,7 +761,7 @@
         <MODULEPATH id="juce_video" path="../../../../Program Files/JUCE/modules"/>
       </MODULEPATHS>
     </VS2026>
-    <ANDROIDSTUDIO targetFolder="Builds/Android" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidPushNotifications="0" androidVersionCode="5150" bigIcon="aqIcn1" smallIcon="aqIcn1" androidScreenOrientation="landscape"
+    <ANDROIDSTUDIO targetFolder="Builds/Android" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidPushNotifications="0" androidVersionCode="60201" bigIcon="aqIcn1" smallIcon="aqIcn1" androidScreenOrientation="landscape"
                    androidMinimumSDK="23" androidTargetSDK="35" androidMicNeeded="1"
                    androidInternetNeeded="0" androidVibratePermission="0" androidBluetoothScanNeeded="0"
                    androidBluetoothConnectNeeded="0">

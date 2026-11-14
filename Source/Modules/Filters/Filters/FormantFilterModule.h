@@ -52,6 +52,8 @@ public:
         renderLane (aquanode::kMaxVoices, inputs, outputs);   // the global lane
     }
 
+    bool magnitudeResponseDb (const float* hz, float* db, int n) const override;   // the static curve
+
 private:
     static constexpr int kNumLanes = aquanode::kMaxVoices + 1;
 

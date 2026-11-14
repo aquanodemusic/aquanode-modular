@@ -247,21 +247,44 @@ void AquanodeModularAudioProcessor::rebuildGraph()
                 return true;
         return false;
     };
-    for (bool changed = true; changed;)
+    // Free-running sources (the LFOs, see freeRunsWhenGlobal) start in the
+    // global lane and only go per voice once something they feed - or
+    // something feeding them - runs per voice: an LFO on an oscillator's knob
+    // still restarts with every note, an LFO on a 303's cutoff or a delay's
+    // time now moves it whether or not a voice is playing.
+    for (auto& inst : instances)
+        if (inst->perVoice && inst->dsp->freeRunsWhenGlobal())
+            inst->perVoice = false;
+
+    for (bool settled = false; ! settled;)
     {
-        changed = false;
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            for (const auto& e : rawEdges)
+            {
+                if (e.isParam)
+                    continue;   // knob modulation is global; it never changes lanes
+                auto& src = instances[(size_t) e.from];
+                auto& dst = instances[(size_t) e.to];
+                if (src->perVoice && ! dst->perVoice
+                    && dst->dsp->voiceMode() == VoiceMode::Flexible && ! globalAudioInto (e.to))
+                {
+                    dst->perVoice = true;
+                    changed = true;
+                }
+            }
+        }
+
+        settled = true;
         for (const auto& e : rawEdges)
         {
-            if (e.isParam)
-                continue;   // knob modulation is global; it never changes lanes
             auto& src = instances[(size_t) e.from];
             auto& dst = instances[(size_t) e.to];
-            if (src->perVoice && ! dst->perVoice
-                && dst->dsp->voiceMode() == VoiceMode::Flexible && ! globalAudioInto (e.to))
-            {
-                dst->perVoice = true;
-                changed = true;
-            }
+            const bool srcFree = ! src->perVoice && src->dsp->freeRunsWhenGlobal();
+            const bool dstFree = ! dst->perVoice && dst->dsp->freeRunsWhenGlobal();
+            if (srcFree && dst->perVoice)       { src->perVoice = true; settled = false; }
+            else if (dstFree && src->perVoice)  { dst->perVoice = true; settled = false; }
         }
     }
 
@@ -331,8 +354,9 @@ void AquanodeModularAudioProcessor::rebuildGraph()
     // DAW Mod slot assignment. A module keeps the slot it already claimed
     // (saved with the patch), so deleting one DAW Mod never re-points another
     // one's automation lane. Only genuinely unclaimed modules take free slots,
-    // in creation order; anything past the twelfth gets none and stays silent.
+    // in creation order; anything past the 24th gets none and stays silent.
     {
+        static_assert (DawModModule::kMaxSlots == (int) std::tuple_size<decltype (dawModParams)>::value, "one host parameter per slot");
         bool taken[DawModModule::kMaxSlots] = {};
         std::vector<DawModModule*> unclaimed;
 
@@ -405,7 +429,8 @@ void AquanodeModularAudioProcessor::rebuildGraph()
         // a drum in the global lane takes notes as hits: those of the stream
         // patched into its Midi In, or - with that empty - the played keys,
         // for the trigger-driven ones (a note is a trigger, alongside Trig In)
-        const bool keysHit = r.sources.empty() && desc.inputIndexOf ("trigIn") >= 0;
+        // (and the gate-driven ones - Droplets: a held key runs a stream of drips)
+        const bool keysHit = r.sources.empty() && (desc.inputIndexOf ("trigIn") >= 0 || desc.inputIndexOf ("gateIn") >= 0);
         r.hitsInGlobalLane = ! inst.perVoice && inst.dsp->acceptsGlobalMidiNotes()
                           && (! r.sources.empty() || keysHit);
         r.raw = inst.dsp->wantsRawMidi();
@@ -599,6 +624,34 @@ void AquanodeModularAudioProcessor::rebuildGraph()
                 graph->feedbackSource[(size_t) pe.srcNode] = 1;
         graph->hostIn[ni] = graph->nodes[ni]->dsp->wantsHostInput() ? 1 : 0;
         graph->hostOut[ni] = graph->nodes[ni]->dsp->providesHostOutput() ? 1 : 0;
+    }
+
+    // latency: the audio thread works it out every block (processBlock) and
+    // the watch reports it; here only a first figure for a patch that is not
+    // playing yet (an offline host asks before the first block)
+    {
+        std::vector<int> lat (graph->nodes.size(), 0);
+        int longest = 0;
+        bool softClip = false;
+        for (size_t ni = 0; ni < graph->nodes.size(); ++ni)
+        {
+            int in = 0;
+            for (const auto& e : graph->incoming[ni])
+                if (! e.feedback)
+                    in = juce::jmax (in, lat[(size_t) e.srcNode]);
+            lat[ni] = in + juce::jmax (0, graph->nodes[ni]->dsp->latencySamples());
+            if (graph->hostOut[ni])
+            {
+                longest = juce::jmax (longest, lat[ni]);
+                softClip = softClip || graph->nodes[ni]->dsp->hostSoftClip() > 0.0f;
+            }
+        }
+        if (softClip)
+            longest += AudioOutModule::kLatency;
+        patchLatency.store (longest, std::memory_order_relaxed);
+        if (auto* mm = juce::MessageManager::getInstanceWithoutCreating(); mm != nullptr && mm->isThisTheMessageThread())
+            if (getLatencySamples() != longest)
+                setLatencySamples (longest);
     }
 
     // publish: keep the old graph alive in the graveyard until the audio

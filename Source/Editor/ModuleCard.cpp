@@ -10,6 +10,9 @@
 #include <map>
 #include <set>
 #include "EditorShared.h"
+#include "FilterGraph.h"
+#include "FilterCurve.h"
+#include "TapWaveGraph.h"
 
 //==============================================================================
 // ModuleComponent
@@ -59,10 +62,22 @@ int ModuleComponent::moduleWidth() const
 void ModuleComponent::applySkin()
 {
     // the Skeuomorphic look on the card's own controls (never on a plugin's panel)
-    auto* laf = themeColours().skeuomorphic ? &skeuoLookAndFeel() : nullptr;
+    // (Glass: Soundscape Ecology's controls, the arcs in the card's own colour)
+    const bool glassOn = themeColours().glass;
+    juce::LookAndFeel* laf = themeColours().skeuomorphic ? static_cast<juce::LookAndFeel*> (&skeuoLookAndFeel())
+                           : glassOn ? static_cast<juce::LookAndFeel*> (&glassLookAndFeel()) : nullptr;
+    juce::Colour accent = juce::Colours::white;
+    if (auto* inst = processor.getInstance (instanceId))
+        accent = inst->cardColour();
     for (auto& c : controls)
         if (c.component != nullptr)
+        {
+            if (glassOn)
+                c.component->setColour (juce::Slider::rotarySliderFillColourId, accent);
+            else
+                c.component->removeColour (juce::Slider::rotarySliderFillColourId);
             c.component->setLookAndFeel (laf);   // a slider makes its text box anew, in the new look
+        }
     repaint();
 }
 
@@ -72,7 +87,9 @@ bool ModuleComponent::isParamVisible (const ParamSpec& spec) const
         return true;
 
     if (auto* inst = processor.getInstance (instanceId))
-        return std::abs (inst->dsp->getParameter (spec.visibleWhenParamId) - spec.visibleWhenEquals) < 0.5f;
+        return std::abs (inst->dsp->getParameter (spec.visibleWhenParamId) - spec.visibleWhenEquals) < 0.5f
+            && (spec.visibleWhen2ParamId.isEmpty()
+                || std::abs (inst->dsp->getParameter (spec.visibleWhen2ParamId) - spec.visibleWhen2Equals) < 0.5f);
 
     return true;
 }
@@ -184,7 +201,7 @@ void ModuleComponent::buildControls()
                 // has to trigger a re-layout, exactly like a combo does
                 bool drivesVisibility = false;
                 for (const auto& other : desc.params)
-                    if (other.visibleWhenParamId == spec.id)
+                    if (other.visibleWhenParamId == spec.id || other.visibleWhen2ParamId == spec.id)
                     {
                         drivesVisibility = true;
                         break;
@@ -269,6 +286,14 @@ void ModuleComponent::buildControls()
         controls.push_back (std::move (entry));
     }
 
+    // the graph (a filter's curve, Clip Preserve's spectrum), when the card shows it
+    if (inst->showGraph && showsGraphPill())
+    {
+        dsp->enableTap (! hasCurve (*dsp));
+        graph = makeGraph (*dsp);
+        addAndMakeVisible (graph.get());
+    }
+
     extraContent = dsp->createExtraContentComponent();
     if (extraContent != nullptr)
     {
@@ -286,6 +311,13 @@ void ModuleComponent::buildControls()
         {
             listener->paramsChangedByContent = [this] { refreshFromModel(); };
             listener->paramValuesChangedByContent = [this] { refreshControlValues(); };
+        }
+
+        // a plugin's editor on (or behind) the card: the Full Size view on request
+        if (auto* lender = dynamic_cast<aquanode::plugins::PluginEditorLender*> (extraContent.get()))
+        {
+            lender->requestFullSize = [this] { if (canvas.onPluginFullSize) canvas.onPluginFullSize (instanceId); };
+            lender->requestOpenInPlugin = [this] { canvas.openPresetInPlugin (instanceId); };
         }
     }
 }
@@ -357,6 +389,8 @@ int ModuleComponent::layoutEverything (bool apply)
             }
             if (extraContent != nullptr)
                 extraContent->setVisible (false);
+            if (graph != nullptr)
+                graph->setVisible (false);
         }
         return y + layout::pad - 4;
     }
@@ -483,6 +517,17 @@ int ModuleComponent::layoutEverything (bool apply)
         y += h + 4;
     }
 
+    // 6. the graph (a filter's curve, Clip Preserve's spectrum), under everything
+    if (graph != nullptr)
+    {
+        if (apply)
+        {
+            graph->setVisible (true);
+            graph->setBounds (layout::pad, y + 2, innerW, FilterGraph::kHeight);
+        }
+        y += FilterGraph::kHeight + 6;
+    }
+
     return y + layout::pad - 2;
 }
 
@@ -494,8 +539,87 @@ bool ModuleComponent::showsConvertPill() const
     auto* hosted = dynamic_cast<aquanode::plugins::HostedPluginModule*> (inst->dsp.get());
     if (hosted == nullptr)
         return false;
+    if (hosted->linkGroup().isNotEmpty())
+        return false;   // already the patch version (Fruit DAW's four cards)
     auto* entry = aquanode::plugins::findEntry (hosted->getSpec().pluginId);
     return entry != nullptr && entry->hasPatchVersion();
+}
+
+bool ModuleComponent::showsGraphPill() const
+{
+    auto* inst = processor.getInstance (instanceId);
+    if (inst == nullptr)
+        return false;
+    if (inst->descriptor().typeId == "fx.clipfold" || inst->descriptor().typeId == "fx.splinefold")
+        return true;   // Clip Preserve, Spline Folder: their spectrum or waveform
+    // the filters that know their curve (the EQs draw their own already; the
+    // Resonance Suppressor only answers what it hears, so it has none)
+    return inst->dsp != nullptr && hasCurve (*inst->dsp);
+}
+
+bool ModuleComponent::hasCurve (const SynthModule& dsp)
+{
+    float hz = 1000.0f, db = 0.0f;
+    return dsp.magnitudeResponseDb (&hz, &db, 1);
+}
+
+// filters show the curve their knobs set (static, worked out - no signal
+// involved), Clip Preserve its spectrum (in and out, dBFS)
+std::unique_ptr<juce::Component> ModuleComponent::makeGraph (SynthModule& dsp)
+{
+    auto colour = [this]
+    {
+        auto* i = processor.getInstance (instanceId);
+        return i != nullptr ? i->cardColour() : juce::Colour (0xff74cc8a);
+    };
+    if (hasCurve (dsp))
+        return std::make_unique<FilterCurve> (dsp, colour);
+    auto* inst = processor.getInstance (instanceId);
+    return std::make_unique<TapGraphs> (dsp, colour, inst != nullptr ? inst->graphView : 1, [this] (int v)
+    {
+        if (auto* i = processor.getInstance (instanceId))
+            i->graphView = v;
+    });
+}
+
+juce::Rectangle<int> ModuleComponent::graphPillArea() const
+{
+    // at the right of the top row (Random keeps the left, the collapse tab the middle)
+    return { getWidth() - layout::pad - 54, 1, 54, layout::topRow - 3 };
+}
+
+void ModuleComponent::toggleGraph()
+{
+    auto* inst = processor.getInstance (instanceId);
+    if (inst == nullptr || inst->dsp == nullptr)
+        return;
+    inst->showGraph = ! inst->showGraph;
+    if (inst->showGraph)
+    {
+        inst->dsp->enableTap (! hasCurve (*inst->dsp));   // (a curve needs no signal)
+        graph = makeGraph (*inst->dsp);
+        addAndMakeVisible (graph.get());
+    }
+    else
+    {
+        inst->dsp->enableTap (false);
+        graph = nullptr;
+    }
+    refreshLayout();
+    repaint();
+}
+
+bool ModuleComponent::showsFullSizePill() const
+{
+    auto* inst = processor.getInstance (instanceId);
+    auto* lender = dynamic_cast<aquanode::plugins::PluginEditorLender*> (extraContent.get());
+    return inst != nullptr && ! isCollapsed() && lender != nullptr && lender->wantsFullSizePill();
+}
+
+juce::Rectangle<int> ModuleComponent::fullSizePillArea() const
+{
+    // left of the centred title, clear of the input socket column
+    return { layout::socketColW + 12, layout::topRow + 4, 84, 22 };
 }
 
 juce::Rectangle<int> ModuleComponent::convertPillArea() const
@@ -676,11 +800,29 @@ void ModuleComponent::paint (juce::Graphics& g)
     const auto bounds = getLocalBounds().toFloat();
     const auto text = themeColours().textOnCard (body);   // Dark Text, or Light Text on a dark card
 
-    const bool skeuo = themeColours().skeuomorphic;
+    const bool glassOn = themeColours().glass;
+    const bool skeuo = themeColours().skeuomorphic || glassOn;   // (Glass shares the glass jacks and the engraved lines)
     const float divY = (float) (layout::topRow + headerHeight + 1);
     const auto card = bounds.reduced (1.0f);
 
-    if (skeuo)
+    if (glassOn)
+    {
+        // a pane of frosted glass over the jungle, faintly tinted with the
+        // card's colour, its header band a little brighter, a leaf mark in the
+        // corner
+        glass::panel (g, card, body, 12.0f);
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            juce::Path clip;
+            clip.addRoundedRectangle (card, 12.0f);
+            g.reduceClipRegion (clip);
+            juce::ColourGradient band (body.withAlpha (0.30f), 0.0f, card.getY(), body.withAlpha (0.06f), 0.0f, divY, false);
+            g.setGradientFill (band);
+            g.fillRect (card.withBottom (divY));
+        }
+        glass::leafMark (g, { card.getX() + 7.0f, card.getBottom() - 15.0f, 12.0f, 10.0f }, body.brighter (0.3f));
+    }
+    else if (skeuo)
     {
         // a satin panel lit from above, a touch translucent: a little lighter at
         // the top, a glossy header band, light coming up through the lower
@@ -729,16 +871,29 @@ void ModuleComponent::paint (juce::Graphics& g)
     }
 
     const bool selected = canvas.isSelected (instanceId);
-    g.setColour (selected ? juce::Colours::white : juce::Colours::black.withAlpha (0.6f));
-    g.drawRoundedRectangle (card, 8.0f, selected ? 2.5f : 1.2f);
+    if (glassOn)
+    {
+        if (selected)
+        {
+            g.setColour (glass::pal (ThemeColours::InputOutput).withAlpha (0.35f));
+            g.drawRoundedRectangle (card.expanded (1.0f), 13.0f, 4.0f);
+            g.setColour (juce::Colours::white);
+            g.drawRoundedRectangle (card, 12.0f, 2.0f);
+        }
+    }
+    else
+    {
+        g.setColour (selected ? juce::Colours::white : juce::Colours::black.withAlpha (0.6f));
+        g.drawRoundedRectangle (card, 8.0f, selected ? 2.5f : 1.2f);
+    }
 
     // divider under the header, separating socket/title band from knob rows
     // (Skeuomorphic: an engraved line, dark over light)
-    g.setColour (juce::Colours::black.withAlpha (0.28f));
+    g.setColour (juce::Colours::black.withAlpha (glassOn ? 0.16f : 0.28f));
     g.drawLine (bounds.getX() + 6.0f, divY, bounds.getRight() - 6.0f, divY, 1.0f);
     if (skeuo)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.4f));
+        g.setColour (juce::Colours::white.withAlpha (glassOn ? 0.22f : 0.4f));
         g.drawLine (bounds.getX() + 6.0f, divY + 1.0f, bounds.getRight() - 6.0f, divY + 1.0f, 1.0f);
     }
 
@@ -781,6 +936,29 @@ void ModuleComponent::paint (juce::Graphics& g)
                       getWidth() - 2 * layout::socketColW, headerHeight,
                       juce::Justification::centred, 2, 0.9f);
 
+    if (showsFullSizePill())
+    {
+        const auto r = fullSizePillArea().toFloat().reduced (0.5f);
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        g.setColour (juce::Colours::white.withAlpha (0.9f));
+        g.drawRoundedRectangle (r, r.getHeight() * 0.5f, 1.0f);
+        g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
+        g.drawText ("Full Size", fullSizePillArea(), juce::Justification::centred);
+    }
+
+    if (showsGraphPill())
+    {
+        // the graph's switch, at the right of the top row
+        const auto r = graphPillArea().toFloat().reduced (0.5f);
+        const bool graphOn = inst->showGraph;
+        g.setColour (graphOn ? juce::Colours::black.withAlpha (0.45f) : juce::Colours::black.withAlpha (0.18f));
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        g.setColour (graphOn ? juce::Colours::white : text.withAlpha (0.85f));
+        g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
+        g.drawText ("Graph", r, juce::Justification::centred);
+    }
+
     if (showsConvertPill())
     {
         const auto r = convertPillArea().toFloat().reduced (0.5f);
@@ -818,7 +996,7 @@ void ModuleComponent::paint (juce::Graphics& g)
                 collar.addRoundedRectangle (c.x - rc, c.y - rc, 2 * rc, 2 * rc, rc * 0.5f);
             else
                 collar.addRoundedRectangle (c.x - rc, c.y - rc, 2 * rc, 2 * rc, 2.5f);
-            const auto tint = s.kind == SocketKind::Midi ? skeuo::glow : juce::Colours::white;
+            const auto tint = s.kind == SocketKind::Midi ? (glassOn ? glass::pal (ThemeColours::InputOutput) : skeuo::glow) : juce::Colours::white;
             juce::ColourGradient glass (tint.withAlpha (0.42f), c.x, c.y - rc, juce::Colours::black.withAlpha (0.28f), c.x, c.y + rc, false);
             g.setGradientFill (glass);
             g.fillPath (collar);
@@ -863,7 +1041,7 @@ void ModuleComponent::paint (juce::Graphics& g)
             g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
             const int tw = juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), title) + 12;
             const float ly = (float) sy + 10.0f;
-            g.setColour (juce::Colours::black.withAlpha (0.3f));
+            g.setColour (juce::Colours::black.withAlpha (glassOn ? 0.16f : 0.3f));
             g.drawLine (bounds.getX() + 8.0f, ly, bounds.getX() + 14.0f, ly, 1.0f);
             g.drawLine (bounds.getX() + 14.0f + (float) tw, ly, bounds.getRight() - 8.0f, ly, 1.0f);
             if (skeuo)
@@ -1083,9 +1261,10 @@ void ModuleComponent::paintOverChildren (juce::Graphics& g)
         {
             // where the look-and-feel draws the knob inside the slider (the
             // Skeuomorphic one a little bigger)
-            const bool skeuo = themeColours().skeuomorphic;
+            const bool skeuo = themeColours().skeuomorphic || themeColours().glass;
             const auto layout = slider->getLookAndFeel().getSliderLayout (*slider);
-            auto knob = layout.sliderBounds.toFloat().reduced (skeuo ? SkeuoLookAndFeel::kKnobInset : 10.0f).translated (b.getX(), b.getY());
+            auto knob = layout.sliderBounds.toFloat().reduced (themeColours().glass ? GlassLookAndFeel::kKnobInset + 1.5f
+                                                               : skeuo ? SkeuoLookAndFeel::kKnobInset : 10.0f).translated (b.getX(), b.getY());
             const float radius = juce::jmin (knob.getWidth(), knob.getHeight()) * 0.5f;
             const auto c = knob.getCentre();
             const auto rp = slider->getRotaryParameters();
@@ -1276,6 +1455,15 @@ void ModuleComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // the graph's pill (filters, Clip Preserve)
+    if (e.eventComponent == this && ! e.mods.isPopupMenu() && showsGraphPill()
+        && graphPillArea().contains (e.getPosition()))
+    {
+        rapidClickCount = 0;
+        toggleGraph();
+        return;
+    }
+
     // the card's own Random / Revert button (one after the other)
     if (e.eventComponent == this && ! e.mods.isPopupMenu() && showsRandomize())
     {
@@ -1294,7 +1482,8 @@ void ModuleComponent::mouseDown (const juce::MouseEvent& e)
     // card's own colour
     ++titlePressId;
     if (e.eventComponent == this && titleArea().contains (e.getPosition())
-        && ! (showsConvertPill() && convertPillArea().contains (e.getPosition())))
+        && ! (showsConvertPill() && convertPillArea().contains (e.getPosition()))
+        && ! (showsFullSizePill() && fullSizePillArea().contains (e.getPosition())))
     {
         if (e.mods.isPopupMenu())
         {
@@ -1317,6 +1506,15 @@ void ModuleComponent::mouseDown (const juce::MouseEvent& e)
         && convertPillArea().contains (e.getPosition()))
     {
         canvas.convertPluginCard (instanceId);
+        return;
+    }
+
+    // ... and Full Size shows the plugin alone, at its own size
+    if (e.eventComponent == this && ! e.mods.isPopupMenu() && showsFullSizePill()
+        && fullSizePillArea().contains (e.getPosition()))
+    {
+        if (canvas.onPluginFullSize)
+            canvas.onPluginFullSize (instanceId);
         return;
     }
 

@@ -6,7 +6,7 @@ static ModuleDescriptor pwmOscDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "osc.pwmosc";
-    d.displayName = "PWM Osc";
+    d.displayName = "PWM";
     d.description =
         "A polysynth VCO: Saw, PW or PWM at 16' 8' 4', with the square sub-oscillator one or two "
         "octaves down. In PWM the PW/PWM knob is the depth of its own PWM LFO. It never gates - "

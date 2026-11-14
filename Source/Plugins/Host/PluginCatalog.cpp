@@ -1,4 +1,5 @@
 #include "PluginCatalog.h"
+#include "RandomPresetSources.h"
 #include "../../Engine/PluginProcessor.h"
 
 namespace aquanode::plugins
@@ -18,6 +19,7 @@ namespace
         int w, h;
         const char* presetPatterns;
         bool thirdParty { false };      // listed in the sidebar's Third Party section
+        const char* sideInLabel { nullptr };   // the second input's socket name (default "Mod In")
     };
 
     // sidebar order: the synths, then the effects
@@ -37,6 +39,24 @@ namespace
               "Wavetables folders (their User folders have the hardware's sampled waves and wavetables, their "
               "Factory folders the .fxb banks' own waves); then Load a .mid / .syx bank or an .fxb bank.",
               0xff2f7a4a, ModuleSection::Oscillator, true, false, true, false, 1200, 700, "*.json;*.syx;*.SYX;*.mid;*.midi;*.fxb" },
+
+            { "aquamassif", "Massif",
+              "A close model of a classic 2000s big-wavetable synth, made from measurements: three wavetable oscillators with "
+              "their eight modes, the modulation oscillator, noise and feedback, two filters with serial / parallel "
+              "routing, two inserts, two master effects, EQ, the bypass, four envelopes, four LFO / stepper / "
+              "performer pages and eight macros, with drag and drop modulation. Wavetables: the folder with your "
+              "wavetables (.wav, any sub-folders) - tables without a file are generated, and the WT GEN page writes "
+              "new ones from recipes. Comes with its own built-in sounds (tap the display) and a patch generator "
+              "(a genre - Dub Techno among them -, a sound type, Generate); loads original .nmsv sounds with their modulation pages and its own .massif presets. Tap its "
+              "name for the colours.",
+              0xff3fd0e8, ModuleSection::Oscillator, true, false, false, false, 1260, 740, "*.nmsv;*.massif" },
+
+            { "reflex", "Reflex",
+              "A close remake of a classic 2005-era three-oscillator VA synth, measured: 32 waveforms with fat "
+              "copies and drift, a ladder filter in thirteen types, two envelopes, three LFOs, the arpeggiator, "
+              "the trance gate, delay and reverb, with its randomizer and mutator. Loads the original's .fxb "
+              "banks and .fxp programs and its own .xml presets.",
+              0xff6fd36a, ModuleSection::Oscillator, true, false, false, false, 1112, 850, "*.fxb;*.fxp;*.xml" },
 
             { "alphabeta", "AlphaBeta",
               "The Alpha 3-style synth with its liquid filter and chorus, both engines (Native and "
@@ -114,12 +134,60 @@ namespace
               0xffa8d8ff, ModuleSection::Oscillator, true, false, false, false, 900, 650,
               "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3" },
 
+            { "audiostretcher", "AudioStretcher",
+              "Offline pitch and speed with the Rubber Band Library: load a sound, choose a region, set "
+              "Pitch, Fine and Speed (and fades) independently, press Play - it renders the result in the "
+              "background (the card says 'Loading result') and plays it from Audio Out. Export writes the "
+              "file. The loaded sound is saved in the patch.",
+              0xfff4a7c0, ModuleSection::Oscillator, false, false, false, false, 400, 690, "" },
+
+            { "tabla", "Tabla",
+              "A physically modelled tabla: the bayan (bass) and dayan (treble) as modal skins with syahi loading, "
+              "tension chirp, body and air resonances, sympathetic ringing. The bols sit on the keys from C3 up "
+              "(Na, Ta, Tin, Tun, Te, Ti, Ge, Ghe, Dha, Dhin, Dhage, Tirakita); click or drag the drums to play them, "
+              "Slide Mode bends the pitch like a palm sliding over the skin.",
+              0xffcc785c, ModuleSection::Oscillator, true, false, false, false, 560, 620, "" },
+
             { "samplefield", "SampleField",
               "A field of samples: every held key plays them one after another at random, with random pan, "
               "rate and level, a time limit and an echo per voice. Its 'presets' are audio files (each adds "
               "a sample to the field).",
               0xff00c8e0, ModuleSection::Oscillator, true, false, false, false, 480, 560,
               "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3" },
+
+            { "fm12", "FM12",
+              "The 12-operator PM/FM synth: a 12 x 12 modulation matrix with self-feedback on its diagonal, "
+              "phase modulation, linear and exponential FM (with through-zero), an ADSR, delay and cancel per "
+              "operator, an LFO and pitch envelope, user waves and a stereo chorus. DX7 Mode gives DX7-style envelope curves and feedback; "
+              "its DX7 menu makes new sounds from the app's DX7 voices or imports a voice from a .syx.",
+              0xff3ec6c0, ModuleSection::Oscillator, true, false, false, false, 976, 745, "*.fm12preset;*.syx;*.SYX" },
+
+            { "additivekeys", "Additive Keys",
+              "An additive synth laid out like a K5: two sources of 63 harmonics each, drawn by finger and "
+              "animated by four envelopes, a dynamic filter that scales the harmonics, a formant shape, pitch "
+              "and amplitude envelopes and an LFO. Its preset maker rolls new sounds in twelve kinds.",
+              0xffe0a95a, ModuleSection::Oscillator, true, false, false, false, 1100, 780, "*.akpreset" },
+
+            { "frequencydrawer", "Frequency Drawer",
+              "Draw sound on a canvas and it plays from left to right: time across, pitch up the side. Two "
+              "engines (the first with an interpolated drawing mode), a frequency blur reverb, harmonics, a "
+              "draggable playhead and FLAC export. The drawing is saved with the patch.",
+              0xff8f7ae6, ModuleSection::Oscillator, false, false, false, false, 1020, 660, "" },
+
+            { "fruitgui", "Fruit DAW",
+              "An FL Studio-style song workspace on one card, in four windows: 99 synth lanes (any sound generation module "
+              "or synth plugin, bound to its lane), a piano roll with 99 patterns (each playing a lane of its choosing; the "
+              "keys play the one shown), a playlist of 99 tracks to place and trim the patterns on, with Knob Record clips "
+              "that move a knob along a drawn curve, and a mixer of 99 inserts and the master with ten effects each, a volume "
+              "and up to nine sends with their own levels (00 the master; a send at 0 % is a sidechain only). Render plays "
+              "its song. Its patch version is the four windows as four cards.",
+              0xff1fd5c9, ModuleSection::Oscillator, true, false, false, false, 1600, 900, "" },
+
+            { "aquanode", "Aquanode Modular",
+              "Aquanode Modular itself on one card: a whole patch of its own, with its sidebar, keys, Mutator and Render, "
+              "saved inside the card. Audio In feeds its Audio In modules and Midi In (or the keys) plays it - a patch "
+              "inside the patch. One can hold another, one level deep.",
+              0xff38b6d8, ModuleSection::Oscillator, true, false, true, false, 1200, 760, "" },
 
             { "83chorusverb", "83ChorusVerb",
               "VirtualDX7's effects as a rack: Chorus, Delay, Phaser and Reverb (with Freeze), each with "
@@ -165,6 +233,12 @@ namespace
               "Notes on Midi In retune it. Loads its .xml presets.",
               0xff3fc9a8, ModuleSection::Effect, true, false, true, false, 900, 560, "*.xml" },
 
+            { "springer", "Springer",
+              "The spring reverb of up to seven coupled coils: each a delay with dispersion all-passes (up to 256 "
+              "stages), density smearing, damping and feedback, from dub-style springiness to phasing laser sounds. "
+              "Coil Scale sets each coil's length, Pitch makes the coils thicker and deeper.",
+              0xff00c3cd, ModuleSection::Effect, false, false, true, false, 650, 480, "" },
+
             { "phorest", "Phorest",
               "The deep phaser: up to 48 allpass stages swept by seven LFO shapes (or by hand), with feedback, "
               "stereo offset, detune and Dry Cancel.",
@@ -179,6 +253,36 @@ namespace
               "The filter-bank vocoder with up to 256 bands and drawn band curves. Carrier on Audio In, "
               "the voice (modulator) on Mod In - or its auto-vocode mode.",
               0xffb07cf0, ModuleSection::Effect, false, false, true, true, 980, 520, "*.vpreset" },
+
+            { "bandpassmod", "Bandpass Modulator",
+              "AutoMorph Bandpass Modulator: a band-pass that jumps around a frequency range in time with the song - "
+              "to random places by default, from a fixed seeded generator, so the same bar always moves the same way - "
+              "or along sine, triangle, saw and step shapes; Skew pushes the jumps back and forth in time. Note Lock keeps "
+              "it on chosen notes or on the notes held on Midi In; distortion, a tempo echo and autopan on the band.",
+              0xff2fd1c0, ModuleSection::Effect, true, false, true, false, 990, 700, "" },
+
+            { "spectralcompress", "SpectralCompress",
+              "A compressor on every FFT bin: each bin is pulled down (or pushed up) toward a target curve you "
+              "draw across the spectrum, with offsets, ratio and knee per direction, attack, release, FFT size "
+              "and overlap. Side In can drive the bins instead of the input.",
+              0xff4fc3a1, ModuleSection::Effect, false, false, true, true, 1240, 780, "", false, "Side In" },
+
+            { "spectralstereoize", "SpectralStereoize",
+              "Mid/side width per FFT bin: draw how wide each frequency should be, from mono to extra wide, on a "
+              "butterfly plot of the output (green) and of Side In (pink) as a reference. Bit for bit transparent "
+              "with the curve flat.",
+              0xff6fdc8c, ModuleSection::Effect, false, false, true, true, 960, 540, "", false, "Side In" },
+
+            { "spectralcompare", "SpectralCompare",
+              "Two spectrograms over each other: the sound on Audio In and the one on Side In, to see where they "
+              "clash. Audio passes through unchanged.",
+              0xffd96fb8, ModuleSection::Effect, false, false, true, true, 1220, 660, "", false, "Side In" },
+
+            { "ecosee", "EcoSee",
+              "The ecological visualizer: spread / entropy, tone map, FM / AM cube, cepstrogram, vocal signature "
+              "and a custom 3D grid of what passes through, made with bird calls and field recordings in mind. "
+              "Audio passes through unchanged.",
+              0xff7fc96b, ModuleSection::Effect, false, false, true, false, 1200, 700, "" },
         };
         return infos;
     }
@@ -264,6 +368,8 @@ HostedSpec baseSpec (const juce::String& id)
         s.sideIn = i->sideIn;
         s.defaultWidth = i->w;
         s.defaultHeight = i->h;
+        if (i->sideInLabel != nullptr)
+            s.sideInLabel = i->sideInLabel;
     }
     jassert (s.pluginId.isNotEmpty());
     return s;
@@ -574,6 +680,45 @@ juce::String convertGuiToPatch (AquanodeModularAudioProcessor& patch, int guiIns
         }
     }
     return ports.name;
+}
+
+int openHeldPresetInPlugin (AquanodeModularAudioProcessor& patch, int instanceId)
+{
+    auto* inst = patch.getInstance (instanceId);
+    if (inst == nullptr)
+        return -1;
+    auto* holder = dynamic_cast<randompreset::PluginPresetHolder*> (inst->dsp.get());
+    auto* plugin = holder != nullptr ? holder->heldPlugin() : nullptr;
+    auto* e = holder != nullptr ? findEntry (holder->heldPluginId()) : nullptr;
+    if (plugin == nullptr || e == nullptr)
+        return -1;
+
+    // the sound, the place and the cables, before the module goes
+    juce::MemoryBlock state;
+    plugin->getStateInformation (state);
+    const auto where = inst->position;
+    std::vector<CableInfo> touching;
+    for (const auto& c : patch.getCables())
+        if (c.fromModule == instanceId || c.toModule == instanceId)
+            touching.push_back (c);
+
+    patch.removeModule (instanceId);
+    const int card = patch.addModule (e->guiTypeId, where);
+    if (card < 0)
+        return -1;
+    if (auto* h = dynamic_cast<HostedPluginModule*> (patch.getInstance (card)->dsp.get()))
+        if (auto* p = h->getPlugin(); p != nullptr && state.getSize() > 0)
+            p->setStateInformation (state.getData(), (int) state.getSize());
+
+    // the module's sockets are the card's: Midi In and Audio Out
+    for (const auto& c : touching)
+    {
+        if (c.toModule == instanceId)
+            patch.addCable (c.fromModule, c.fromSocket, card, c.toSocket);
+        else
+            patch.addCable (card, c.fromSocket, c.toModule, c.toSocket);
+    }
+    return card;
 }
 
 } // namespace aquanode::plugins

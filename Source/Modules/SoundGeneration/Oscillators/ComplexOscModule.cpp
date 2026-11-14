@@ -56,7 +56,7 @@ static ModuleDescriptor complexOscDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "osc.complex";
-    d.displayName = "Complex Osc";
+    d.displayName = "Wavefold";
     d.description =
         "A modulation oscillator FMs the principal oscillator, "
         "and the result is pushed through a wavefolder. Where a filter removes harmonics, folding "

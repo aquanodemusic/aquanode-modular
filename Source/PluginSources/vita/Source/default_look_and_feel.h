@@ -60,9 +60,18 @@ class DefaultLookAndFeel : public juce::LookAndFeel_V4 {
   
     int getMenuWindowFlags() override { return 0; }
 
+    // (Aquanode: let go when JUCE shuts down, not when the DLL unloads -
+    // fonts and looks hold DirectWrite / Direct2D objects on Windows)
     static DefaultLookAndFeel* instance() {
-      static DefaultLookAndFeel instance;
-      return &instance;
+      struct Holder : public DeletedAtShutdown {
+        DefaultLookAndFeel object;
+        ~Holder() override { slot() = nullptr; }
+        static Holder*& slot() { static Holder* h = nullptr; return h; }
+      };
+      auto*& h = Holder::slot();
+      if (h == nullptr)
+        h = new Holder();
+      return &h->object;
     }
 
   protected:

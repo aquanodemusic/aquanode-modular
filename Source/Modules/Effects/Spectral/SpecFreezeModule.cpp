@@ -35,17 +35,17 @@ void SpecFreezeModule::spectralReset()
 //==============================================================================
 void SpecFreezeModule::cepstralSmoothMagnitude (const float* logMag, float* outSmoothedLogMag, float characterNorm)
 {
-    constexpr int half = kFftSize / 2;
+    const int half = fftSize / 2;
 
-    std::complex<float> spec[kNumBins];
-    for (int i = 0; i < kNumBins; ++i)
+    auto* spec = cepSpec;
+    for (int i = 0; i < numBins; ++i)
         spec[i] = { logMag[i], 0.0f };
 
-    float cep[kFftSize];
+    auto* cep = cepTime;
     cepstrumFft.inverseReal (spec, cep);
 
-    float lift[kFftSize];
-    std::fill (std::begin (lift), std::end (lift), 0.0f);
+    auto* lift = cepLift;
+    std::fill (lift, lift + fftSize, 0.0f);
 
     const int minK = 2, maxK = half;
     const int k = juce::jlimit (minK, maxK,
@@ -57,28 +57,30 @@ void SpecFreezeModule::cepstralSmoothMagnitude (const float* logMag, float* outS
     if (k >= half)
         lift[half] = cep[half];
 
-    std::complex<float> outBins[kNumBins];
+    auto* outBins = cepOut;
     cepstrumFft.forwardReal (lift, outBins);
 
-    for (int i = 0; i < kNumBins; ++i)
+    for (int i = 0; i < numBins; ++i)
         outSmoothedLogMag[i] = outBins[i].real();
 }
 
 //==============================================================================
 void SpecFreezeModule::processSpectrum (int channel, std::complex<float>* bins, const std::complex<float>*)
 {
-    constexpr int half = kFftSize / 2;
+    const int half = fftSize / 2;
     auto& cs = channels[(size_t) channel];
 
-    float mag[kNumBins], phase[kNumBins], logMag[kNumBins];
-    for (int i = 0; i < kNumBins; ++i)
+    float* mag = sMag;
+    float* phase = sPhase;
+    float* logMag = sLogMag;
+    for (int i = 0; i < numBins; ++i)
     {
         mag[i] = std::abs (bins[i]);
         phase[i] = std::arg (bins[i]);
         logMag[i] = std::log (juce::jmax (1.0e-8f, mag[i]));
     }
 
-    float smoothedLogMag[kNumBins];
+    float* smoothedLogMag = sSmooth;
     cepstralSmoothMagnitude (logMag, smoothedLogMag, param (pCharacter) * 0.01f);
 
     const bool freeze = param (pFreeze) > 0.5f;
@@ -91,15 +93,15 @@ void SpecFreezeModule::processSpectrum (int channel, std::complex<float>* bins, 
 
     const bool justFroze = freeze && ! cs.wasFrozen;
     const bool isStretch = (mode == FreezeMode::Stretch);
-    const float binAngularStep = juce::MathConstants<float>::twoPi / (float) kFftSize;
+    const float binAngularStep = juce::MathConstants<float>::twoPi / (float) fftSize;
 
     // Instantaneous per-bin frequency estimate for this hop.
-    float instIncrement[kNumBins];
-    for (int i = 0; i < kNumBins; ++i)
+    float* instIncrement = sInst;
+    for (int i = 0; i < numBins; ++i)
     {
-        float delta = phase[i] - cs.previousPhase[(size_t) i] - binAngularStep * (float) i * (float) kHop;
+        float delta = phase[i] - cs.previousPhase[(size_t) i] - binAngularStep * (float) i * (float) hop;
         delta = std::remainder (delta, juce::MathConstants<float>::twoPi);
-        instIncrement[i] = binAngularStep * (float) i * (float) kHop + delta;
+        instIncrement[i] = binAngularStep * (float) i * (float) hop + delta;
     }
 
     // --- Stretch grain lifecycle (once per hop, not per bin) ---------------
@@ -109,11 +111,11 @@ void SpecFreezeModule::processSpectrum (int channel, std::complex<float>* bins, 
     if (freeze && isStretch)
     {
         const float stretchTimeSec = param (pStretchTime);
-        const int periodHops = juce::jmax (2, (int) std::round (stretchTimeSec * (float) sampleRate / (float) kHop));
+        const int periodHops = juce::jmax (2, (int) std::round (stretchTimeSec * (float) sampleRate / (float) hop));
 
         if (justFroze)
         {
-            for (int i = 0; i < kNumBins; ++i)
+            for (int i = 0; i < numBins; ++i)
             {
                 cs.grainLogMagA[(size_t) i] = cs.grainLogMagB[(size_t) i] = smoothedLogMag[i];
                 cs.grainIncrementA[(size_t) i] = cs.grainIncrementB[(size_t) i] = instIncrement[i];
@@ -127,7 +129,7 @@ void SpecFreezeModule::processSpectrum (int channel, std::complex<float>* bins, 
             {
                 cs.grainLogMagA = cs.grainLogMagB;
                 cs.grainIncrementA = cs.grainIncrementB;
-                for (int i = 0; i < kNumBins; ++i)
+                for (int i = 0; i < numBins; ++i)
                 {
                     cs.grainLogMagB[(size_t) i] = smoothedLogMag[i];
                     cs.grainIncrementB[(size_t) i] = instIncrement[i];
@@ -141,9 +143,10 @@ void SpecFreezeModule::processSpectrum (int channel, std::complex<float>* bins, 
         grainCrossfadeFrac = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * rawFrac);
     }
 
-    float outMag[kNumBins], outPhase[kNumBins];
+    float* outMag = sOutMag;
+    float* outPhase = sOutPhase;
 
-    for (int i = 0; i < kNumBins; ++i)
+    for (int i = 0; i < numBins; ++i)
     {
         const float liveMag = std::exp (smoothedLogMag[i]);
 
@@ -203,7 +206,7 @@ void SpecFreezeModule::processSpectrum (int channel, std::complex<float>* bins, 
         }
     }
 
-    for (int i = 0; i < kNumBins; ++i)
+    for (int i = 0; i < numBins; ++i)
         cs.previousPhase[(size_t) i] = phase[i];
     cs.wasFrozen = freeze;
 
@@ -236,12 +239,12 @@ void SpecFreezeModule::processSpectrum (int channel, std::complex<float>* bins, 
         const float target = wetEnergy > 1.0e-12 ? juce::jlimit (0.1f, 8.0f, (float) std::sqrt (liveEnergy / wetEnergy)) : 1.0f;
 
         // ~50 ms one-pole smoothing at the hop rate, matching the original's smoother.
-        const float coeff = 1.0f - std::exp ((float) (-(double) kHop / (0.05 * sampleRate)));
+        const float coeff = 1.0f - std::exp ((float) (-(double) hop / (0.05 * sampleRate)));
         cs.matchGain += coeff * (target - cs.matchGain);
     }
 
     const float gm = gainMatchOn ? cs.matchGain : 1.0f;
-    for (int i = 0; i < kNumBins; ++i)
+    for (int i = 0; i < numBins; ++i)
         bins[i] = std::polar (outMag[i] * gm, outPhase[i]);
 }
 

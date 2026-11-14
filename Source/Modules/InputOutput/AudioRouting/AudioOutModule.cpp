@@ -16,11 +16,9 @@ static aquanode::ModuleDescriptor audioOutDescriptor()
     d.section = ModuleSection::InputOutput;
     d.sidebarOrder = 1;
     d.sockets = { audioIn ("audioIn", "Audio In") };
-   #if AQUANODE_FX_BUILD
-    constexpr float softClipDefault = 0.0f;    // an effect passes the track through untouched
-   #else
-    constexpr float softClipDefault = 25.0f;   // on, also in patches saved before it existed
-   #endif
+    // off (6.2): the output passes untouched and adds no latency - turn it up
+    // for its rounding-off (patches saved with it on keep their setting)
+    constexpr float softClipDefault = 0.0f;
     d.params = { makeRotary ("level", "Level", 0.0f, 2.0f, 1.0f, 0),
                  makeRotary ("softClip", "Soft Clip", 0.0f, 100.0f, softClipDefault, 0, "%").noMod() };
     return d;

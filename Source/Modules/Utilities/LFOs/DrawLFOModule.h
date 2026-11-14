@@ -47,6 +47,11 @@ public:
     void voiceReset (int v) override { phase[v] = 0.0; }
     void voiceNoteOn (int v, int, bool) override { phase[v] = 0.0; }
 
+    // with nothing per voice to follow it free-runs in the global lane (see
+    // SynthModule::freeRunsWhenGlobal), on the state of voice slot 0
+    bool freeRunsWhenGlobal() const override { return true; }
+    void processSample (const aquanode::StereoFrame* in, aquanode::StereoFrame* out) override { processVoiceSample (0, in, out); }
+
     void processVoiceSample (int voice, const aquanode::StereoFrame*,
                              aquanode::StereoFrame* outputs) override;
 

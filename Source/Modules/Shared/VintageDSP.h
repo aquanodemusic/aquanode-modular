@@ -193,18 +193,23 @@ struct ResonantSvf
     float ic1 { 0.0f }, ic2 { 0.0f };
     void reset() { ic1 = ic2 = 0.0f; }
 
+    // Peak 0..1 -> damping (k = 1/Q). ~0.75 sits at the edge of self-
+    // oscillation, as 7-8 does on classic analog filters; above ~0.92 the
+    // damping goes slightly negative: the filter sings on its own, and the
+    // soft-clipped band-pass state sets the amplitude
+    static float damping (float peak)
+    {
+        const float p = clampf (peak, 0.0f, 1.0f);
+        const float edge = clampf ((p - 0.92f) / 0.08f, 0.0f, 1.0f);
+        return 2.0f * std::max (0.012f, (1.0f - p) * (1.0f - p) * (1.0f - 0.35f * p)) - 0.06f * edge;
+    }
+
     // returns { lp, hp }
     std::array<float, 2> process (float x, double cutoffHz, float peak, double sr)
     {
         const double fc = std::clamp (cutoffHz, 8.0, sr * 0.45);
         const float g = (float) std::tan (kPi * fc / sr);
-        // Peak 0..1 -> damping. ~0.75 sits at the edge of self-oscillation,
-        // as 7-8 does on classic analog filters.
-        const float p = clampf (peak, 0.0f, 1.0f);
-        // above ~0.92 the damping goes slightly negative: the filter sings on
-        // its own, and the soft-clipped band-pass state sets the amplitude
-        const float edge = clampf ((p - 0.92f) / 0.08f, 0.0f, 1.0f);
-        const float k = 2.0f * std::max (0.012f, (1.0f - p) * (1.0f - p) * (1.0f - 0.35f * p)) - 0.06f * edge;
+        const float k = damping (peak);
 
         const float a1 = 1.0f / (1.0f + g * (g + k));
         const float a2 = g * a1, a3 = g * a2;

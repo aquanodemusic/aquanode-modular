@@ -81,6 +81,7 @@ public:
     }
 
     void processSample (const aquanode::StereoFrame* inputs, aquanode::StereoFrame* outputs) override;
+    bool magnitudeResponseDb (const float* hz, float* db, int n) const override;   // the static curve
 
     std::unique_ptr<juce::Component> createExtraContentComponent() override;
     int extraContentHeight() const override { return 46; }

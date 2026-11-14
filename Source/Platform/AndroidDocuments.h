@@ -10,9 +10,10 @@
 // opens the document with "wt" (write, truncate) instead, falling back to
 // JUCE's own stream when a provider refuses that mode.
 //
-// Used by Export Patch and by the merged plugins' save pickers
-// (AndroidFileChooserShim.h), which also list picked folders with it. Message
-// thread. Elsewhere it does nothing.
+// aqp::files::writeDocument (below) is the one way the app, its modules and
+// every merged plugin save into a document the save picker handed back; the
+// merged plugins' save pickers (AndroidFileChooserShim.h) use it too, and list
+// picked folders with listChildren. Any thread (JNI attaches it).
 //==============================================================================
 #include <JuceHeader.h>
 
@@ -95,5 +96,81 @@ namespace aqp::android
         if (i < size && b[i] == '<') return "xml";
         if (i < size && b[i] == '{') return "json";
         return {};
+    }
+}
+
+//==============================================================================
+// Saving into, and reading from, what the user picked - the one way for the
+// app, its modules and every plugin, on every platform.
+//
+// Android (the Storage Access Framework): the save picker creates a document
+// and hands back its content:// address; the bytes go in through the content
+// resolver, opened "wt" (written and cut to length - a provider may not cut
+// the file in plain "w", and a shorter file saved over a longer one then
+// keeps the old one's tail), with JUCE's own stream as the fallback for a
+// provider that refuses "wt". The address is never used as a path: Android
+// calls a document in shared storage a local file (/storage/emulated/0/...)
+// that the app may not open itself. Reading goes through the document API's
+// stream, then the address's own.
+// Desktop: the file itself.
+//
+// writeDocument: empty when it worked, otherwise what went wrong. Any thread.
+//==============================================================================
+namespace aqp::files
+{
+    inline juce::String writeDocument (const juce::URL& target, const void* data, size_t size)
+    {
+        if (target.isEmpty()) return "no file was chosen";
+        if (data == nullptr || size == 0) return "there was nothing to write";
+       #if JUCE_ANDROID
+        if (target.getScheme() != "file")
+            return aqp::android::replaceDocument (target, data, size);
+       #endif
+        if (target.isLocalFile())
+            return target.getLocalFile().replaceWithData (data, size) ? juce::String() : juce::String ("the file could not be written");
+        if (auto out = target.createOutputStream())
+            return out->write (data, size) ? juce::String() : juce::String ("writing failed");
+        return "the file could not be opened for writing";
+    }
+
+    inline juce::String writeDocument (const juce::URL& target, const juce::File& source)
+    {
+        if (target.isEmpty()) return "no file was chosen";
+        if (! source.existsAsFile() || source.getSize() == 0) return "there was nothing to write";
+       #if JUCE_ANDROID
+        if (target.getScheme() != "file")
+            return aqp::android::replaceDocument (target, source);
+       #endif
+        if (target.isLocalFile())
+        {
+            const auto dest = target.getLocalFile();
+            if (dest == source) return {};
+            return source.copyFileTo (dest) ? juce::String() : juce::String ("the file could not be written");
+        }
+        juce::FileInputStream in (source);
+        if (in.failedToOpen()) return "the file could not be read";
+        if (auto out = target.createOutputStream())
+            return out->writeFromInputStream (in, -1) == source.getSize() ? juce::String() : juce::String ("writing failed");
+        return "the file could not be opened for writing";
+    }
+
+    // the picked document's bytes; empty when it worked, otherwise what went wrong
+    inline juce::String readDocument (const juce::URL& source, juce::MemoryBlock& out)
+    {
+        out.reset();
+        if (source.isEmpty()) return "no file was chosen";
+        std::unique_ptr<juce::InputStream> in;
+       #if JUCE_ANDROID
+        if (source.getScheme() != "file")
+            if (auto doc = juce::AndroidDocument::fromDocument (source); doc.hasValue())
+                in = doc.createInputStream();
+       #endif
+        if (in == nullptr && source.isLocalFile() && source.getLocalFile().existsAsFile())
+            in = source.getLocalFile().createInputStream();
+        if (in == nullptr)
+            in = source.createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress));
+        if (in == nullptr) return "the file could not be opened";
+        in->readIntoMemoryBlock (out);
+        return out.getSize() > 0 ? juce::String() : juce::String ("the file is empty");
     }
 }

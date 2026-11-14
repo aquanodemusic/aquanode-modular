@@ -59,14 +59,20 @@ bool AquanodeModularAudioProcessor::anyPianoRollPlaying() const
 int AquanodeModularAudioProcessor::addModule (const juce::String& typeId, juce::Point<int> position)
 {
     auto* reg = ModuleFactory::instance().find (typeId);
-    if (reg == nullptr)
+    if (reg == nullptr || ! mayHost (typeId))
         return -1;
 
     auto inst = std::make_shared<ModuleInstance>();
     inst->id = nextInstanceId++;
     inst->reg = reg;
-    inst->dsp = ModuleFactory::instance().createInstance (typeId);
+    {
+        const int before = creatingLevel();
+        creatingLevel() = nestingLevel;
+        inst->dsp = ModuleFactory::instance().createInstance (typeId);
+        creatingLevel() = before;
+    }
     inst->position = position;
+    inst->showGraph = typeId == "filter.programeq";   // (its curve is what it is about: shown from the start)
     initInstanceBuffers (*inst);
     attachModuleHooks (*inst);
 
@@ -80,6 +86,17 @@ int AquanodeModularAudioProcessor::addModule (const juce::String& typeId, juce::
 
 void AquanodeModularAudioProcessor::removeModule (int instanceId)
 {
+    // cards that belong together (Fruit DAW's four parts) go together
+    if (auto* inst = getInstance (instanceId); inst != nullptr && ! removingLinked)
+        if (const auto group = inst->dsp->linkGroup(); group.isNotEmpty())
+        {
+            std::vector<int> others;
+            for (const auto& i : instances)
+                if (i->id != instanceId && i->dsp->linkGroup() == group) others.push_back (i->id);
+            const juce::ScopedValueSetter<bool> svs (removingLinked, true);
+            for (int id : others) removeModule (id);
+        }
+
     cables.erase (std::remove_if (cables.begin(), cables.end(),
         [instanceId] (const CableInfo& c) { return c.fromModule == instanceId || c.toModule == instanceId; }),
         cables.end());
@@ -109,6 +126,8 @@ int AquanodeModularAudioProcessor::cloneModule (int instanceId)
     auto* src = getInstance (instanceId);
     if (src == nullptr)
         return -1;
+    if (src->dsp->linkGroup().isNotEmpty())
+        return -1;   // one of several cards that belong together: not cloned alone
 
     const int newId = addModule (src->descriptor().typeId, src->position + juce::Point<int> (24, 24));
     if (auto* dst = getInstance (newId))

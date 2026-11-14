@@ -3,6 +3,13 @@
 
 namespace covegroove
 {
+    // any built-in sound but the lane's Sample (the drum machines' included)
+    static int randomSynthModel (juce::Random& r)
+    {
+        const int m = r.nextInt (kSampleModel + kMachineModels);
+        return m < kSampleModel ? m : m + 1;
+    }
+
     namespace
     {
         const juce::StringArray kDelayTimes { "1/16", "1/16 dot", "1/8", "1/8 dot", "1/4", "1/4 dot" };
@@ -30,8 +37,8 @@ namespace covegroove
             { 0, 46.0f, 0.0f, 0.0f, false },     // Kick
             { 0, 22.0f, 0.0f, 0.0f, false },     // Bass
             { 0, 60.0f, 8.0f, 22.0f, false },    // Clap
-            { 0, 85.0f, -22.0f, 0.0f, true },    // Closed Hat
-            { 0, 65.0f, 18.0f, 10.0f, true },    // Open Hat
+            { 0, 72.0f, -22.0f, 0.0f, true },    // Closed Hat
+            { 0, 58.0f, 18.0f, 10.0f, true },    // Open Hat
             { 2, 60.0f, 30.0f, 12.0f, true },    // Cymbal: shaker
             { 0, 75.0f, -30.0f, 35.0f, true },   // Perc
             { 0, 60.0f, 0.0f, 45.0f, true } };   // FX
@@ -134,7 +141,24 @@ namespace covegroove
               30.0f, 1800.0f, 35.0f, 45.0f, 25.0f, 2, 0, 3, 40.0f, 22.0f, 1, 22.0f, 0.0f,
               { 0, 0, 0, 0, 0, 0, 0, 0 }, { 0, 0, 0, 0, 0, 0, 0, 0 }, 115.0f },
             { "Storm Crunch",     "Mixed", Stomp, 4, 0.65f, 0.45f, 56.0f, 142.0f, { 7, 1, 2, 2, 3, 3, 3, 7 }, { 50, 24, 60, 80, 60, 45, 60, 45 },
-              20.0f, 2400.0f, 40.0f, 55.0f, 30.0f, 3, 2, 3, 45.0f, 22.0f, 3, 40.0f, 10.0f } };
+              20.0f, 2400.0f, 40.0f, 55.0f, 30.0f, 3, 2, 3, 45.0f, 22.0f, 3, 40.0f, 10.0f },
+
+            // the classic drum machines (CgMachines.h): 11 = the 808's sound in each lane, 12 the 909's, 13 the 707's
+            { "808 Shoreline",    "Machines", Rolling, 2, 0.50f, 0.40f, 58.0f, 124.0f, { 11, 11, 11, 11, 11, 11, 11, 11 }, { 60, 18, 62, 70, 50, 40, 50, 55 },
+              10.0f, 1800.0f, 20.0f, 25.0f, 10.0f, 2, 0, 3, 30.0f, 15.0f, 1, 8.0f, -10.0f,
+              { 0, 0, 0, 0, 0, 0, 0, 0 }, { 120, 90, 100, 100, 100, 100, 100, 100 }, 100.0f },
+            { "909 Lighthouse",   "Machines", Stomp, 2, 0.55f, 0.40f, 56.0f, 132.0f, { 12, 13, 12, 12, 12, 12, 13, 13 }, { 58, 20, 58, 68, 52, 42, 50, 45 },
+              15.0f, 2000.0f, 25.0f, 30.0f, 12.0f, 2, 0, 3, 32.0f, 16.0f, 0, 10.0f, 0.0f,
+              { 0, 0, 0, 0, 0, 0, 0, 0 }, { 100, 100, 100, 100, 100, 100, 100, 100 }, 100.0f },
+            { "909 Clap Pier",    "Machines", Rolling, 4, 0.60f, 0.50f, 60.0f, 128.0f, { 12, 11, 13, 12, 12, 13, 12, 12 }, { 58, 18, 55, 66, 50, 38, 45, 45 },
+              20.0f, 2200.0f, 25.0f, 35.0f, 15.0f, 2, 0, 3, 35.0f, 18.0f, 0, 12.0f, 5.0f,
+              { 0, -5, 0, 0, 0, 0, 0, 0 }, { 100, 110, 100, 100, 100, 100, 100, 100 }, 100.0f },
+            { "707 Arcade",       "Machines", Shuffle, 2, 0.55f, 0.45f, 64.0f, 120.0f, { 13, 12, 13, 13, 13, 13, 12, 13 }, { 60, 20, 58, 66, 52, 40, 48, 48 },
+              15.0f, 2400.0f, 20.0f, 30.0f, 10.0f, 2, 0, 1, 30.0f, 15.0f, 1, 10.0f, 0.0f,
+              { 0, 0, 0, 0, 0, 0, 0, 0 }, { 100, 100, 100, 100, 100, 100, 100, 100 }, 100.0f },
+            { "Machine Tide",     "Machines", Tribal, 2, 0.55f, 0.50f, 60.0f, 126.0f, { 12, 11, 11, 11, 12, 12, 11, 12 }, { 58, 18, 60, 68, 52, 40, 50, 45 },
+              20.0f, 1600.0f, 25.0f, 35.0f, 15.0f, 3, 0, 3, 35.0f, 18.0f, 1, 10.0f, -5.0f,
+              { 0, 0, 0, 0, 0, 0, 0, 0 }, { 100, 100, 100, 100, 100, 100, 100, 100 }, 100.0f } };
         constexpr int kNumPrograms = (int) (sizeof (kPrograms) / sizeof (kPrograms[0]));
 
         //=== the kits (a sound for every lane at once) ==========================
@@ -147,7 +171,11 @@ namespace covegroove
             { "Kit",        { 6, 7, 7, 6, 6, 6, 7, 4 }, { 55, 26, 55, 70, 50, 42, 55, 45 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
             { "Crunch",     { 7, 3, 2, 2, 3, 3, 3, 7 }, { 50, 24, 60, 80, 60, 45, 60, 45 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
             { "Warehouse",  { 8, 8, 8, 8, 8, 8, 8, 9 }, { 50, 26, 58, 80, 60, 50, 72, 50 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
-            { "Warehouse Verb", { 9, 9, 9, 9, 9, 9, 9, 8 }, { 50, 24, 55, 80, 60, 45, 70, 50 }, { 100, 100, 100, 100, 100, 100, 100, 100 } } };
+            { "Warehouse Verb", { 9, 9, 9, 9, 9, 9, 9, 8 }, { 50, 24, 55, 80, 60, 45, 70, 50 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "808",        { 11, 11, 11, 11, 11, 11, 11, 11 }, { 60, 18, 62, 70, 50, 40, 50, 55 }, { 120, 90, 100, 100, 100, 100, 100, 100 } },
+            { "909",        { 12, 13, 12, 12, 12, 12, 13, 13 }, { 58, 20, 58, 68, 52, 42, 50, 45 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "909 Clap",   { 12, 11, 13, 12, 12, 13, 12, 12 }, { 58, 18, 55, 66, 50, 38, 45, 45 }, { 100, 110, 100, 100, 100, 100, 100, 100 } },
+            { "707",        { 13, 12, 13, 13, 13, 13, 12, 13 }, { 60, 20, 58, 66, 52, 40, 48, 48 }, { 100, 100, 100, 100, 100, 100, 100, 100 } } };
         constexpr int kNumKits = (int) (sizeof (kKits) / sizeof (kKits[0]));
 
         //=== the effect presets (the phaser, band-pass, delay and drive alone) =====
@@ -228,7 +256,7 @@ namespace covegroove
         p.push_back (pct ("delayMix", "Delay Mix", 0.0f, 100.0f, 22.0f));
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "delayPing", 1 }, "Ping-Pong", true));
         p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "driveMode", 1 }, "Drive Mode", StringArray { "Tube", "Tape", "Fuzz", "Crush" }, 0));
-        p.push_back (pct ("drive", "Drive", 0.0f, 100.0f, 22.0f));
+        p.push_back (pct ("drive", "Drive", 0.0f, 100.0f, 12.0f));
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "driveTone", 1 }, "Drive Tone", NormalisableRange<float> (-100.0f, 100.0f, 0.1f), 0.0f));
         p.push_back (pct ("driveMix", "Drive Mix", 0.0f, 100.0f, 100.0f));
         p.push_back (pct ("volume", "Volume", 0.0f, 150.0f, 43.0f));
@@ -571,13 +599,13 @@ namespace covegroove
             // a lane or two from elsewhere now and then
             if (r.nextFloat() < 0.5f)
                 for (int i = 0, n = 1 + r.nextInt (2); i < n; ++i)
-                    setParam (laneParam (r.nextInt (kNumLanes), "model"), (float) r.nextInt (kSampleModel));
+                    setParam (laneParam (r.nextInt (kNumLanes), "model"), (float) randomSynthModel (r));
         }
         if (what == Random::Sounds || all)
         {
             for (int l = 0; l < kNumLanes; ++l)
             {
-                if (what == Random::Sounds) setParam (laneParam (l, "model"), (float) r.nextInt (kSampleModel));   // not Sample
+                if (what == Random::Sounds) setParam (laneParam (l, "model"), (float) randomSynthModel (r));   // not Sample
                 const float tuneRange = l == Kick ? 2.0f : (l == Bass ? 5.0f : 3.0f);
                 setParam (laneParam (l, "tune"), std::round (between (-tuneRange, tuneRange)));
                 setParam (laneParam (l, "decay"), between (70.0f, 150.0f));
@@ -651,7 +679,8 @@ namespace covegroove
         for (int l = 0; l < kNumLanes; ++l)
         {
             set (laneParam (l, "model"), (float) pr.models[l]);
-            set (laneParam (l, "level"), pr.levels[l]);
+            // the hats a little further back than the programs were first written with (5.16)
+            set (laneParam (l, "level"), pr.levels[l] * (l == ClosedHat ? 0.84f : (l == OpenHat ? 0.9f : 1.0f)));
             set (laneParam (l, "tune"), pr.tunes[l]);
             set (laneParam (l, "decay"), pr.decays[l] > 0.0f ? pr.decays[l] : 100.0f);
         }
@@ -666,7 +695,7 @@ namespace covegroove
         set ("delayFeedback", pr.delayFb);
         set ("delayMix", pr.delayMix);
         set ("driveMode", (float) pr.driveMode);
-        set ("drive", pr.drive);
+        set ("drive", pr.drive * 0.55f);   // gentler than the programs were first written with (5.16)
         set ("driveTone", pr.driveTone);
         set ("volume", (pr.volume > 0.0f ? pr.volume : 80.0f) * 0.54f);   // the kits' levels, brought down to sit with the other sources
 

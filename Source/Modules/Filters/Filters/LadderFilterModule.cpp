@@ -1,6 +1,28 @@
 #include "LadderFilterModule.h"
+#include "../../Core/FilterResponse.h"
 
 using namespace aquanode;
+
+// four one-poles, the fourth fed back a sample late; Drive only saturates
+// (its tanh is left out: the shape at ordinary levels)
+bool LadderFilterModule::magnitudeResponseDb (const float* hz, float* db, int n) const
+{
+    const double cutoff = juce::jlimit (20.0, 20000.0, (double) getParameterBase (pCutoff));
+    const double g = 1.0 - std::exp (-juce::MathConstants<double>::twoPi * juce::jmin (cutoff, sampleRate * 0.45) / sampleRate);
+    const double k = getParameterBase (pResonance) * 4.4;
+    const double outVol = getParameterBase (pOutputVolume);
+    const int mode = (int) getParameterBase (pMode);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto z1 = response::zInv (hz[i], sampleRate);
+        const auto h1 = response::onePole (g, z1);
+        const auto h2 = h1 * h1, h4 = h2 * h2;
+        const auto x = 1.0 / (1.0 + k * z1 * h4);
+        const auto y = mode == 0 ? h2 * x : mode == 1 ? h4 * x : mode == 2 ? (1.0 - h2) * x : (1.0 - h4) * x;
+        db[i] = response::db (y * outVol);
+    }
+    return true;
+}
 
 void LadderFilterModule::processVoiceSample (int v, const StereoFrame* inputs, StereoFrame* outputs)
 {

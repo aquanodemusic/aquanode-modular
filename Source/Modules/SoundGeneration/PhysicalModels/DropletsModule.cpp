@@ -47,12 +47,17 @@ void DropletsModule::triggerDroplet (int v)
                  * std::pow (10.0f, gaussianRandom() * sizeVar * 0.5f);
     radius = juce::jlimit (0.00015f, 0.02f, radius);
 
-    // bubble acoustics: freq = 3 / radius (metres)
-    const float baseFreq = juce::jlimit (20.0f, 20000.0f, 3.0f / radius);
+    // bubble acoustics: freq = 3 / radius (metres) - or, Tuned By Key, the
+    // key's own pitch (Size Var a little scatter around it; Size still sets
+    // how the drop rings)
+    const bool byKey = std::lround (param (pTune)) == 1 && noteHz[v] > 0.0f;
+    const float baseFreq = byKey ? juce::jlimit (20.0f, 20000.0f, noteHz[v] * std::exp2 (gaussianRandom() * sizeVar * 0.4f / 12.0f))
+                                 : juce::jlimit (20.0f, 20000.0f, 3.0f / radius);
 
     // amplitude ~ radius^1.5, scaled up for audibility, Bright as distance
     const float bright = param (pBright) * 0.01f;
-    float amplitude = radius * std::sqrt (radius) * 200.0f
+    // (Tuned By Key every drop speaks alike, as an instrument's notes do)
+    float amplitude = (std::lround (param (pTune)) == 1 && noteHz[v] > 0.0f ? 0.5f : radius * std::sqrt (radius) * 200.0f)
                     * std::pow (10.0f, (bright - 0.5f) * 2.0f);
 
     // decay time follows the radius: tiny bubbles ping, big ones bloop
@@ -67,7 +72,7 @@ void DropletsModule::triggerDroplet (int v)
     const float depth = param (pDepth) * 0.01f;
     if (rise > 0.01f)
     {
-        const float targetFreq = baseFreq * (1.0f + depth * juce::MathConstants<float>::sqrt2);
+        const float targetFreq = baseFreq * (1.0f + depth * juce::MathConstants<float>::sqrt2 * (byKey ? 0.2f : 1.0f));
         const float riseDuration = juce::jmax (0.0005f, decayTimeSeconds * (1.5f - rise));
         slot->pitchRiseRate = (targetFreq - baseFreq) / (float) (riseDuration * sampleRate);
     }
@@ -187,7 +192,8 @@ static ModuleDescriptor dropletsDescriptor()
         "pitch, chirp and decay follow real bubble acoustics, drip-clocked at Rate with "
         "per-drop stereo spread. The stream runs while a note is held or Gate In is high - a "
         "Clock or Euclid gate works; Env In wants an ADSR and otherwise the drips play at "
-        "full level and simply ring out when the stream stops. Midi In takes notes too (Keyboard Midi, Piano Roll...): each held note runs its own drip stream.";
+        "full level and simply ring out when the stream stops. Midi In takes notes too (Keyboard Midi, Piano Roll...): each held note runs its own drip stream. "
+        "Tune By Key drips at the pitch of the key played (a melodic rain; Size still sets how each drop rings), By Size at the drop's own pitch.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 18;
     d.sockets = {
@@ -207,7 +213,9 @@ static ModuleDescriptor dropletsDescriptor()
         makeRotary ("width",   "Width",    0.0f, 100.0f, 50.0f, 1, "%"),
         makeRotary ("volume",  "Volume",   0.0f, 1.0f, 0.5f, 2),
         makeRotary ("density", "Density",  1.0f, (float) DropletsModule::kMaxDroplets, 16.0f, 2, {}, false, 1.0f),
-        makeRotary ("voices",  "Voices",   1.0f, (float) kMaxVoices, (float) kMaxVoices, 2, {}, false, 1.0f).noMod()
+        makeRotary ("voices",  "Voices",   1.0f, (float) kMaxVoices, (float) kMaxVoices, 2, {}, false, 1.0f).noMod(),
+        // By Key: every drip at the pitch of the key played (a melodic rain); By Size: the drop's own pitch
+        makeCombo  ("tune",    "Tune",     { "By Size", "By Key" }, 1, 3, 2).whenMissing (0.0f)
     };
     return d;
 }

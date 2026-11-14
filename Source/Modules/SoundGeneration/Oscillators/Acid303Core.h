@@ -287,9 +287,7 @@ namespace aquanode::acid303
             pitchLog2 = targetLog2;
             pitchValid = false;
             accentNote = accented;
-            const double tau = accented ? std::exp (cal[AccentDecayLn]) * std::max (0.05, k.accentDecay)
-                                        : std::exp (cal[DecayA] + cal[DecayB] * k.decay + cal[DecayC] * k.decay * k.decay);
-            megMul = std::exp (-1.0 / (tau * fs));
+            setMegDecay (k);
             megRaw = 1.0;
             // the VCA starts again from where it is (no click on a retrigger)
             vcaAtt = idle ? 0.0 : vcaAtt * vcaDec * vcaRel;
@@ -297,6 +295,17 @@ namespace aquanode::acid303
             if (accented) accBoost = 1.0;
             gate = true;
             idle = false;
+        }
+
+        // the MEG's fall for the note that sounds (the Decay pot is in its RC: turning it -
+        // or modulating it - changes a held note's decay too)
+        void setMegDecay (const Knobs& k) noexcept
+        {
+            const double tau = accentNote ? std::exp (cal[AccentDecayLn]) * std::max (0.05, k.accentDecay)
+                                          : std::exp (cal[DecayA] + cal[DecayB] * k.decay + cal[DecayC] * k.decay * k.decay);
+            megMul = std::exp (-1.0 / (tau * fs));
+            megDecayKnob = k.decay;
+            megAccDecayKnob = k.accentDecay;
         }
 
         void noteOff() noexcept { gate = false; }
@@ -314,6 +323,8 @@ namespace aquanode::acid303
                 || k.accent != lastKnobs.accent || k.sweepTime != lastKnobs.sweepTime || k.track != lastKnobs.track
                 || k.drive != lastKnobs.drive || ! knobsValid)
                 knobsChanged (k);
+            if (k.decay != megDecayKnob || k.accentDecay != megAccDecayKnob)
+                setMegDecay (k);
             const Tables& T = Tables::get();
             double y2[kOversample];
             for (int n = 0; n < kOversample; ++n)
@@ -442,6 +453,7 @@ namespace aquanode::acid303
         int coefCountdown = 0;
         double fbState = 0.0, outHpState = 0.0;
         double megRaw = 0.0, meg = 0.0, megMul = 0.0, sweep = 0.0;
+        double megDecayKnob = -1.0, megAccDecayKnob = -1.0;
         double vcaAtt = 0.0, vcaDec = 1.0, vcaRel = 1.0, accBoost = 0.0;
         // derived
         double pole[4] { 0.12, 1.0, 2.3, 3.5 };

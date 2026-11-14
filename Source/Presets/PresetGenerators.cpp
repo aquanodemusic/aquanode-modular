@@ -54,13 +54,19 @@ namespace
                 return [seed] (AquanodeModularAudioProcessor& p) { return buildRandomAmpGrowl (p, seed); };
             } });
 
-            // Chord: the hand-made presets (Source/Presets/Curated), one of them per roll
-            byName["Chord"].push_back ({ "Presets", [] (juce::uint32 seed) -> BuildFn
+            // the hand-made presets (Source/Presets/Curated), one of their row's per roll:
+            // Chord, and FX
+            for (const juce::String row : { "Chord", "FX" })
             {
-                Dice dice (seed ^ 0xc0ffee5u);
-                const int pick = dice.index (juce::jmax (1, curatedPresetCount()));
-                return [pick] (AquanodeModularAudioProcessor& p) { return loadCuratedPreset (p, pick); };
-            } });
+                if (curatedPresetCount (row) == 0)
+                    continue;
+                byName[row].push_back ({ "Presets", [row] (juce::uint32 seed) -> BuildFn
+                {
+                    Dice dice (seed ^ 0xc0ffee5u);
+                    const int pick = curatedPresetIndex (row, dice.index (juce::jmax (1, curatedPresetCount (row))));
+                    return [pick] (AquanodeModularAudioProcessor& p) { return loadCuratedPreset (p, pick); };
+                } });
+            }
 
             // 303: the acid voice
             byName["303"].push_back ({ "Acid", [] (juce::uint32 seed) -> BuildFn
@@ -233,13 +239,13 @@ namespace
         const auto lower = name == "FX" ? juce::String ("effect") : name.toLowerCase();
         if (name == "303")
             g.tooltipBody = "Clears the patch and builds a new acid patch with every tap, a third of the time each: "
-                            "the Warp Osc voice into a resonant Ladder Filter, the 303 module played from the keys, or "
+                            "the Warp voice into a resonant Ladder Filter, the 303 module played from the keys, or "
                             "the 303 playing a hook of its own on its grid (a pentatonic arp, octave steps or an acid "
                             "line). Then drive and delay; some come with an Arp in front.";
         else if (name == "Growl")
             g.tooltipBody = "Clears the patch and builds a new growl with every tap, of either kind: Spectral "
                             "(Colorbass chord wavetables with their spectral morph, formant and comb) or Random "
-                            "(Warp Osc layers whose Random Amp morph is swept through every note).";
+                            "(Warp layers whose Random Amp morph is swept through every note).";
         else if (engineNames.size() > 1)
             g.tooltipBody = "Clears the patch and builds a new " + lower + " sound with every tap, from one of the "
                             "engines that make " + lower + " sounds.";

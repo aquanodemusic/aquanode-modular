@@ -52,6 +52,16 @@ public:
     bool isMidiNoteDriver() const override { return true; }
     bool runsWithoutListeners() const override { return true; }   // playhead moves even unpatched
 
+    // Record: it hears what is played on the keys (the on-screen keyboard, a
+    // MIDI keyboard, the host's MIDI). While Record is on, those notes go out
+    // of its Midi Out as they are played, and - while it plays - into the roll.
+    bool wantsRawMidi() const override { return true; }
+    bool playedKeysReachRawMidi (const aquanode::ModuleDescriptor&) const override { return true; }
+    void rawMidiMessage (const juce::MidiMessage& message) override;
+    bool isRecording() const { return recording.load (std::memory_order_relaxed); }
+    void setRecording (bool shouldRecord);          // message thread; one Undo step per take
+    void collectRecorded();                         // message thread: the notes played since the last call
+
     void prepare (double sr) override;
     void reset() override;
     void blockStart() override;
@@ -158,6 +168,19 @@ private:
     double activeEnd[128] {};         // beat the note ends; < 0 = not sounding
     int activeList[128] {};
     int numActive { 0 };
+
+    // Record
+    std::atomic<bool> recording { false };
+    struct ThruEvent { int pitch; float velocity; bool on; };
+    std::array<ThruEvent, 64> thruEvents {};
+    int numThru { 0 };
+    bool thruHeld[128] {};
+    int numThruHeld { 0 };
+    double recStart[128];             // beat the held key went down; < 0 = not being recorded
+    float recVelocity[128] {};
+    double recLoopLen { 16.0 };
+    juce::AbstractFifo recFifo { 512 };
+    std::array<PianoRollNote, 512> recData {};
 
     int previewLeft[128] {};          // samples until a preview note lets go
     std::array<std::pair<int, float>, 32> pendingPreviews {};

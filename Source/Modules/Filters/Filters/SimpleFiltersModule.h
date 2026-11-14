@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Core/FilterResponse.h"
 
 // Four single-purpose filters - Lowpass, Highpass, Notch and Bell - each one
 // a module of its own, so a patch reads at a glance and every knob means
@@ -86,7 +87,19 @@ public:
         }
     }
 
+    // the static curve: the same stages, on the knobs as set
+    bool magnitudeResponseDb (const float* hz, float* db, int n) const override
+    {
+        const double fc = juce::jlimit (10.0, sampleRate * 0.49, (double) getParameterBase (0));
+        for (int i = 0; i < n; ++i)
+            db[i] = response::db (shape (response::sOf (hz[i], fc, sampleRate)));
+        return true;
+    }
+
 protected:
+    // the response at a TPT s (see FilterResponse.h), from the knobs as set
+    virtual response::C shape (response::C s) const = 0;
+
     // every module's first param is its frequency, its last its Mod Depth
     float modulatedFrequency (float modIn, int v = 0) const
     {
@@ -129,6 +142,14 @@ protected:
         st[1].tick (first, g, 0.7654f * (1.0f - res) + 0.02f * res, band, low);
         return low;
     }
+
+    response::C shape (response::C s) const override
+    {
+        const double res = getParameterBase (pResonance);
+        if (getParameterBase (pSlope) < 0.5f)
+            return response::svf (s, 1.4142 * (1.0 - res) + 0.02 * res).low;
+        return response::svf (s, 1.8478).low * response::svf (s, 0.7654 * (1.0 - res) + 0.02 * res).low;
+    }
 };
 
 class HighpassModule : public SimpleFilterBase
@@ -154,6 +175,14 @@ protected:
         st[1].tick (first, g, k2, band, low);
         return first - k2 * band - low;
     }
+
+    response::C shape (response::C s) const override
+    {
+        const double res = getParameterBase (pResonance);
+        if (getParameterBase (pSlope) < 0.5f)
+            return response::svf (s, 1.4142 * (1.0 - res) + 0.02 * res).high;
+        return response::svf (s, 1.8478).high * response::svf (s, 0.7654 * (1.0 - res) + 0.02 * res).high;
+    }
 };
 
 class NotchModule : public SimpleFilterBase
@@ -172,6 +201,14 @@ protected:
         st[0].tick (in, g, k, band, low);
         return in - k * band;    // low + high
     }
+
+    response::C shape (response::C s) const override
+    {
+        const double q = 1.0 / (2.0 * std::sinh (0.34657359 * (double) getParameterBase (pWidth)));
+        const double k = 1.0 / juce::jmax (0.05, q);
+        const auto r = response::svf (s, k);
+        return 1.0 - k * r.band;
+    }
 };
 
 class BellModule : public SimpleFilterBase
@@ -188,6 +225,13 @@ protected:
         float band, low;
         st[0].tick (in, g, k, band, low);
         return in + k * (A * A - 1.0f) * band;
+    }
+
+    response::C shape (response::C s) const override
+    {
+        const double A = std::pow (10.0, (double) getParameterBase (pGain) / 40.0);
+        const double k = 1.0 / (juce::jmax (0.05, (double) getParameterBase (pQ)) * A);
+        return 1.0 + k * (A * A - 1.0) * response::svf (s, k).band;
     }
 
     Memo gainMemo;   // the Gain knob's level (see Memo)

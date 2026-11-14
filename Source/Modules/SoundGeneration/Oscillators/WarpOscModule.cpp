@@ -560,7 +560,7 @@ static ModuleDescriptor warpOscDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "osc.warp";
-    d.displayName = "Warp Osc";
+    d.displayName = "Warp";
     d.description =
         "A clean, band-limited morphing oscillator with phase warps and up to 16 unison copies. Shape morphs "
         "Sine > Triangle > Saw > Square > Pulse (or, on Custom, between the patch's two stored spectra); "

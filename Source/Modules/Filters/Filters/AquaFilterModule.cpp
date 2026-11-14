@@ -1,6 +1,44 @@
 #include "AquaFilterModule.h"
+#include "../../Core/FilterResponse.h"
 
 using namespace aquanode;
+
+// the ladder modes: one-poles tuned by Huovilainen's coefficients, the last
+// (LP12: the second) fed back a sample late; the SVF modes: a TPT stage.
+// Drive saturates before it all and is left out (the shape at ordinary
+// levels); LP24+'s output clip is unity there too
+bool AquaFilterModule::magnitudeResponseDb (const float* hz, float* db, int n) const
+{
+    const double sr = sampleRate;
+    const double cutoff = juce::jlimit (20.0, juce::jmin (20000.0, sr * 0.45), (double) getParameterBase (pCutoff));
+    const int type = (int) getParameterBase (pType);
+    const double r = shapeResonance (getParameterBase (pResonance), (int) getParameterBase (pResCurve));
+
+    if (type <= 2)
+    {
+        const double fc = cutoff / sr, fc2 = fc * fc, fc3 = fc2 * fc;
+        const double fcr = 1.8730 * fc3 + 0.4955 * fc2 - 0.6490 * fc + 0.9988;
+        const double acr = -3.9364 * fc2 + 1.8409 * fc + 0.9968;
+        const double tune = juce::jlimit (0.0, 1.0, 1.0 - std::exp (-juce::MathConstants<double>::twoPi * fcr * fc));
+        const double res4 = 4.2 * r * acr;
+        for (int i = 0; i < n; ++i)
+        {
+            const auto z1 = response::zInv (hz[i], sr);
+            const auto h1 = response::onePole (tune, z1);
+            const auto h2 = h1 * h1;
+            db[i] = response::db (type == 0 ? h2 / (1.0 + 0.5 * res4 * z1 * h2)
+                                            : (h2 * h2) / (1.0 + res4 * z1 * h2 * h2));
+        }
+        return true;
+    }
+    const double k = 2.0 * (1.0 - r * 0.985);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto s = response::svf (response::sOf (hz[i], cutoff, sr), k);
+        db[i] = response::db (type == 3 ? s.band : s.high);
+    }
+    return true;
+}
 
 float AquaFilterModule::ladderProcess (LadderState& s, float x, float tune, float res4) const
 {
@@ -99,7 +137,7 @@ static ModuleDescriptor aquaFilterDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "filter.aquafilter";
-    d.displayName = "AquaFilter";
+    d.displayName = "Multimode Drive Filter";
     d.description =
         "The filter core of the AquaFilter plugin: a tanh-stage ladder in 12/24 dB lowpass "
         "plus an extra-saturated 24+ mode, and an SVF for bandpass and highpass, with Drive "

@@ -26,8 +26,9 @@ protected:
         if (sideBins == nullptr)
             return;
 
-        float mainMag[kNumBins], sideMag[kNumBins];
-        for (int b = 0; b < kNumBins; ++b)
+        float* mainMag = scratchMain;
+        float* sideMag = scratchSide;
+        for (int b = 0; b < numBins; ++b)
         {
             mainMag[b] = std::abs (bins[b]);
             sideMag[b] = std::abs (sideBins[b]);
@@ -35,15 +36,16 @@ protected:
 
         // envelope extraction: forward+backward one-pole across bins,
         // width from the Smooth knob (in bins)
-        const float width = juce::jmax (1.0f, param (pSmooth));
+        // Smooth is in bins of the 1024-point FFT: the same width in Hz at any size
+        const float width = juce::jmax (1.0f, param (pSmooth) * (float) fftSize / 1024.0f);
         const float coeff = 1.0f / width;
-        extractEnvelope (mainMag, mainEnv, coeff);
-        extractEnvelope (sideMag, sideEnv, coeff);
+        extractEnvelope (mainMag, mainEnv, coeff, numBins);
+        extractEnvelope (sideMag, sideEnv, coeff, numBins);
 
         const float amount = param (pMorph) * 0.01f;
         constexpr float maxRatio = 8.0f;
 
-        for (int b = 0; b < kNumBins; ++b)
+        for (int b = 0; b < numBins; ++b)
         {
             if (mainEnv[b] <= 1.0e-10f)
                 continue;
@@ -62,16 +64,16 @@ protected:
     int curveParamOffset() const override { return 3; }
 
 private:
-    static void extractEnvelope (const float* mag, float* env, float coeff)
+    static void extractEnvelope (const float* mag, float* env, float coeff, int n)
     {
         float s = mag[0];
-        for (int b = 0; b < kNumBins; ++b)            // forward pass
+        for (int b = 0; b < n; ++b)                  // forward pass
         {
             s += coeff * (mag[b] - s);
             env[b] = s;
         }
-        s = env[kNumBins - 1];
-        for (int b = kNumBins - 1; b >= 0; --b)       // backward pass
+        s = env[n - 1];
+        for (int b = n - 1; b >= 0; --b)             // backward pass
         {
             s += coeff * (env[b] - s);
             env[b] = s;
@@ -80,4 +82,5 @@ private:
 
     float mainEnv[kNumBins] {};
     float sideEnv[kNumBins] {};
+    float scratchMain[kNumBins] {}, scratchSide[kNumBins] {};
 };

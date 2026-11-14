@@ -11,9 +11,8 @@
 // auto Gain Match keeps Following the live dry signal while frozen or
 // Holds the level it had at the instant freeze engaged - plus a granular
 // Stretch mode that crossfades between periodically re-snapshotted grains.
-// The original's FFT Size choice is dropped: this framework's spectral
-// modules all share a fixed 1024-point / 256-hop STFT engine, the same
-// trade every other Spec* module here makes. Gain Match here compares
+// FFT picks the STFT size (512 .. 4096, 75 % overlap), as on every Spec*
+// module here. Gain Match here compares
 // per-hop spectral energy (Parseval) rather than a windowed time-domain
 // RMS, and runs per channel rather than on the combined stereo signal;
 // both are hop-rate equivalents of the original block-rate metering.
@@ -90,5 +89,13 @@ private:
     };
 
     std::array<ChannelState, 2> channels;
-    aquanode::Fft1024 cepstrumFft;   // separate FFT instance for the cepstral lifter step
+    aquanode::FftRadix2 cepstrumFft;   // separate FFT instance for the cepstral lifter step, the STFT's size
+
+    void fftSizeChanged() override { cepstrumFft.setOrder ((int) std::lround (std::log2 ((double) fftSize))); }
+
+    // per-hop scratch, kept here rather than on the audio thread's stack
+    float sMag[kNumBins] {}, sPhase[kNumBins] {}, sLogMag[kNumBins] {}, sSmooth[kNumBins] {}, sInst[kNumBins] {};
+    float sOutMag[kNumBins] {}, sOutPhase[kNumBins] {};
+    std::complex<float> cepSpec[kNumBins] {}, cepOut[kNumBins] {};
+    float cepTime[kFftSize] {}, cepLift[kFftSize] {};
 };

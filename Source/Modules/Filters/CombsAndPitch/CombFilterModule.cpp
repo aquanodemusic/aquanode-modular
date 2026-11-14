@@ -1,6 +1,34 @@
 #include "CombFilterModule.h"
+#include "../../Core/FilterResponse.h"
 
 using namespace aquanode;
+
+// the two combs at Freq (Pitch In left out): the linearly interpolated delay
+// D, the damping one-pole L in the loop - feedback 1 / (1 - fb L D),
+// feedforward 1 + fb D - blended, through the soft clip (0.84 at ordinary
+// levels), mixed with the dry input
+bool CombFilterModule::magnitudeResponseDb (const float* hz, float* db, int n) const
+{
+    const double sr = sampleRate;
+    const double freq = juce::jlimit ((double) kMinFreq, juce::jmin ((double) kMaxFreq, sr * 0.45), (double) getParameterBase (pFreq));
+    const double d = juce::jlimit (1.0, juce::jmax (1.0, (double) (lineLength - 2)), sr / freq);
+    const int di = (int) d;
+    const double frac = d - (double) di;
+    const double feedback = juce::jlimit (-0.995, 0.995, getParameterBase (pFeedback) * 0.01);
+    const double blend = juce::jlimit (0.0, 1.0, getParameterBase (pBlend) * 0.01);
+    const double wet = juce::jlimit (0.0, 1.0, getParameterBase (pDryWet) * 0.01);
+    const double dampHz = juce::jlimit (200.0, sr * 0.45, getParameterBase (pDamping) * 200.0);
+    const double c = 1.0 - std::exp (-juce::MathConstants<double>::twoPi * dampHz / sr);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto z1 = response::zInv (hz[i], sr);
+        const auto delay = response::zPow (hz[i], sr, (double) di) * ((1.0 - frac) + frac * z1);
+        const auto fb = 1.0 / (1.0 - feedback * response::onePole (c, z1) * delay);
+        const auto ff = 1.0 + feedback * delay;
+        db[i] = response::db ((1.0 - wet) + wet * 0.84 * ((1.0 - blend) * ff + blend * fb));
+    }
+    return true;
+}
 
 //==============================================================================
 void CombFilterModule::prepare (double sr)

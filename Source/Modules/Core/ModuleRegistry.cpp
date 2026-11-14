@@ -10,10 +10,17 @@
 // outside the module's own .h/.cpp needs touching.
 
 #define AQUANODE_CORE_MODULES(X) \
+    X (FruitNoteFeed) \
+    X (FruitMeter) \
+    X (FruitRackPart) \
+    X (FruitRollPart) \
+    X (FruitPlaylistPart) \
+    X (FruitMixerPart) \
     X (AudioInModule) \
     X (AudioOutModule) \
     X (OscillatorModule) \
     X (SamplerModule) \
+    X (MultiSampleModule) \
     X (SVFFilterModule) \
     X (LadderFilterModule) \
     X (DelayModule) \
@@ -53,7 +60,12 @@
     X (LogicModule) \
     X (EnvFollowModule) \
     X (CrossfadeModule) \
+    X (ABSwitchModule) \
+    X (LatencyModule) \
     X (CompressorModule) \
+    X (OptoCompModule) \
+    X (ProgramEQModule) \
+    X (FetCompModule) \
     X (KickModule) \
     X (ModalDrumModule) \
     X (PluckModule) \
@@ -118,12 +130,19 @@
     X (SpectralLockModule) \
     X (SpectralPitchQuantizerModule) \
     X (IRForgeModule) \
+    X (ConvolverModule) \
+    X (BandpassModule) \
+    X (ClipFoldModule) \
+    X (SplineFolderModule) \
+    X (TextNoteModule) \
+    X (ChordNameModule) \
     X (FeltPianoModule) \
     X (MidPianoModule) \
     X (HardPianoModule) \
     X (PianoModule) \
     X (GrandPianoModule) \
     X (WarpOscModule) \
+    X (RandomPresetModule) \
     X (CurveEnvModule) \
     X (RandomLFOModule) \
     X (EchoModule) \
@@ -151,18 +170,26 @@
     X (RerouteReturnModule) \
     X (ReassignedSpectrogramModule) \
     X (SpectrumCompareModule) \
+    X (WaveformViewerModule) \
     X (SpectralResynthModule) \
     X (PitchShifterModule) \
     X (FreeDelayModule) \
     X (VectorModule) \
     X (MpeModule) \
     X (NoteRandomModule) \
-    X (ResynthPianoModule)
+    X (ResynthPianoModule) \
+    X (DubEchoModule) \
+    X (RotaryModule) \
+    X (CirculatorModule) \
+    X (DualVcoAnalogModule) \
+    X (InspectorModule)
 
 // The GUI versions of the plugins merged into Aquanode Modular (src/Plugins)
 #define AQUANODE_PLUGIN_GUI_MODULES(X) \
     X (AquanovaGuiModule) \
     X (AquaVibrioGuiModule) \
+    X (AquaMassifGuiModule) \
+    X (ReflexGuiModule) \
     X (AlphaBetaGuiModule) \
     X (PhizmoGuiModule) \
     X (PhizmOscGuiModule) \
@@ -175,6 +202,8 @@
     X (SlicerGuiModule) \
     X (CombWeaveGuiModule) \
     X (GrainFreezeGuiModule) \
+    X (AudioStretcherGuiModule) \
+    X (TablaGuiModule) \
     X (SampleFieldGuiModule) \
     X (ChorusVerbGuiModule) \
     X (CenterCombGuiModule) \
@@ -184,10 +213,22 @@
     X (AlphaBetaFXGuiModule) \
     X (AutoMorphEQGuiModule) \
     X (FullFilterGuiModule) \
+    X (SpringerGuiModule) \
     X (PhorestGuiModule) \
     X (AliasSynthGuiModule) \
     X (PrecisionUtilityGuiModule) \
-    X (ResonateGuiModule)
+    X (ResonateGuiModule) \
+    X (FM12GuiModule) \
+    X (AdditiveKeysGuiModule) \
+    X (FrequencyDrawerGuiModule) \
+    X (SpectralCompressGuiModule) \
+    X (SpectralStereoizeGuiModule) \
+    X (SpectralCompareGuiModule) \
+    X (EcoSeeGuiModule) \
+    X (BandpassModulatorGuiModule) \
+    X (AquanodeNestedGuiModule) \
+    X (FruitGuiModule) \
+    X (FruitMixerModule)
 
 // The patch versions' modules ("PluginName - Kind", src/Plugins/<Name>)
 #define AQUANODE_PLUGIN_PATCH_MODULES(X) \
@@ -255,6 +296,10 @@
     X (PhizmoOscModule) \
     X (PhizmoFilterModule) \
     X (PhizmoRingModule) \
+    X (AquaMassifVoiceModule) \
+    X (AquaMassifEffectsModule) \
+    X (ReflexVoiceModule) \
+    X (ReflexEffectsModule) \
     X (AquaVibrioVoiceModule) \
     X (AquaVibrioEffectsModule) \
     X (SoundscapeSlotModule) \
@@ -277,6 +322,11 @@
     X (AutoMorphEQOutputModule) \
     X (FullFilterBankModule) \
     X (PhorestPhaserModule) \
+    X (SpringerCoilModule) \
+    X (SpringerOutputModule) \
+    X (TablaBayanModule) \
+    X (TablaDayanModule) \
+    X (TablaOutputModule) \
     X (VitaPatchVoiceModule) \
     X (VitaPatchOscModule) \
     X (VitaPatchSamplerModule) \

@@ -96,24 +96,26 @@ namespace layout
 
         // A bar of tinted glass with a bright upper half (the sidebar's section
         // headers): translucent, so it sits on any sidebar colour
-        inline void glassBar (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour tint, float radius)
+        // (strength < 1: a quieter bar - everything fainter)
+        inline void glassBar (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour tint, float radius, float strength = 1.0f)
         {
-            g.setColour (juce::Colours::black.withAlpha (0.22f));                         // a soft shadow below
+            const float k = strength;
+            g.setColour (juce::Colours::black.withAlpha (0.22f * k));                     // a soft shadow below
             g.fillRoundedRectangle (r.translated (0.0f, 1.5f), radius);
-            juce::ColourGradient body (tint.withAlpha (0.34f), 0.0f, r.getY(), tint.withAlpha (0.14f), 0.0f, r.getBottom(), false);
+            juce::ColourGradient body (tint.withAlpha (0.34f * k), 0.0f, r.getY(), tint.withAlpha (0.14f * k), 0.0f, r.getBottom(), false);
             g.setGradientFill (body);
             g.fillRoundedRectangle (r, radius);
-            juce::ColourGradient lower (tint.withAlpha (0.0f), 0.0f, r.getCentreY(), tint.brighter (0.4f).withAlpha (0.32f), 0.0f, r.getBottom(), false);
+            juce::ColourGradient lower (tint.withAlpha (0.0f), 0.0f, r.getCentreY(), tint.brighter (0.4f).withAlpha (0.32f * k), 0.0f, r.getBottom(), false);
             g.setGradientFill (lower);                                                    // light coming up through the glass
             g.fillRoundedRectangle (r.reduced (1.0f), radius - 1.0f);
             const auto top = r.reduced (2.0f, 1.0f).withHeight (r.getHeight() * 0.5f);
-            juce::ColourGradient shine (juce::Colours::white.withAlpha (0.42f), 0.0f, top.getY(),
-                                        juce::Colours::white.withAlpha (0.05f), 0.0f, top.getBottom(), false);
+            juce::ColourGradient shine (juce::Colours::white.withAlpha (0.42f * k), 0.0f, top.getY(),
+                                        juce::Colours::white.withAlpha (0.05f * k), 0.0f, top.getBottom(), false);
             g.setGradientFill (shine);                                                    // the gloss
             g.fillRoundedRectangle (top, juce::jmax (1.0f, radius - 1.5f));
-            g.setColour (tint.withAlpha (0.7f));
+            g.setColour (tint.withAlpha (0.7f * (0.4f + 0.6f * k)));
             g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.28f));
+            g.setColour (juce::Colours::white.withAlpha (0.28f * k));
             g.drawRoundedRectangle (r.reduced (1.5f), juce::jmax (1.0f, radius - 1.0f), 0.7f);
         }
 
@@ -338,8 +340,7 @@ namespace layout
 
     inline SkeuoLookAndFeel& skeuoLookAndFeel()
     {
-        static SkeuoLookAndFeel laf;
-        return laf;
+        return aquanode::shutdownSafe<SkeuoLookAndFeel>();
     }
 
     // The top bar's buttons in Skeuomorphic: glossy pills in the button's own
@@ -386,8 +387,458 @@ namespace layout
 
     inline AeroButtonLookAndFeel& aeroButtonLookAndFeel()
     {
-        static AeroButtonLookAndFeel laf;
-        return laf;
+        return aquanode::shutdownSafe<AeroButtonLookAndFeel>();
+    }
+
+    //==========================================================================
+    // The Glass look, after the Soundscape Ecology plugin: a saturated jungle
+    // gradient (aqua sky, lagoon, canopy, deep jade) with soft light blooms and
+    // a few pale leaves under everything; panels of frosted glass (white at
+    // 16 %, a sheen from the top, a pale edge); knobs with a dark track, a
+    // luminous arc and a glass cap with a white pointer; white text.
+    //==========================================================================
+    namespace glass
+    {
+        const juce::Colour canopy (0xff2fd17a), moss (0xff118f56), deepJade (0xff064f3d), loam (0xff123a30),
+                           water (0xff17b8d4), sky (0xff5fe3e0), lightWarm (0xffa8f05a);
+        inline juce::Colour text()    { return juce::Colours::white.withAlpha (0.94f); }
+        inline juce::Colour textDim() { return juce::Colours::white.withAlpha (0.66f); }
+
+        inline bool on() { return themeColours().glass; }
+
+        // the jungle, drawn once per size (it is still: the patch moves over it)
+        inline juce::Colour pal (int slot) { return themeColours().glassCol[slot]; }
+
+        // the jungle (from the Glass palette: the gradient's top and bottom, the
+        // middle from Filters, Sound Generation and Effects, blooms in those and
+        // Input / Output)
+        inline void paintJungle (juce::Graphics& g, juce::Rectangle<float> r)
+        {
+            using T = ThemeColours;
+            const auto top      = pal (T::Background);
+            const auto upperMid = pal (T::Filter).interpolatedWith (pal (T::Oscillator), 0.55f).darker (0.38f);
+            const auto middle   = pal (T::Oscillator).interpolatedWith (pal (T::Effect), 0.2f).darker (0.52f);
+            const auto bottom   = pal (T::Sidebar);
+            juce::ColourGradient grad (top, r.getX() + r.getWidth() * 0.15f, r.getY(),
+                                       bottom, r.getX() + r.getWidth() * 0.85f, r.getBottom(), false);
+            grad.addColour (0.26, upperMid);
+            grad.addColour (0.52, middle);
+            grad.addColour (0.78, middle.interpolatedWith (bottom, 0.60f));
+            g.setGradientFill (grad);
+            g.fillRect (r);
+
+            const float w = juce::jmax (r.getWidth(), r.getHeight() * 0.8f);
+            auto bloom = [&] (float cx, float cy, float rad, juce::Colour c, float alpha)
+            {
+                const juce::Point<float> centre (r.getX() + r.getWidth() * cx, r.getY() + r.getHeight() * cy);
+                juce::ColourGradient gg (c.withAlpha (alpha), centre.x, centre.y, c.withAlpha (0.0f), centre.x + rad, centre.y, true);
+                g.setGradientFill (gg);
+                g.fillEllipse (juce::Rectangle<float> (rad * 2.0f, rad * 2.0f).withCentre (centre));
+            };
+            bloom (0.20f, 0.12f, w * 0.34f, pal (T::Effect),      0.16f);
+            bloom (0.82f, 0.30f, w * 0.30f, pal (T::InputOutput), 0.14f);
+            bloom (0.55f, 0.92f, w * 0.38f, pal (T::Oscillator),  0.20f);
+            bloom (0.08f, 0.62f, w * 0.26f, pal (T::Filter),      0.12f);
+        }
+
+        // what the jungle is drawn from (a new palette draws it anew)
+        inline juce::uint64 paletteKey()
+        {
+            juce::uint64 k = 1469598103934665603ull;
+            for (int i = 0; i < ThemeColours::NumSlots; ++i)
+                k = (k ^ themeColours().glassCol[i].getARGB()) * 1099511628211ull;
+            return k;
+        }
+
+        // a cached jungle of a size (each user keeps its own)
+        // the jungle, drawn once for the whole window: `area` is the window's
+        // rectangle in the caller's own coordinates, so a part of the window
+        // (the patch area) draws its piece of the one picture - and a patch
+        // area that changes size (the keyboard moved) changes nothing in it
+        struct Backdrop
+        {
+            juce::Image image;
+            juce::uint64 key { 0 };
+            void draw (juce::Graphics& g, juce::Rectangle<int> area)
+            {
+                if (area.isEmpty())
+                    return;
+                const auto k = paletteKey();
+                if (! image.isValid() || image.getWidth() != area.getWidth() || image.getHeight() != area.getHeight() || k != key)
+                {
+                    image = juce::Image (juce::Image::RGB, area.getWidth(), area.getHeight(), false);
+                    juce::Graphics ig (image);
+                    paintJungle (ig, image.getBounds().toFloat());
+                    key = k;
+                }
+                g.drawImageAt (image, area.getX(), area.getY());
+            }
+        };
+        // one for the window and the patch area - let go when JUCE shuts down,
+        // never at the DLL's unloading (its image is a Direct2D bitmap on Windows)
+        inline Backdrop& backdrop() { return aquanode::shutdownSafe<Backdrop>(); }
+
+        // a leaf: two curved sides meeting in a point, a short stem, a midrib
+        // (size = its length; drawn pointing up, around its middle)
+        inline juce::Path leafShape (float size)
+        {
+            const float h = size * 0.5f, w = size * 0.27f;
+            juce::Path p;
+            p.startNewSubPath (0.0f, h * 0.72f);                                   // the base
+            p.cubicTo (w * 1.25f, h * 0.45f, w * 1.05f, -h * 0.55f, 0.0f, -h);     // right side up to the tip
+            p.cubicTo (-w * 1.05f, -h * 0.55f, -w * 1.25f, h * 0.45f, 0.0f, h * 0.72f);
+            p.closeSubPath();
+            return p;
+        }
+        inline juce::Path leafVeins (float size)
+        {
+            const float h = size * 0.5f, w = size * 0.27f;
+            juce::Path v;
+            v.startNewSubPath (0.0f, h);                  // the stem, through the midrib
+            v.quadraticTo (w * 0.12f, 0.0f, 0.0f, -h * 0.82f);
+            for (float t : { -0.3f, 0.05f, 0.38f })      // three pairs of side veins
+            {
+                v.startNewSubPath (0.0f, h * (t + 0.18f));
+                v.lineTo (w * 0.62f, h * (t - 0.12f));
+                v.startNewSubPath (0.0f, h * (t + 0.18f));
+                v.lineTo (-w * 0.62f, h * (t - 0.12f));
+            }
+            return v;
+        }
+
+        // the drifting leaves over the patch area's jungle: they fall slowly,
+        // swaying and turning, and come in again at the top (only their own
+        // little boxes are redrawn as they move)
+        struct Leaves
+        {
+            struct Leaf { float x, y, rot, spin, speed, size, alpha, phase; };
+            std::vector<Leaf> leaves;
+            juce::Rectangle<float> area;
+            juce::Random rng { 0x1eaf };
+
+            // (a new area - a rotated or resized window - keeps every leaf where
+            // it was, in proportion; only the very first layout scatters them)
+            void layout (juce::Rectangle<float> r)
+            {
+                if (r == area && ! leaves.empty())
+                    return;
+                const auto old = area;
+                area = r;
+                const int n = juce::jlimit (6, 26, (int) (r.getWidth() * r.getHeight() / 60000.0f));
+                if (! leaves.empty() && old.getWidth() > 0.0f && old.getHeight() > 0.0f)
+                    for (auto& l : leaves)
+                    {
+                        l.x = r.getX() + (l.x - old.getX()) * r.getWidth() / old.getWidth();
+                        l.y = r.getY() + (l.y - old.getY()) * r.getHeight() / old.getHeight();
+                    }
+                const auto had = leaves.size();
+                leaves.resize ((size_t) n);
+                for (size_t i = (old.isEmpty() ? 0 : had); i < leaves.size(); ++i)
+                    spawn (leaves[i], rng.nextFloat() * r.getHeight());
+            }
+
+            void spawn (Leaf& l, float y)
+            {
+                l.x = area.getX() + rng.nextFloat() * area.getWidth();
+                l.y = area.getY() + y;
+                l.rot = rng.nextFloat() * juce::MathConstants<float>::twoPi;
+                l.spin = (rng.nextFloat() - 0.5f) * 0.5f;          // radians a second
+                l.speed = 5.0f + rng.nextFloat() * 9.0f;            // pixels a second: slow
+                l.size = 12.0f + rng.nextFloat() * 16.0f;
+                l.alpha = 0.07f + rng.nextFloat() * 0.09f;
+                l.phase = rng.nextFloat() * juce::MathConstants<float>::twoPi;
+            }
+
+            juce::Point<float> position (const Leaf& l, double t) const
+            {
+                return { l.x + 10.0f * std::sin ((float) t * 0.35f + l.phase), l.y };
+            }
+
+            juce::Rectangle<int> boxOf (const Leaf& l, double t) const
+            {
+                return juce::Rectangle<float> (l.size * 1.2f, l.size * 1.2f).withCentre (position (l, t)).expanded (2.0f).getSmallestIntegerContainer();
+            }
+
+            // moves them on by dt seconds; the boxes to redraw go to `dirty`
+            template <typename Fn>
+            void step (double t, float dt, Fn&& dirty)
+            {
+                for (auto& l : leaves)
+                {
+                    const auto before = boxOf (l, t - dt);
+                    l.y += l.speed * dt;
+                    l.rot += l.spin * dt;
+                    if (l.y - l.size > area.getBottom())
+                        spawn (l, -l.size);
+                    dirty (before.getUnion (boxOf (l, t)));
+                }
+            }
+
+            void paint (juce::Graphics& g, double t) const
+            {
+                const auto clip = g.getClipBounds();
+                const auto c = pal (ThemeColours::KnobStart);
+                for (const auto& l : leaves)
+                {
+                    if (! boxOf (l, t).intersects (clip))
+                        continue;
+                    const float sway = 0.35f * std::sin ((float) t * 0.35f + l.phase + 1.2f);
+                    const auto tr = juce::AffineTransform::rotation (l.rot + sway).translated (position (l, t));
+                    g.setColour (c.withAlpha (l.alpha));
+                    g.fillPath (leafShape (l.size), tr);
+                    g.setColour (c.withAlpha (l.alpha * 0.9f));
+                    g.strokePath (leafVeins (l.size), juce::PathStrokeType (0.7f), tr);
+                }
+            }
+        };
+
+        // a pane of frosted glass: a translucent body (tinted a touch), a sheen
+        // from the top, a pale edge (in the palette's Glass Sheen)
+        inline void panel (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour tint, float corner)
+        {
+            const auto sheenC = pal (ThemeColours::KnobEnd);
+            g.setColour (juce::Colours::black.withAlpha (0.16f));                         // a soft shadow below
+            g.fillRoundedRectangle (r.translated (0.0f, 2.0f), corner);
+            g.setColour (pal (ThemeColours::Sidebar).darker (0.1f).interpolatedWith (tint, 0.18f).withAlpha (0.66f));   // frosted
+            g.fillRoundedRectangle (r, corner);
+            g.setColour (sheenC.withAlpha (0.10f));
+            g.fillRoundedRectangle (r, corner);
+            juce::ColourGradient sheen (sheenC.withAlpha (0.16f), 0.0f, r.getY(),
+                                        sheenC.withAlpha (0.02f), 0.0f, r.getBottom(), false);
+            g.setGradientFill (sheen);
+            g.fillRoundedRectangle (r, corner);
+            g.setColour (sheenC.withAlpha (0.30f));
+            g.drawRoundedRectangle (r.reduced (0.5f), corner, 1.0f);
+        }
+
+        // the leaf mark (before a title): a leaf leaning to the right, with its
+        // stem and veins cut out of it
+        inline void leafMark (juce::Graphics& g, juce::Rectangle<float> mark, juce::Colour c)
+        {
+            const float size = juce::jmin (mark.getHeight() * 1.05f, mark.getWidth() * 1.3f);
+            const auto tr = juce::AffineTransform::rotation (0.75f).translated (mark.getCentre());
+            g.setColour (c.withAlpha (0.95f));
+            g.fillPath (leafShape (size), tr);
+            g.setColour (c.darker (0.55f).withAlpha (0.85f));
+            g.strokePath (leafVeins (size), juce::PathStrokeType (juce::jmax (0.8f, size * 0.06f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded), tr);
+        }
+    }
+
+    class GlassLookAndFeel : public juce::LookAndFeel_V4
+    {
+    public:
+        static constexpr float kKnobInset = 5.0f;   // as the Skeuomorphic knobs (the modulation wedges follow)
+
+        GlassLookAndFeel()
+        {
+            using namespace glass;
+            setColour (juce::Label::textColourId, text());
+            setColour (juce::ComboBox::textColourId, text());
+            setColour (juce::ComboBox::backgroundColourId, juce::Colours::white.withAlpha (0.12f));
+            setColour (juce::ComboBox::outlineColourId, juce::Colours::white.withAlpha (0.25f));
+            setColour (juce::ComboBox::arrowColourId, textDim());
+            setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xf0123a30));
+            setColour (juce::PopupMenu::textColourId, text());
+            setColour (juce::PopupMenu::highlightedBackgroundColourId, canopy.withAlpha (0.55f));
+            setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+            setColour (juce::Slider::textBoxTextColourId, text());
+            setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+            setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+            setColour (juce::TextButton::textColourOffId, text());
+            setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+            setColour (juce::ToggleButton::textColourId, text());
+        }
+
+        // the arc in the card's own colour, a little lit (Soundscape's accent)
+        static juce::Colour accentOf (juce::Slider& s)
+        {
+            return s.findColour (juce::Slider::rotarySliderFillColourId);
+        }
+
+        void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float pos,
+                               float startAngle, float endAngle, juce::Slider& s) override
+        {
+            // (round, however the slider's box is shaped)
+            const auto box = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (kKnobInset);
+            const float side = juce::jmin (box.getWidth(), box.getHeight());
+            const auto bounds = box.withSizeKeepingCentre (side, side);
+            const float radius = side * 0.5f;
+            const auto centre = bounds.getCentre();
+            const float angle = startAngle + pos * (endAngle - startAngle);
+            const float arcR = radius - 1.5f;
+
+            juce::Path track;
+            track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, startAngle, endAngle, true);
+            g.setColour (juce::Colours::black.withAlpha (0.26f));
+            g.strokePath (track, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+            if (pos > 0.002f)
+            {
+                juce::Path value;
+                value.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, startAngle, angle, true);
+                const auto glow = s.isEnabled() ? accentOf (s).brighter (0.35f) : juce::Colours::grey;
+                g.setColour (glow.withAlpha (0.22f));   // a soft halo under it
+                g.strokePath (value, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                g.setColour (glow.withAlpha (0.95f));
+                g.strokePath (value, juce::PathStrokeType (2.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+
+            // the glass cap
+            const auto cap = bounds.reduced (radius * 0.24f);
+            juce::ColourGradient body (juce::Colours::white.withAlpha (0.30f), cap.getX(), cap.getY(),
+                                       juce::Colours::black.withAlpha (0.30f), cap.getX(), cap.getBottom(), false);
+            g.setGradientFill (body);
+            g.fillEllipse (cap);
+            g.setColour (juce::Colours::white.withAlpha (0.32f));
+            g.drawEllipse (cap.reduced (0.5f), 1.0f);
+
+            juce::Path pointer;
+            const float pw = 2.0f;
+            pointer.addRoundedRectangle (-pw * 0.5f, -radius * 0.72f, pw, radius * 0.42f, pw * 0.5f);
+            g.setColour (juce::Colours::white.withAlpha (s.isEnabled() ? 0.92f : 0.5f));
+            g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre));
+        }
+
+        void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height, float pos,
+                               float minPos, float maxPos, juce::Slider::SliderStyle style, juce::Slider& s) override
+        {
+            if (style != juce::Slider::LinearHorizontal)
+            {
+                LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, pos, minPos, maxPos, style, s);
+                return;
+            }
+            const auto r = juce::Rectangle<int> (x, y, width, height).toFloat();
+            const float barH = juce::jmin (7.0f, r.getHeight());
+            const auto track = r.withSizeKeepingCentre (r.getWidth(), barH);
+            g.setColour (juce::Colours::black.withAlpha (0.26f));
+            g.fillRoundedRectangle (track, barH * 0.5f);
+            const auto filled = track.withWidth (juce::jmax (barH, pos - track.getX()));
+            const auto glow = s.isEnabled() ? accentOf (s).brighter (0.30f) : juce::Colours::grey;
+            g.setColour (glow.withAlpha (0.92f));
+            g.fillRoundedRectangle (filled, barH * 0.5f);
+            const float hw = 4.0f;
+            const auto handle = juce::Rectangle<float> (hw, juce::jmin (r.getHeight() * 0.82f, 18.0f))
+                                    .withCentre ({ juce::jlimit (track.getX() + hw, track.getRight() - hw, pos), track.getCentreY() });
+            g.setColour (juce::Colours::white.withAlpha (0.94f));
+            g.fillRoundedRectangle (handle, hw * 0.5f);
+        }
+
+        juce::Label* createSliderTextBox (juce::Slider& slider) override
+        {
+            auto* l = LookAndFeel_V4::createSliderTextBox (slider);
+            l->setColour (juce::Label::textColourId, glass::text());
+            l->setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+            l->setColour (juce::Label::outlineColourId, juce::Colours::transparentBlack);
+            l->setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xe0123a30));
+            l->setColour (juce::TextEditor::textColourId, juce::Colours::white);
+            l->setColour (juce::TextEditor::highlightColourId, glass::canopy.withAlpha (0.4f));
+            l->setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+            l->setColour (juce::TextEditor::focusedOutlineColourId, glass::sky.withAlpha (0.6f));
+            l->setColour (juce::CaretComponent::caretColourId, juce::Colours::white);
+            return l;
+        }
+
+        void drawLabel (juce::Graphics& g, juce::Label& label) override
+        {
+            // a value under a knob: on a small pane of darker glass
+            if (dynamic_cast<juce::Slider*> (label.getParentComponent()) != nullptr)
+            {
+                const auto r = label.getLocalBounds().toFloat().reduced (1.0f, 0.5f);
+                const float rad = juce::jmin (6.0f, r.getHeight() * 0.5f);
+                g.setColour (juce::Colours::black.withAlpha (0.20f));
+                g.fillRoundedRectangle (r, rad);
+                g.setColour (juce::Colours::white.withAlpha (0.14f));
+                g.drawRoundedRectangle (r.reduced (0.5f), rad, 0.8f);
+                if (label.isBeingEdited())
+                    return;
+                g.setFont (juce::Font (juce::FontOptions (juce::jlimit (9.5f, 12.5f, (float) label.getHeight() * 0.68f))));
+                g.setColour (glass::text().withMultipliedAlpha (label.isEnabled() ? 1.0f : 0.5f));
+                g.drawFittedText (label.getText(), label.getLocalBounds().reduced (2, 0), juce::Justification::centred, 1, 0.6f);
+                return;
+            }
+            LookAndFeel_V4::drawLabel (g, label);
+        }
+
+        void drawComboBox (juce::Graphics& g, int w, int h, bool, int, int, int, int, juce::ComboBox& box) override
+        {
+            const auto r = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h).reduced (0.5f, 1.0f);
+            const float rad = juce::jmin (8.0f, r.getHeight() * 0.45f);
+            g.setColour (juce::Colours::white.withAlpha (0.13f));
+            g.fillRoundedRectangle (r, rad);
+            g.setColour (juce::Colours::white.withAlpha (0.26f));
+            g.drawRoundedRectangle (r, rad, 1.0f);
+            juce::Path arrow;
+            const float cx = (float) w - 10.0f, cy = (float) h * 0.5f;
+            arrow.startNewSubPath (cx - 3.5f, cy - 1.8f);
+            arrow.lineTo (cx, cy + 2.5f);
+            arrow.lineTo (cx + 3.5f, cy - 1.8f);
+            g.setColour (glass::textDim().withMultipliedAlpha (box.isEnabled() ? 1.0f : 0.5f));
+            g.strokePath (arrow, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+
+        void positionComboBoxText (juce::ComboBox& box, juce::Label& label) override
+        {
+            label.setBounds (3, 1, juce::jmax (8, box.getWidth() - 18), box.getHeight() - 2);
+            label.setFont (getComboBoxFont (box));
+        }
+
+        // buttons as panes of glass (on: washed in the accent)
+        void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& background,
+                                   bool highlighted, bool down) override
+        {
+            const auto r = button.getLocalBounds().toFloat().reduced (1.0f, 1.5f);
+            const float corner = juce::jmin (8.0f, r.getHeight() * 0.45f);
+            const bool on = button.getToggleState();
+            const auto accent = on ? button.findColour (juce::TextButton::buttonOnColourId) : background;
+            g.setColour (on ? accent.withAlpha (0.62f) : juce::Colours::white.withAlpha (highlighted ? 0.20f : 0.13f));
+            g.fillRoundedRectangle (r, corner);
+            if (! down)
+            {
+                juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.18f), 0.0f, r.getY(),
+                                            juce::Colours::white.withAlpha (0.0f), 0.0f, r.getCentreY(), false);
+                g.setGradientFill (sheen);
+                g.fillRoundedRectangle (r, corner);
+            }
+            else
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.15f));
+                g.fillRoundedRectangle (r, corner);
+            }
+            g.setColour (juce::Colours::white.withAlpha ((highlighted ? 0.45f : 0.28f) * (button.isEnabled() ? 1.0f : 0.5f)));
+            g.drawRoundedRectangle (r.reduced (0.5f), corner, 1.0f);
+        }
+
+        void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool, bool) override
+        {
+            g.setFont (getTextButtonFont (button, button.getHeight()));
+            g.setColour (glass::text().withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.45f));
+            g.drawFittedText (button.getButtonText(), button.getLocalBounds().reduced (4, 2), juce::Justification::centred, 2);
+        }
+
+        void drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool highlighted, bool) override
+        {
+            auto r = b.getLocalBounds().toFloat();
+            auto pill = r.removeFromLeft (juce::jmin (34.0f, r.getWidth())).withSizeKeepingCentre (30.0f, 16.0f);
+            g.setColour (b.getToggleState() ? glass::pal (ThemeColours::Oscillator).withAlpha (0.75f) : juce::Colours::white.withAlpha (0.16f));
+            g.fillRoundedRectangle (pill, 8.0f);
+            g.setColour (juce::Colours::white.withAlpha (highlighted ? 0.45f : 0.28f));
+            g.drawRoundedRectangle (pill, 8.0f, 1.0f);
+            const auto dot = juce::Rectangle<float> (13.0f, 13.0f)
+                                 .withCentre ({ b.getToggleState() ? pill.getRight() - 8.5f : pill.getX() + 8.5f, pill.getCentreY() });
+            g.setColour (juce::Colours::white.withAlpha (0.92f));
+            g.fillEllipse (dot);
+            if (b.getButtonText().isNotEmpty())
+            {
+                g.setColour (glass::textDim());
+                g.setFont (juce::Font (juce::FontOptions (12.0f)));
+                g.drawText (b.getButtonText(), r.translated (4.0f, 0.0f), juce::Justification::centredLeft, false);
+            }
+        }
+    };
+
+    inline GlassLookAndFeel& glassLookAndFeel()
+    {
+        return aquanode::shutdownSafe<GlassLookAndFeel>();
     }
 
     // Aquanode's mark: a water ring - a thick ring of water, deep blue to cyan,

@@ -27,7 +27,8 @@ public:
     static void loadSaved();
     static void save();
 
-    // a whole colourway at once: 0 Cyan Blue, 1 Sakura, 2 Green
+    // a whole colourway at once: 0 Cyan Blue, 1 Sakura, 2 Green (with Glass
+    // on, its glass version: an ocean, a cherry-blossom dusk, the jungle)
     static constexpr int numColourways = 3;
     static const char* colourwayName (int which);
     static void applyColourway (int which);
@@ -65,8 +66,14 @@ private:
     juce::TextButton resetButton { "Reset" }, resetAllButton { "Reset All" }, doneButton { "Done" };
     juce::TextButton colourwayButtons[numColourways], resetViewButton { "Reset View to Origin" };
     juce::TextButton skeuoButton { "Skeuomorphic" };   // the cards shaded like hardware (on / off)
-    juce::ToggleButton gridToggle { "Grid Markers" };
+    juce::TextButton glassButton { "Glass" };          // everything as Soundscape Ecology looks (on / off)
+    juce::ToggleButton gridToggle { "Grid" };
+    juce::ToggleButton wireToggle { "Wire" };         // the cables straight instead of hanging down
+    juce::ToggleButton leavesToggle { "Leaves" };     // Glass: the falling leaves on / off
     juce::Rectangle<int> titleArea;
+    int dividerX { -1 };                              // the small line in the top row, before the colourways
+    juce::Rectangle<int> topRow;
+    void refreshLabels();
     int current { 0 };
     bool updating { false };
 

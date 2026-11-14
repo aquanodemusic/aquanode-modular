@@ -12,47 +12,51 @@
 class SpecDelayModule : public aquanode::SpectralModuleBase
 {
 public:
-    static constexpr int kMaxFrames = 1024;   // ~5.5 s at 48 kHz, 256-sample hop
+    // the history holds about 5.5 s at 48 kHz at every FFT size: more frames
+    // of fewer bins at 512 points, fewer frames of more bins at 4096
+    static constexpr int kMaxFrames = 2100;
+    static constexpr size_t kCapacity = (size_t) 2100 * 257;
     enum ParamIndex { pMaxTime = 0, pFeedback, pDryWet };
 
     SpecDelayModule() : SpectralModuleBase (1, 0.0f)
     {
         for (int c = 0; c < 2; ++c)
-            history[c].assign ((size_t) kMaxFrames * kNumBins, { 0.0f, 0.0f });
+            history[c].assign (kCapacity, { 0.0f, 0.0f });
     }
 
 protected:
     void processSpectrum (int channel, std::complex<float>* bins, const std::complex<float>*) override
     {
-        const double framesPerSecond = sampleRate / (double) kHop;
+        const double framesPerSecond = sampleRate / (double) hop;
+        const int frames = juce::jlimit (2, kMaxFrames, (int) (kCapacity / (size_t) numBins));
         const float maxSeconds = param (pMaxTime);
         const float fb = param (pFeedback) * 0.01f * 0.9f;
 
         auto* hist = history[channel].data();
         const int w = writeFrame[channel];
 
-        for (int b = 0; b < kNumBins; ++b)
+        for (int b = 0; b < numBins; ++b)
         {
-            const int delayFrames = juce::jlimit (0, kMaxFrames - 1,
+            const int delayFrames = juce::jlimit (0, frames - 1,
                 (int) (binCurve[b] * maxSeconds * framesPerSecond));
 
-            const int r = (w - delayFrames + kMaxFrames) % kMaxFrames;
-            const std::complex<float> delayed = hist[(size_t) r * kNumBins + b];
+            const int r = (w - delayFrames + frames) % frames;
+            const std::complex<float> delayed = hist[(size_t) r * (size_t) numBins + (size_t) b];
 
             if (delayFrames == 0)
             {
                 // zero delay: pass through (reading slot w here would be stale
                 // pre-write data; feedback at zero delay would self-amplify)
-                hist[(size_t) w * kNumBins + b] = bins[b];
+                hist[(size_t) w * (size_t) numBins + (size_t) b] = bins[b];
             }
             else
             {
-                hist[(size_t) w * kNumBins + b] = bins[b] + delayed * fb;
+                hist[(size_t) w * (size_t) numBins + (size_t) b] = bins[b] + delayed * fb;
                 bins[b] = delayed;
             }
         }
 
-        writeFrame[channel] = (w + 1) % kMaxFrames;
+        writeFrame[channel] = (w + 1) % frames;
     }
 
     void spectralReset() override

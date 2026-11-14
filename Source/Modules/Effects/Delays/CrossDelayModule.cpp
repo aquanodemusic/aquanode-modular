@@ -6,7 +6,7 @@ static ModuleDescriptor crossDelayDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "fx.crossdelay";
-    d.displayName = "Cross Delay";
+    d.displayName = "Stereo Delay";
     d.description =
         "A stereo / cross delay: separate left and right times and "
         "bipolar feedback; Cross mode sends each repeat to the other side. High and Low Damp "

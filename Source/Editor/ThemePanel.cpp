@@ -17,8 +17,8 @@
 namespace
 {
     // what the settings file holds, so an unchanged save never touches it
-    std::array<juce::Colour, ThemeColours::NumSlots> savedColours;
-    bool savedGrid = true, savedSkeuo = false, savedKnown = false;
+    std::array<juce::Colour, ThemeColours::NumSlots> savedColours, savedGlassColours;
+    bool savedGrid = true, savedSkeuo = false, savedGlass = false, savedWires = false, savedLeaves = true, savedKnown = false;
 }
 
 void ThemePanel::loadSaved()
@@ -31,20 +31,37 @@ void ThemePanel::loadSaved()
         if (file.containsKey (key))
             t.colour[i] = juce::Colour::fromString (file.getValue (key)).withAlpha (1.0f);
     }
-    t.showGrid = file.getBoolValue ("grid.show", true);
-    t.skeuomorphic = file.getBoolValue ("ui.skeuomorphic", false);
     for (int i = 0; i < ThemeColours::NumSlots; ++i)
+    {
+        const auto key = juce::String ("glass.") + ThemeColours::key (i);
+        if (file.containsKey (key))
+            t.glassCol[i] = juce::Colour::fromString (file.getValue (key)).withAlpha (1.0f);
+    }
+    t.showGrid = file.getBoolValue ("grid.show", true);
+    t.wireLines = file.getBoolValue ("ui.wireLines", false);
+    t.fallingLeaves = file.getBoolValue ("ui.leaves", true);
+    t.skeuomorphic = file.getBoolValue ("ui.skeuomorphic", false);
+    t.glass = ! t.skeuomorphic && file.getBoolValue ("ui.glass", false);
+    for (int i = 0; i < ThemeColours::NumSlots; ++i)
+    {
         savedColours[(size_t) i] = t.colour[i];
+        savedGlassColours[(size_t) i] = t.glassCol[i];
+    }
     savedGrid = t.showGrid;
+    savedWires = t.wireLines;
+    savedLeaves = t.fallingLeaves;
     savedSkeuo = t.skeuomorphic;
+    savedGlass = t.glass;
     savedKnown = true;
 }
 
 void ThemePanel::save()
 {
     const auto& t = themeColours();
-    if (savedKnown && t.showGrid == savedGrid && t.skeuomorphic == savedSkeuo
-        && std::equal (savedColours.begin(), savedColours.end(), t.colour))
+    if (savedKnown && t.showGrid == savedGrid && t.skeuomorphic == savedSkeuo && t.glass == savedGlass
+        && t.wireLines == savedWires && t.fallingLeaves == savedLeaves
+        && std::equal (savedColours.begin(), savedColours.end(), t.colour)
+        && std::equal (savedGlassColours.begin(), savedGlassColours.end(), t.glassCol))
         return;   // nothing new to write
 
     juce::PropertiesFile file (settingsOptions());
@@ -56,7 +73,24 @@ void ThemePanel::save()
         else
             file.setValue (key, t.colour[i].toString());
         savedColours[(size_t) i] = t.colour[i];
+
+        const auto gkey = juce::String ("glass.") + ThemeColours::key (i);
+        if (t.glassCol[i] == ThemeColours::glassDefault (i))
+            file.removeValue (gkey);
+        else
+            file.setValue (gkey, t.glassCol[i].toString());
+        savedGlassColours[(size_t) i] = t.glassCol[i];
     }
+    if (t.wireLines)
+        file.setValue ("ui.wireLines", true);
+    else
+        file.removeValue ("ui.wireLines");
+    savedWires = t.wireLines;
+    if (t.fallingLeaves)
+        file.removeValue ("ui.leaves");
+    else
+        file.setValue ("ui.leaves", false);
+    savedLeaves = t.fallingLeaves;
     if (t.showGrid)
         file.removeValue ("grid.show");
     else
@@ -66,7 +100,12 @@ void ThemePanel::save()
     else
         file.removeValue ("ui.skeuomorphic");
     savedGrid = t.showGrid;
+    if (t.glass)
+        file.setValue ("ui.glass", true);
+    else
+        file.removeValue ("ui.glass");
     savedSkeuo = t.skeuomorphic;
+    savedGlass = t.glass;
     savedKnown = true;
     file.saveIfNeeded();
 }
@@ -88,8 +127,61 @@ void ThemePanel::applyColourway (int which)
         { 0xffe5bdcc, 0xff57183a, 0xfffff4f8, 0xff3a1a2a, 0xffe49db1, 0xffd8577b, 0xffe182a5, 0xffc85684, 0xffb27dce, 0xffed7297, 0xffe7a3bc },   // Sakura
         { 0xffb3d6a9, 0xff194f23, 0xfff2fbef, 0xff132a17, 0xffb3d051, 0xff35b24b, 0xff6ec758, 0xff269c4c, 0xff8ec16f, 0xff52c782, 0xff7ed293 } }; // Green
     auto& t = themeColours();
+    which = juce::jlimit (0, numColourways - 1, which);
+    if (t.glass)
+    {
+        // the Glass versions, all of the palette (its leaves and sheen too):
+        // gradient top, gradient bottom, light text, dark text, input / output,
+        // sound generation, filters, effects, utilities, plugin titles, random
+        // preset, leaves, glass sheen
+        static const juce::uint32 gc[numColourways][ThemeColours::NumSlots] = {
+            { 0xff3a9fd0, 0xff0a2a4e, 0xffffffff, 0xff081a2c, 0xff86ecff, 0xff3fb6ff, 0xff2a7fe0, 0xff6ff0dc, 0xffb4a2ff,
+              0xffcdeeff, 0xff86ecff, 0xffe6f6ff, 0xffffffff },   // Cyan Blue: an ocean - sky blue down to the deep
+            { 0xffc27a9e, 0xff3c1432, 0xffffffff, 0xff2a0a1c, 0xffffc4da, 0xffff7fae, 0xffd690ff, 0xffffb89c, 0xfff0d88e,
+              0xffffe2ef, 0xffffc4da, 0xffffd3e4, 0xfffff2f7 },   // Sakura: dusk under the cherry trees, pink petals
+            { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } };          // Green: the jungle (the Glass look's own colours)
+        for (int i = 0; i < ThemeColours::NumSlots; ++i)
+            t.glassCol[i] = which == 2 ? ThemeColours::glassDefault (i) : juce::Colour (gc[which][i]);
+        return;
+    }
     for (int i = 0; i < ThemeColours::NumGridSlots; ++i)
-        t.colour[i] = juce::Colour (c[juce::jlimit (0, numColourways - 1, which)][i]);
+        t.colour[i] = juce::Colour (c[which][i]);
+
+    // Skeuomorphic (6.2): Cyan Blue and Green lean a little towards their Glass
+    // versions - the ocean and the jungle - in every slot but the two text
+    // colours (which stay as readable as they were)
+    if (t.skeuomorphic && which != 1)
+    {
+        static const juce::uint32 oceanGc[ThemeColours::NumGridSlots] = {
+            0xff3a9fd0, 0xff0a2a4e, 0xffffffff, 0xff081a2c, 0xff86ecff, 0xff3fb6ff, 0xff2a7fe0, 0xff6ff0dc, 0xffb4a2ff,
+            0xffcdeeff, 0xff86ecff };
+        constexpr float lean = 0.18f;
+        for (int i = 0; i < ThemeColours::NumGridSlots; ++i)
+        {
+            if (i == 2 || i == 3)
+                continue;
+            const auto glassCol = which == 0 ? juce::Colour (oceanGc[i]) : ThemeColours::glassDefault (i);
+            t.colour[i] = t.colour[i].interpolatedWith (glassCol, lean);
+        }
+    }
+}
+
+// the names and tips that change with the Glass look
+void ThemePanel::refreshLabels()
+{
+    const bool g = themeColours().glass;
+    knobChips.setTooltip (g ? "Glass: the colour of the leaves drifting over the patch area, and of the sheen on the glass cards and bars"
+                            : "The Skeuomorphic knobs' value ring: the colour at its start and at its end");
+    for (int i = 0; i < numColourways; ++i)
+        colourwayButtons[i].setTooltip (g ? "The whole Glass palette at once: its " + juce::String (colourwayName (i)) + " version"
+                                          : "Every colour at once: the " + juce::String (colourwayName (i)) + " colourway");
+    resetAllButton.setTooltip (g ? "The Glass palette back to the jungle's own colours" : "Every colour back to the start");
+    slots.repaint();
+    knobChips.repaint();
+    showSlot (current);
+    if (! getLocalBounds().isEmpty())
+        resized();   // (the title is longer with Glass)
+    repaint();
 }
 
 ThemePanel::ThemePanel (std::function<void()> onColoursChanged) : changed (std::move (onColoursChanged))
@@ -97,7 +189,6 @@ ThemePanel::ThemePanel (std::function<void()> onColoursChanged) : changed (std::
     slots.onPick = [this] (int slot) { showSlot (slot); };
     addAndMakeVisible (slots);
     knobChips.onPick = [this] (int slot) { showSlot (slot); };
-    knobChips.setTooltip ("The Skeuomorphic knobs' value ring: the colour at its start and at its end");
     addAndMakeVisible (knobChips);
 
     selector.addChangeListener (this);
@@ -106,15 +197,20 @@ ThemePanel::ThemePanel (std::function<void()> onColoursChanged) : changed (std::
 
     resetButton.onClick = [this]
     {
-        themeColours().colour[current] = ThemeColours::defaultColour (current);
+        themeColours().edited (current) = themeColours().editedDefault (current);
         showSlot (current);
         save();
         if (changed) changed();
     };
     resetAllButton.onClick = [this]
     {
-        themeColours().resetAll();
-        gridToggle.setToggleState (true, juce::dontSendNotification);
+        if (themeColours().glass)
+            themeColours().resetGlass();   // (Glass: its own palette only)
+        else
+        {
+            themeColours().resetAll();
+            gridToggle.setToggleState (true, juce::dontSendNotification);
+        }
         showSlot (current);
         save();
         if (changed) changed();
@@ -128,7 +224,6 @@ ThemePanel::ThemePanel (std::function<void()> onColoursChanged) : changed (std::
     {
         auto& b = colourwayButtons[i];
         b.setButtonText (colourwayName (i));
-        b.setTooltip ("Every colour at once: the " + juce::String (colourwayName (i)) + " colourway");
         b.onClick = [this, i]
         {
             applyColourway (i);
@@ -149,10 +244,31 @@ ThemePanel::ThemePanel (std::function<void()> onColoursChanged) : changed (std::
     {
         // only the look changes: the colours stay whatever they are
         themeColours().skeuomorphic = skeuoButton.getToggleState();
+        if (themeColours().skeuomorphic) { themeColours().glass = false; glassButton.setToggleState (false, juce::dontSendNotification); }
         save();
         if (changed) changed();
+        refreshLabels();
+        repaint();
     };
     addAndMakeVisible (skeuoButton);
+
+    // the Glass look, beside it (the one or the other)
+    glassButton.setClickingTogglesState (true);
+    glassButton.setToggleState (themeColours().glass, juce::dontSendNotification);
+    glassButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2fd17a));
+    glassButton.setTooltip ("Everything as the Soundscape Ecology plugin looks: a jungle gradient under the patch with drifting "
+                            "leaves, frosted glass cards and panels, luminous knob arcs and white text - in a palette of its "
+                            "own, which the colours here edit while it is on (yours come back when it is off)");
+    glassButton.onClick = [this]
+    {
+        themeColours().glass = glassButton.getToggleState();
+        if (themeColours().glass) { themeColours().skeuomorphic = false; skeuoButton.setToggleState (false, juce::dontSendNotification); }
+        save();
+        if (changed) changed();
+        refreshLabels();
+        repaint();
+    };
+    addAndMakeVisible (glassButton);
 
     resetViewButton.setTooltip ("The patch area back to its origin, at 100 %");
     resetViewButton.onClick = [this] { if (onResetView) onResetView(); };
@@ -170,6 +286,31 @@ ThemePanel::ThemePanel (std::function<void()> onColoursChanged) : changed (std::
     };
     addAndMakeVisible (gridToggle);
 
+    wireToggle.setToggleState (themeColours().wireLines, juce::dontSendNotification);
+    wireToggle.setTooltip ("The cables drawn as straight lines from socket to socket, instead of hanging down");
+    for (int c : { juce::ToggleButton::textColourId, juce::ToggleButton::tickColourId, juce::ToggleButton::tickDisabledColourId })
+        wireToggle.setColour (c, gridToggle.findColour (c));
+    wireToggle.onClick = [this]
+    {
+        themeColours().wireLines = wireToggle.getToggleState();
+        save();
+        if (changed) changed();
+    };
+    addAndMakeVisible (wireToggle);
+
+    leavesToggle.setToggleState (themeColours().fallingLeaves, juce::dontSendNotification);
+    leavesToggle.setTooltip ("Glass: the leaves drifting down over the patch area, on or off");
+    for (int c : { juce::ToggleButton::textColourId, juce::ToggleButton::tickColourId, juce::ToggleButton::tickDisabledColourId })
+        leavesToggle.setColour (c, gridToggle.findColour (c));
+    leavesToggle.onClick = [this]
+    {
+        themeColours().fallingLeaves = leavesToggle.getToggleState();
+        save();
+        if (changed) changed();
+    };
+    addAndMakeVisible (leavesToggle);
+
+    refreshLabels();
     showSlot (0);
 }
 
@@ -186,14 +327,14 @@ void ThemePanel::showSlot (int slot)
     knobChips.selected = current;
     knobChips.repaint();
     const juce::ScopedValueSetter<bool> svs (updating, true);
-    selector.setCurrentColour (themeColours().get (current), juce::dontSendNotification);
+    selector.setCurrentColour (themeColours().edited (current), juce::dontSendNotification);
 }
 
 void ThemePanel::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     if (updating)
         return;
-    themeColours().colour[current] = selector.getCurrentColour().withAlpha (1.0f);
+    themeColours().edited (current) = selector.getCurrentColour().withAlpha (1.0f);
     slots.repaint();
     knobChips.repaint();
     save();
@@ -230,14 +371,14 @@ void ThemePanel::SlotGrid::paint (juce::Graphics& g)
         auto sw = r.reduced (6.0f);
         const float side = juce::jmin (sw.getHeight(), 26.0f);
         auto swatch = sw.removeFromLeft (side).withSizeKeepingCentre (side, side);
-        g.setColour (themeColours().get (i));
+        g.setColour (themeColours().edited (i));
         g.fillRoundedRectangle (swatch, 4.0f);
         g.setColour (juce::Colours::white.withAlpha (0.35f));
         g.drawRoundedRectangle (swatch, 4.0f, 1.0f);
         sw.removeFromLeft (8.0f);
         g.setColour (juce::Colours::white.withAlpha (on ? 1.0f : 0.8f));
         g.setFont (juce::Font (juce::FontOptions (juce::jlimit (11.0f, 15.0f, r.getHeight() * 0.42f))));
-        g.drawFittedText (ThemeColours::name (i), sw.toNearestInt(), juce::Justification::centredLeft, 1, 0.8f);
+        g.drawFittedText (themeColours().label (i), sw.toNearestInt(), juce::Justification::centredLeft, 1, 0.8f);
     }
 }
 
@@ -274,14 +415,14 @@ void ThemePanel::KnobChips::paint (juce::Graphics& g)
         auto inner = r.reduced (3.0f, 2.0f);
         const float side = juce::jmin (inner.getHeight(), 16.0f);
         auto swatch = inner.removeFromLeft (side).withSizeKeepingCentre (side, side);
-        g.setColour (themeColours().get (slot));
+        g.setColour (themeColours().edited (slot));
         g.fillRoundedRectangle (swatch, 3.0f);
         g.setColour (juce::Colours::white.withAlpha (0.35f));
         g.drawRoundedRectangle (swatch, 3.0f, 1.0f);
         inner.removeFromLeft (5.0f);
         g.setColour (juce::Colours::white.withAlpha (on ? 1.0f : 0.8f));
         g.setFont (juce::Font (juce::FontOptions (juce::jlimit (10.0f, 14.0f, r.getHeight() * 0.8f))));
-        g.drawFittedText (ThemeColours::name (slot), inner.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        g.drawFittedText (themeColours().label (slot), inner.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
     }
 }
 
@@ -304,7 +445,13 @@ void ThemePanel::paint (juce::Graphics& g)
     g.drawRoundedRectangle (r.reduced (0.5f), 8.0f, 1.0f);
     g.setColour (juce::Colours::white);
     g.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
-    g.drawText ("Colours", titleArea, juce::Justification::centredLeft);
+    g.drawText ("Colours", titleArea, juce::Justification::centredLeft, true);
+
+    // the small line between the looks and the colourways
+    g.setColour (juce::Colours::white.withAlpha (0.28f));
+    if (dividerX >= 0)
+        g.fillRect (juce::Rectangle<float> ((float) dividerX - 0.5f, (float) topRow.getY() + topRow.getHeight() * 0.18f,
+                                            1.0f, topRow.getHeight() * 0.64f));
 }
 
 void ThemePanel::resized()
@@ -316,24 +463,25 @@ void ThemePanel::resized()
    #endif
     auto r = getLocalBounds().reduced (12);
 
-    // the top: the title, Skeuomorphic and the colourways, Reset View to Origin
-    // at the right - all in one row. Where that would squeeze the four buttons
-    // (a phone held upright), the title gives way and Reset View moves down to
-    // the Reset / Reset All / Done row: the four always share the top row.
+    // the top row: the title, Glass | Skeuomorphic and its knob colours |
+    // the colourways, Reset View to Origin at the right. Where that would
+    // squeeze the buttons (a phone held upright), the title gives way and Reset
+    // View moves down to the Reset / Reset All / Done row.
     bool resetViewBelow = false;
     {
         auto top = r.removeFromTop (rowH);
+        topRow = top;
         r.removeFromTop (8);
-        // Skeuomorphic, the knob ring's two colours (a narrow column), then the
-        // colourways - narrower than Skeuomorphic, as their names are short
-        const int gap = 8, eachMax = 130, eachMin = 76;
-        const float n = 1.0f + 0.85f + 0.72f * numColourways;   // widths in units of Skeuomorphic's
+        const int gap = 8, divW = 2 * gap + 1, eachMax = 140, eachMin = 70;
+        const float units = 0.62f + 1.15f + 0.8f + 0.82f * numColourways;   // Glass, Skeuomorphic, knob colours, colourways
+        const int fixed = divW + (2 + (numColourways - 1)) * gap;
         auto eachFor = [&] (int titleW, int resetW)
         {
-            const int used = (titleW > 0 ? titleW + gap : 0) + (resetW > 0 ? resetW + gap : 0) + (1 + numColourways) * gap;
-            return juce::jmin (eachMax, (int) ((float) (top.getWidth() - used) / n));
+            const int used = (titleW > 0 ? titleW + gap : 0) + (resetW > 0 ? resetW + gap : 0) + fixed;
+            return juce::jmin (eachMax, (int) ((float) (top.getWidth() - used) / units));
         };
-        int titleW = 84, resetW = juce::jlimit (120, 210, (top.getWidth() - titleW) / 4);
+        int titleW = 84;   // (the same in every look: nothing in the row moves when the look changes)
+        int resetW = juce::jlimit (96, 150, (top.getWidth() - titleW) / 7);
         if (eachFor (titleW, resetW) < eachMin) titleW = 0;
         if (eachFor (titleW, resetW) < eachMin) resetW = 0;
         const int each = eachFor (titleW, resetW);
@@ -342,22 +490,30 @@ void ThemePanel::resized()
         titleArea = top.removeFromLeft (titleW);
         if (titleW > 0) top.removeFromLeft (gap);
         if (resetW > 0) { resetViewButton.setBounds (top.removeFromRight (resetW)); top.removeFromRight (gap); }
-        resetViewButton.setButtonText (resetViewBelow ? "Reset View" : "Reset View to Origin");
-        skeuoButton.setBounds (top.removeFromLeft (each));
+        {
+            const auto font = getLookAndFeel().getTextButtonFont (resetViewButton, rowH);
+            const bool fits = ! resetViewBelow && juce::GlyphArrangement::getStringWidth (font, "Reset View to Origin") + 16 <= (float) resetW;
+            resetViewButton.setButtonText (fits ? "Reset View to Origin" : "Reset View");
+        }
+        glassButton.setBounds (top.removeFromLeft ((int) (each * 0.62f)));
         top.removeFromLeft (gap);
-        // the colourways as wide as their names need (at least), the knob chips in what is left
-        int wayW = (int) (each * 0.72f);
+        skeuoButton.setBounds (top.removeFromLeft ((int) (each * 1.15f)));
+        top.removeFromLeft (gap);
+        // the colourways as wide as their names need (at least), the knob colours in what is left
+        int wayW = (int) (each * 0.82f);
         for (auto& b : colourwayButtons)
         {
             const auto font = getLookAndFeel().getTextButtonFont (b, rowH);
-            wayW = juce::jmax (wayW, (int) std::ceil (juce::GlyphArrangement::getStringWidth (font, b.getButtonText())) + 14);
+            wayW = juce::jmax (wayW, (int) std::ceil (juce::GlyphArrangement::getStringWidth (font, b.getButtonText())) + 26);
         }
-        wayW = juce::jmin (wayW, (top.getWidth() - numColourways * gap - 60) / numColourways);
-        knobChips.setBounds (top.removeFromLeft (juce::jmax (60, top.getWidth() - numColourways * (wayW + gap))));
-        for (auto& b : colourwayButtons)
+        wayW = juce::jmin (wayW, (top.getWidth() - divW - (numColourways - 1) * gap - 60) / numColourways);
+        knobChips.setBounds (top.removeFromLeft (juce::jmax (60, top.getWidth() - divW - numColourways * wayW - (numColourways - 1) * gap)));
+        dividerX = top.getX() + divW / 2;
+        top.removeFromLeft (divW);
+        for (int i = 0; i < numColourways; ++i)
         {
-            top.removeFromLeft (gap);
-            b.setBounds (top.removeFromLeft (wayW));
+            if (i > 0) top.removeFromLeft (gap);
+            colourwayButtons[i].setBounds (top.removeFromLeft (wayW));
         }
     }
 
@@ -380,11 +536,25 @@ void ThemePanel::resized()
 
     auto buttons = left.removeFromBottom (rowH);
     left.removeFromBottom (6);
-    // Grid Markers: beside Random Preset in the chips' free cell when there are two
-    // columns, else on a row of its own under them
-    const bool twoColumns = left.getWidth() >= 300;
-    if (! twoColumns)
-        gridToggle.setBounds (left.removeFromBottom (rowH).reduced (2, 0));
+    // Grid, Wire and Leaves side by side, on a row of their own under the
+    // chips (each as wide as its name wants, the room left shared out)
+    auto placeToggles = [this, rowH] (juce::Rectangle<int> row)
+    {
+        juce::ToggleButton* t[3] = { &gridToggle, &wireToggle, &leavesToggle };
+        const float fontH = juce::jmin (15.0f, (float) rowH * 0.75f);
+        int want[3], total = 0;
+        for (int i = 0; i < 3; ++i)
+        {
+            want[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (juce::Font (juce::FontOptions (fontH)), t[i]->getButtonText()))
+                    + (int) (fontH * 1.1f) + 22;   // the tick box and room around it
+            total += want[i];
+        }
+        const int spare = juce::jmax (0, row.getWidth() - total) / 3;
+        for (int i = 0; i < 3; ++i)
+            t[i]->setBounds (i == 2 ? row : row.removeFromLeft (want[i] + spare));
+    };
+    placeToggles (left.removeFromBottom (rowH).reduced (2, 0));
+    left.removeFromBottom (4);
     if (resetViewBelow)
     {
         const int rw = (buttons.getWidth() - 24) / 4;
@@ -399,7 +569,6 @@ void ThemePanel::resized()
     doneButton.setBounds (buttons);
     left.removeFromBottom (8);
     slots.setBounds (left);
-    if (twoColumns)
-        gridToggle.setBounds (slots.chip (ThemeColours::NumGridSlots).translated (left.getX(), left.getY()).reduced (6, 0));
+
     selector.setBounds (right);
 }

@@ -369,7 +369,7 @@ static ModuleDescriptor multiLfoDescriptor()
         "A tempo-synced shape LFO for chops and sweeps: saw-down plucks, gates, stairs, sixteenth chops "
         "or a Rolled random shape. Divisions follow the host tempo (the BPM knob stands in without a host). "
         "Retrigger restarts it on every note, One Shot runs once like an envelope. Patch Mod Out into a "
-        "Chord Wavetable's Level In for the rhythmic chop, or into Morph In for the shimmer.";
+        "Chord Table's Level In for the rhythmic chop, or into Morph In for the shimmer.";
     d.section = ModuleSection::Utility;
     d.family = ModuleFamily::Colorbass;
     d.sidebarOrder = 2;
@@ -378,7 +378,7 @@ static ModuleDescriptor multiLfoDescriptor()
         modOut ("invOut", "Inv Out")
     };
     d.params = {
-        makeCombo       ("shape",    "Shape",    MultiLFOModule::shapeChoices(), 0, 0, 3),
+        makeCombo       ("shape",    "Shape",    MultiLFOModule::shapeChoices(), 0, 0, 3).noMod(),   // (the table is rebuilt)
         makeButton      ("roll",     "Roll",     0, 1),
         makeCombo       ("sync",     "Sync",     { "Tempo", "Dotted", "Triplet", "Hz" }, 0, 1, 2),
         makeSteppedList ("division", "Division", MultiLFOModule::divisionChoices(), 5, 1),

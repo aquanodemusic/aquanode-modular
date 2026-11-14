@@ -9,7 +9,9 @@ namespace aquanode::plugins
 juce::AudioPluginFormatManager& ExternalPluginModule::formats()
 {
     // VST3 only, and nothing is ever scanned: a plugin is loaded from the file the user points at
-    static juce::AudioPluginFormatManager fm;
+    // (let go when JUCE shuts down, not when this DLL unloads: the VST3s it
+    // loaded must be gone while their DLLs and the message thread still are)
+    auto& fm = aquanode::shutdownSafe<juce::AudioPluginFormatManager>();
     if (fm.getNumFormats() == 0)
         fm.addFormat (std::make_unique<juce::VST3PluginFormat>());
     return fm;
@@ -63,17 +65,32 @@ ExternalPluginModule::ExternalPluginModule()
 
 ExternalPluginModule::~ExternalPluginModule()
 {
-    window = nullptr;
+    alive = nullptr;      // a Block Size change on its way to the message thread finds nothing
     std::shared_ptr<juce::AudioPluginInstance> old;
     {
         const juce::SpinLock::ScopedLockType sl (swapLock);
         old = std::move (current);
     }
     if (old != nullptr)
-    {
         old->setPlayHead (nullptr);
-        old->releaseResources();
+
+    // A VST3 and its window may only be let go on the message thread (some
+    // hosts tidy up from another one): hand them over if this is not it
+    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+    if (mm != nullptr && ! mm->isThisTheMessageThread())
+    {
+        std::shared_ptr<juce::DocumentWindow> w (std::move (window));
+        juce::MessageManager::callAsync ([old, w]() mutable
+        {
+            w = nullptr;
+            if (old != nullptr) old->releaseResources();
+            old = nullptr;
+        });
+        return;
     }
+    window = nullptr;     // the editor before the plugin it belongs to
+    if (old != nullptr)
+        old->releaseResources();
 }
 
 juce::String ExternalPluginModule::pluginName() const
@@ -97,8 +114,9 @@ void ExternalPluginModule::configure (juce::AudioPluginInstance& p)
     if (p.checkBusesLayoutSupported (layout))
         p.setBusesLayout (layout);
     p.setPlayHead (&playHead);
-    p.setRateAndBufferSizeDetails (sampleRate > 0.0 ? sampleRate : 48000.0, kBlockSize);
-    p.prepareToPlay (sampleRate > 0.0 ? sampleRate : 48000.0, kBlockSize);
+    const int block = activeBlock.load();
+    p.setRateAndBufferSizeDetails (sampleRate > 0.0 ? sampleRate : 48000.0, block);
+    p.prepareToPlay (sampleRate > 0.0 ? sampleRate : 48000.0, block);
 }
 
 void ExternalPluginModule::install (std::unique_ptr<juce::AudioPluginInstance> instance, const juce::PluginDescription& desc)
@@ -114,7 +132,7 @@ void ExternalPluginModule::install (std::unique_ptr<juce::AudioPluginInstance> i
         current = fresh;
         ins = juce::jmin (2, newIns);
         outs = juce::jmin (2, juce::jmax (newOuts, 0));
-        io.setSize (juce::jmax (2, fresh->getTotalNumInputChannels(), fresh->getTotalNumOutputChannels()), kBlockSize, false, true, false);
+        io.setSize (juce::jmax (2, fresh->getTotalNumInputChannels(), fresh->getTotalNumOutputChannels()), kMaxBlock, false, true, false);
         io.clear();
         midiInBuffer.clear();
     }
@@ -132,7 +150,7 @@ void ExternalPluginModule::install (std::unique_ptr<juce::AudioPluginInstance> i
 
 bool ExternalPluginModule::instantiate (const juce::PluginDescription& desc, juce::String& error)
 {
-    auto instance = formats().createPluginInstance (desc, sampleRate > 0.0 ? sampleRate : 48000.0, kBlockSize, error);
+    auto instance = formats().createPluginInstance (desc, sampleRate > 0.0 ? sampleRate : 48000.0, activeBlock.load(), error);
     if (instance == nullptr)
         return false;
     install (std::move (instance), desc);
@@ -251,16 +269,19 @@ void ExternalPluginModule::prepare (double newSampleRate)
         const juce::SpinLock::ScopedLockType sl (swapLock);
         p = current;
     }
+    // (a new sample rate: the block it asks for now, straight away)
+    activeBlock = wantedBlock();
+    resizePending = false;
     if (p != nullptr)
     {
         const juce::ScopedLock cl (p->getCallbackLock());
         p->releaseResources();
-        p->setRateAndBufferSizeDetails (newSampleRate, kBlockSize);
-        p->prepareToPlay (newSampleRate, kBlockSize);
+        p->setRateAndBufferSizeDetails (newSampleRate, activeBlock.load());
+        p->prepareToPlay (newSampleRate, activeBlock.load());
     }
     for (auto& ch : outFifo) ch.fill (0.0f);
-    if (io.getNumChannels() == 0)
-        io.setSize (2, kBlockSize);
+    if (io.getNumChannels() == 0 || io.getNumSamples() < kMaxBlock)
+        io.setSize (juce::jmax (2, io.getNumChannels()), kMaxBlock, false, true, false);
     io.clear();
     pos = 0;
     prepared = true;
@@ -299,15 +320,44 @@ void ExternalPluginModule::processSample (const StereoFrame* inputs, StereoFrame
     outputs[0] = { outFifo[0][(size_t) pos], outFifo[1][(size_t) pos] };
     ++samplesThisHostBlock;
     ++sampleCounter;
-    if (++pos >= kBlockSize)
+    if (++pos >= activeBlock.load (std::memory_order_relaxed))
     {
         pos = 0;
         runBlock();
+        // Block Size changed: the message thread prepares the plugin for it
+        if (wantedBlock() != activeBlock.load (std::memory_order_relaxed) && ! resizePending.exchange (true))
+        {
+            std::weak_ptr<int> token (alive);
+            juce::MessageManager::callAsync ([this, token] { if (token.lock() != nullptr) applyBlockSize(); });
+        }
     }
+}
+
+void ExternalPluginModule::applyBlockSize()
+{
+    const int want = wantedBlock();
+    {
+        // the audio thread only try-locks this: it plays silence meanwhile
+        const juce::SpinLock::ScopedLockType sl (swapLock);
+        if (current != nullptr)
+        {
+            const juce::ScopedLock cl (current->getCallbackLock());
+            current->releaseResources();
+            current->setRateAndBufferSizeDetails (sampleRate > 0.0 ? sampleRate : 48000.0, want);
+            current->prepareToPlay (sampleRate > 0.0 ? sampleRate : 48000.0, want);
+        }
+        for (auto& ch : outFifo) ch.fill (0.0f);
+        io.clear();
+        midiInBuffer.clear();
+        pos = 0;
+        activeBlock = want;
+    }
+    resizePending = false;
 }
 
 void ExternalPluginModule::updatePlayHead()
 {
+    const int kBlockSize = activeBlock.load (std::memory_order_relaxed);   // (this block's size)
     juce::AudioPlayHead::PositionInfo info;
     const int offset = samplesThisHostBlock - kBlockSize;
     bool fromHost = false;
@@ -337,6 +387,7 @@ void ExternalPluginModule::updatePlayHead()
 
 void ExternalPluginModule::runBlock()
 {
+    const int kBlockSize = activeBlock.load (std::memory_order_relaxed);   // (this block's size)
     bool ran = false;
     {
         const juce::SpinLock::ScopedTryLockType sl (swapLock);
@@ -356,6 +407,7 @@ void ExternalPluginModule::runBlock()
                 juce::AudioBuffer<float> view (io.getArrayOfWritePointers(),
                                                juce::jmax (p.getTotalNumInputChannels(), p.getTotalNumOutputChannels(), 1), kBlockSize);
                 p.processBlock (view, midiInBuffer);
+                pluginLatency.store (juce::jmax (0, p.getLatencySamples()), std::memory_order_relaxed);
                 ran = true;
             }
         }
@@ -530,13 +582,21 @@ static aquanode::ModuleDescriptor externalPluginDescriptor()
         "Any VST3 plugin of yours in the patch: Load... and point at its .vst3 folder or file (nothing is "
         "scanned). Audio In goes into an effect, Midi In (the keys while nothing is patched there) into a synth; "
         "Window opens the plugin's own interface. The patch keeps which plugin it was and its whole state. "
-        "Desktop only - not on Android.";
-    d.section = ModuleSection::Effect;
+        "Block Size is the block the plugin runs in behind the patch - 32 samples by default, its latency, "
+        "reported to the host with the plugin's own; give a plugin that behaves differently at small blocks "
+        "the host's size. Desktop only - not on Android.";
+    d.section = ModuleSection::Utility;     // (6.2.1: a synth as much as an effect; the id stays fx.)
     d.sidebarOrder = 60;
     d.sockets = {
         audioIn  ("audioIn",  "Audio In"),
         midiIn   ("midiIn",   "Midi In"),
         audioOut ("audioOut", "Audio Out")
+    };
+    d.params = {
+        // the block the plugin runs in, behind the patch (its latency): 32 by
+        // default; a plugin that sounds or reports differently at small blocks
+        // can be given the host's own size
+        makeCombo ("blockSize", "Block Size", { "16", "32", "64", "128", "256", "512", "1024", "2048" }, 1, 0, 2).noMod().whenMissing (1.0f)
     };
     return d;
 }

@@ -45,6 +45,11 @@ namespace
 
         bool write (const void* data, size_t size) const
         {
+           #if AQP_HOSTED
+            // inside Aquanode Modular: the one way the app and every plugin save (the document
+            // written through the content resolver and cut to length)
+            return aqp::files::writeDocument (url, data, size).isEmpty();
+           #else
             auto doc = juce::AndroidDocument::fromDocument (url);
             if (! doc.hasValue())
                 return false;
@@ -52,6 +57,7 @@ namespace
             if (out == nullptr)
                 return false;
             return out->write (data, size);
+           #endif
         }
        #else
         juce::File file;

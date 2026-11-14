@@ -44,6 +44,7 @@ public:
     static constexpr int kNumBins = kFFTSize / 2 + 1;             // 2049
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Global; }
+    int latencySamples() const override { return kLatency; }
 
     //==========================================================================
     void prepare (double newSampleRate) override

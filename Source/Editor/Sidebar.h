@@ -5,6 +5,18 @@
 #include "SidebarHeader.h"
 
 //==============================================================================
+// The sidebar's subcategories, for other lists that want the same order
+// (Fruit DAW's synth and effect menus): the group a module is listed in, the
+// groups of a section in the sidebar's order, and whether a type is one of
+// the modules the sidebar lists in a group by name
+namespace sidebar_groups
+{
+    juce::String groupOf (const aquanode::ModuleDescriptor& d);
+    juce::StringArray groupNames (aquanode::ModuleSection section);
+    bool isListedInGroup (const juce::String& typeId);
+}
+
+//==============================================================================
 // Left sidebar: black, section titles + module names from the factory.
 class SidebarComponent : public juce::Component,
                          private juce::Timer

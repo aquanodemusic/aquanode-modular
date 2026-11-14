@@ -12,6 +12,30 @@
 #include "EditorShared.h"
 
 //==============================================================================
+// Move Only: a clear pane over the whole patch area that takes every gesture
+// for the view
+struct PatchCanvas::MoveShield : public juce::Component
+{
+    explicit MoveShield (PatchCanvas& c) : canvas (c)
+    {
+        setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+        setWantsKeyboardFocus (false);
+    }
+    void paint (juce::Graphics& g) override
+    {
+        // a thin frame: the view is all that moves
+        g.setColour (juce::Colours::white.withAlpha (0.18f));
+        g.drawRect (getLocalBounds(), 2);
+    }
+    void mouseDown (const juce::MouseEvent& e) override  { canvas.shieldDown (e.getEventRelativeTo (&canvas)); }
+    void mouseDrag (const juce::MouseEvent& e) override  { canvas.shieldDrag (e.getEventRelativeTo (&canvas)); }
+    void mouseUp (const juce::MouseEvent& e) override    { canvas.shieldUp (e.getEventRelativeTo (&canvas)); }
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override { canvas.mouseWheelMove (e.getEventRelativeTo (&canvas), w); }
+    void mouseMagnify (const juce::MouseEvent& e, float f) override { canvas.mouseMagnify (e.getEventRelativeTo (&canvas), f); }
+    PatchCanvas& canvas;
+};
+
+//==============================================================================
 // PatchCanvas
 //==============================================================================
 PatchCanvas::PatchCanvas (AquanodeModularAudioProcessor& proc)
@@ -57,6 +81,8 @@ void PatchCanvas::rebuildGrid()
 void PatchCanvas::resized()
 {
     rebuildGrid();
+    if (moveShield != nullptr)
+        moveShield->setBounds (getLocalBounds());
 }
 
 void PatchCanvas::convertPluginCard (int instanceId)
@@ -69,6 +95,18 @@ void PatchCanvas::convertPluginCard (int instanceId)
         const auto name = aquanode::plugins::convertGuiToPatch (safe->processor, instanceId);
         if (name.isNotEmpty())
             safe->processor.patchName = name;
+        safe->rebuild();
+    });
+}
+
+void PatchCanvas::openPresetInPlugin (int instanceId)
+{
+    juce::Component::SafePointer<PatchCanvas> safe (this);
+    juce::MessageManager::callAsync ([safe, instanceId]
+    {
+        if (safe == nullptr)
+            return;
+        aquanode::plugins::openHeldPresetInPlugin (safe->processor, instanceId);
         safe->rebuild();
     });
 }
@@ -188,6 +226,48 @@ void PatchCanvas::setRegionSelect (bool on)
     if (! on && regionSelection.size() > 1)
         selectModule (selectedModuleId);   // back to one selected module
     repaint();
+}
+
+void PatchCanvas::setMoveOnly (bool on)
+{
+    if (on == isMoveOnly())
+        return;
+    if (on)
+    {
+        moveShield = std::make_unique<MoveShield> (*this);
+        addAndMakeVisible (*moveShield);
+        moveShield->setBounds (getLocalBounds());
+        moveShield->toFront (false);
+    }
+    else
+        moveShield = nullptr;
+    panning = false;
+    regionDragging = false;
+    repaint();
+}
+
+void PatchCanvas::shieldDown (const juce::MouseEvent& e)
+{
+    if (pinchTouch (e, true, false))
+        return;
+    panning = true;
+    panStartOffset = panOffset;
+    panMouseStart = e.getPosition();
+}
+
+void PatchCanvas::shieldDrag (const juce::MouseEvent& e)
+{
+    if (pinchTouch (e, false, false) || ! panning)
+        return;
+    panOffset = panStartOffset + (e.getPosition() - panMouseStart);
+    applyViewToChildren();
+    repaint();
+}
+
+void PatchCanvas::shieldUp (const juce::MouseEvent& e)
+{
+    pinchTouch (e, false, true);
+    panning = false;
 }
 
 void PatchCanvas::updateRegionSelection()
@@ -513,8 +593,13 @@ void PatchCanvas::moduleDropped (int moduleId)
 juce::Path PatchCanvas::cablePath (juce::Point<float> from, juce::Point<float> to) const
 {
     juce::Path p;
-    const float sag = 30.0f + from.getDistanceFrom (to) * 0.15f;
     p.startNewSubPath (from);
+    if (themeColours().wireLines)   // Wire Lines: straight, socket to socket
+    {
+        p.lineTo (to);
+        return p;
+    }
+    const float sag = 30.0f + from.getDistanceFrom (to) * 0.15f;
     p.cubicTo (from.translated (0.0f, sag), to.translated (0.0f, sag), to);
     return p;
 }
@@ -578,14 +663,88 @@ int PatchCanvas::paramCableIndexNear (juce::Point<float> pos, float maxDistance)
     return -1;
 }
 
+// the Glass look's drifting leaves over the patch area: moved ~20 times a
+// second, only their own little boxes redrawn (the canvas is screen-sized, so
+// they drift over the view, not the patch)
+struct PatchCanvas::GlassLeaves : private juce::Timer
+{
+        glass::Leaves leaves;
+        juce::Component::SafePointer<juce::Component> canvas;
+        double lastT { 0.0 };
+
+        static double now() { return juce::Time::getMillisecondCounterHiRes() * 0.001; }
+
+        // the leaves fall over the whole window (`window`, in the canvas's
+        // coordinates), so the patch area changing size - the keyboard pulled
+        // up or down over it - neither moves nor re-scatters them
+        void keepGoing (juce::Component& c, juce::Rectangle<int> window)
+        {
+            canvas = &c;
+            leaves.layout (window.toFloat());
+            if (! isTimerRunning())
+            {
+                lastT = now();
+                startTimerHz (20);
+            }
+        }
+
+        void timerCallback() override
+        {
+            auto* c = canvas.getComponent();
+            if (c == nullptr || ! themeColours().glass || ! themeColours().fallingLeaves || ! c->isShowing())
+            {
+                stopTimer();   // (painting the canvas starts them again)
+                return;
+            }
+            const double t = now();
+            const float dt = (float) juce::jlimit (0.0, 0.25, t - lastT);
+            lastT = t;
+            leaves.step (t, dt, [c] (juce::Rectangle<int> box) { c->repaint (box); });
+        }
+};
+
+PatchCanvas::~PatchCanvas() = default;
+
+std::vector<juce::Point<float>> PatchCanvas::leafPositions() const
+{
+    std::vector<juce::Point<float>> v;
+    if (glassLeaves != nullptr)
+        for (const auto& l : glassLeaves->leaves.leaves)
+            v.push_back ({ l.x, l.y });
+    return v;
+}
+
 void PatchCanvas::paint (juce::Graphics& g)
 {
     const auto background = themeColours().get (ThemeColours::Background);   // warm dark brown-grey by default
-    g.fillAll (background);
+    if (themeColours().glass)
+    {
+        // the Glass look: Soundscape's jungle under the patch - this area's
+        // piece of the window's one picture, so the keyboard lies over it like
+        // a sheet of paper and moving it changes nothing underneath
+        juce::Rectangle<int> window = getLocalBounds();
+        juce::Component* top = findParentComponentOfClass<juce::AudioProcessorEditor>();
+        if (top == nullptr) top = getTopLevelComponent();
+        if (top != nullptr && top != this)
+            window = getLocalArea (top, top->getLocalBounds());
+        glass::backdrop().draw (g, window);
+        if (themeColours().fallingLeaves)  // and its leaves, drifting down (Colours > Leaves)
+        {
+            if (glassLeaves == nullptr)
+                glassLeaves = std::make_unique<GlassLeaves>();
+            glassLeaves->keepGoing (*this, window);
+            glassLeaves->leaves.paint (g, GlassLeaves::now());
+        }
+    }
+    else
+        g.fillAll (background);
     if (! themeColours().showGrid)
         return;   // the grid markers switched off in the colour panel
-    g.setColour (background.getPerceivedBrightness() > 0.55f ? background.darker (0.12f)    // the subtle "+" grid
-                                                             : background.interpolatedWith (juce::Colour (0xffb0a080), 0.09f));
+    if (themeColours().glass)
+        g.setColour (juce::Colours::white.withAlpha (0.13f));
+    else
+        g.setColour (background.getPerceivedBrightness() > 0.55f ? background.darker (0.12f)    // the subtle "+" grid
+                                                                 : background.interpolatedWith (juce::Colour (0xffb0a080), 0.09f));
 
     const float s = gridScreenSpacing();
     const float ox = std::fmod (std::fmod ((float) panOffset.x, s) + s, s) - s;
@@ -956,6 +1115,8 @@ void PatchCanvas::applyViewToChildren()
             m->setTopLeftPosition (inst->position);   // world coordinates
             m->setTransform (t);                      // pan + zoom, view only
         }
+    if (moveShield != nullptr)
+        moveShield->toFront (false);              // (over cards added since)
 }
 
 void PatchCanvas::setZoom (float newZoom, juce::Point<float> focusScreenPos)

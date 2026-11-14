@@ -1,3 +1,4 @@
+#include "../../../Platform/AndroidDocuments.h"
 #include "PianoRollModule.h"
 
 using namespace aquanode;
@@ -10,6 +11,8 @@ PianoRollModule::PianoRollModule()
     published = std::make_shared<const NoteList>();
     audioNotes = published;
     for (auto& e : activeEnd)
+        e = -1.0;
+    for (auto& e : recStart)
         e = -1.0;
 }
 
@@ -101,6 +104,79 @@ bool PianoRollModule::undo()
     return true;
 }
 
+//==============================================================================
+// Record
+//==============================================================================
+void PianoRollModule::setRecording (bool shouldRecord)
+{
+    if (shouldRecord == isRecording())
+        return;
+    if (shouldRecord)
+        pushUndo();           // Undo takes the whole take back
+    else
+        collectRecorded();
+    recording.store (shouldRecord, std::memory_order_release);
+}
+
+void PianoRollModule::rawMidiMessage (const juce::MidiMessage& m)
+{
+    // audio thread
+    if (! recording.load (std::memory_order_relaxed) || ! m.isNoteOnOrOff())
+        return;
+    const int p = juce::jlimit (0, 127, m.getNoteNumber());
+    if (numThru < (int) thruEvents.size())
+        thruEvents[(size_t) numThru++] = { p, m.getFloatVelocity(), m.isNoteOn() };
+
+    if (m.isNoteOn())
+    {
+        if (param (pPlaying) > 0.5f)
+        {
+            recStart[p] = position;
+            recVelocity[p] = juce::jlimit (1.0f / 127.0f, 1.0f, m.getFloatVelocity());
+        }
+    }
+    else if (recStart[p] >= 0.0)
+    {
+        double length = position - recStart[p];
+        if (length <= 0.0)
+            length += recLoopLen;         // held over the loop point
+        int s1, n1, s2, n2;
+        recFifo.prepareToWrite (1, s1, n1, s2, n2);
+        if (n1 > 0)
+        {
+            recData[(size_t) s1] = { recStart[p], length, p, recVelocity[p] };
+            recFifo.finishedWrite (1);
+        }
+        recStart[p] = -1.0;
+    }
+}
+
+void PianoRollModule::collectRecorded()
+{
+    const int ready = recFifo.getNumReady();
+    if (ready <= 0)
+        return;
+    int s1, n1, s2, n2;
+    recFifo.prepareToRead (ready, s1, n1, s2, n2);
+    const double g = juce::jmin (0.25, gridBeats());                // the roll's grid, a 1/16 note at the coarsest
+    const double loopLen = numBars() * kBeatsPerBar;
+    auto list = notes;
+    for (int i = 0; i < n1 + n2; ++i)
+    {
+        auto nt = recData[(size_t) (i < n1 ? s1 + i : s2 + i - n1)];
+        nt.start = std::round (nt.start / g) * g;                 // onto the grid
+        if (nt.start >= loopLen - 1.0e-6)
+            nt.start = 0.0;
+        nt.length = juce::jmax (g, std::round (nt.length / g) * g);
+        // the same key at the same place again replaces what was there
+        list.erase (std::remove_if (list.begin(), list.end(), [&nt] (const PianoRollNote& o)
+                        { return o.pitch == nt.pitch && std::abs (o.start - nt.start) < 1.0e-4; }), list.end());
+        list.push_back (nt);
+    }
+    recFifo.finishedRead (n1 + n2);
+    setNotes (std::move (list));
+}
+
 void PianoRollModule::previewNote (int pitch, float velocity01)
 {
     int s1, n1, s2, n2;
@@ -174,6 +250,12 @@ void PianoRollModule::reset()
         p = 0;
     numPendingPreviews = 0;
     wasPlaying = false;
+    for (auto& e : recStart)
+        e = -1.0;
+    for (auto& h : thruHeld)
+        h = false;
+    numThruHeld = 0;
+    numThru = 0;
 }
 
 void PianoRollModule::blockStart()
@@ -246,6 +328,37 @@ int PianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* events
 {
     int n = 0;
 
+    // ---- Record: what is played goes out as it is played, so you hear the
+    // synth this roll plays; switched off, held keys are let go
+    for (int i = 0; i < numThru && n < maxEvents; ++i)
+    {
+        const auto& t = thruEvents[(size_t) i];
+        if (t.on)
+        {
+            events[n++] = { t.pitch, t.velocity, true };
+            if (! thruHeld[t.pitch]) { thruHeld[t.pitch] = true; ++numThruHeld; }
+        }
+        else if (thruHeld[t.pitch])
+        {
+            thruHeld[t.pitch] = false; --numThruHeld;
+            if (activeEnd[t.pitch] < 0.0)
+                events[n++] = { t.pitch, 0.0f, false };
+        }
+    }
+    numThru = 0;
+    if (numThruHeld > 0 && ! recording.load (std::memory_order_relaxed))
+    {
+        for (int p = 0; p < 128 && n < maxEvents; ++p)
+            if (thruHeld[p])
+            {
+                thruHeld[p] = false;
+                if (activeEnd[p] < 0.0)
+                    events[n++] = { p, 0.0f, false };
+            }
+        numThruHeld = 0;
+        std::fill (std::begin (recStart), std::end (recStart), -1.0);
+    }
+
     // ---- previews: a short note now, released after a quarter second
     if (numPendingPreviews > 0)
     {
@@ -276,6 +389,7 @@ int PianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* events
     uiHostTempo.store (hostAvailable, std::memory_order_relaxed);
 
     const double loopLen = juce::jlimit (1, kMaxBars, (int) std::lround (param (pBars))) * kBeatsPerBar;
+    recLoopLen = loopLen;
 
     // ---- Play All / Stop All: back to the start, playing or stopped, on the
     // first sample of the block every roll got the command in
@@ -611,38 +725,11 @@ void PianoRollModule::chooseAndExportMidi()
                 return;
             }
 
-            // Same two-step write as Record on Android: a plain file if the
-            // destination is one, otherwise an AndroidDocument stream for the
-            // content:// URI the picker gave us.
-            std::unique_ptr<juce::OutputStream> out;
-            if (destination.isLocalFile())
-            {
-                auto file = destination.getLocalFile();
-                file.deleteFile();
-                std::unique_ptr<juce::FileOutputStream> fileStream (file.createOutputStream());
-                if (fileStream != nullptr && fileStream->openedOk())
-                    out = std::move (fileStream);
-            }
-
-            if (out == nullptr)
-            {
-               #if JUCE_ANDROID
-                auto doc = juce::AndroidDocument::fromDocument (destination);
-                if (doc.hasValue())
-                    out = doc.createOutputStream();
-               #else
-                out = destination.createOutputStream();
-               #endif
-            }
-
-            if (out == nullptr)
-            {
-                showPianoRollProblem ("Could not write to that location.");
-                return;
-            }
-
-            out->write (encoded.getData(), encoded.getDataSize());
-            out->flush();
+            // the one way the app saves (Platform/AndroidDocuments.h): on Android the picked document,
+            // written through the content resolver and cut to length; on the desktop the file
+            const auto problem = aqp::files::writeDocument (destination, encoded.getData(), encoded.getDataSize());
+            if (problem.isNotEmpty())
+                showPianoRollProblem ("Could not write the MIDI file: " + problem + ".");
         });
 }
 
@@ -1575,6 +1662,20 @@ public:
         rowsInButton.setTooltip ("Taller note rows");
 
         playButton.onClick = [this] { if (auto* r = roll()) r->setPlaying (! r->isPlaying()); refreshButtons(); };
+        styleButton (recButton);
+        recButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffe05560));
+        recButton.setTooltip ("Record: what you play on the keyboard below or a MIDI keyboard goes into the roll while it plays, "
+                              "on the grid (1/16 at the coarsest). It plays through to this roll's Midi Out, and Undo takes the take back");
+        addAndMakeVisible (recButton);
+        recButton.onClick = [this]
+        {
+            if (auto* r = roll())
+            {
+                r->setRecording (! r->isRecording());
+                if (r->isRecording() && ! r->isPlaying()) r->setPlaying (true);
+            }
+            refreshButtons();
+        };
         rewindButton.onClick = [this] { if (auto* r = roll()) r->rewind(); };
         allButton.onClick = [this]
         {
@@ -1680,7 +1781,7 @@ public:
         // the toolbar wraps onto as many rows as the card's width needs
         struct Item { juce::Component* c; int w; };
         const Item items[] = {
-            { &playButton, 54 }, { &rewindButton, 28 }, { &allButton, 64 }, { &tempoSlider, 84 }, { &hostButton, 44 },
+            { &playButton, 54 }, { &recButton, 40 }, { &rewindButton, 28 }, { &allButton, 64 }, { &tempoSlider, 84 }, { &hostButton, 44 },
             { &barsSlider, 70 }, { &loopButton, 48 }, { &gridCombo, 64 }, { &velSlider, 66 }, { &swingSlider, 86 },
             { &undoButton, 44 }, { &selectButton, 54 }, { &selectAllButton, 34 }, { &clearButton, 46 }, { &fitButton, 32 }, { &zoomOutButton, 30 }, { &zoomInButton, 30 },
             { &rowsOutButton, 30 }, { &rowsInButton, 30 }, { &followButton, 50 },
@@ -1809,6 +1910,7 @@ private:
             return;
         playButton.setButtonText (r->isPlaying() ? "Pause" : "Play");
         playButton.setToggleState (r->isPlaying(), juce::dontSendNotification);
+        recButton.setToggleState (r->isRecording(), juce::dontSendNotification);
         loopButton.setButtonText (r->getParameter ("loop") > 0.5f ? "Once" : "Loop");
         undoButton.setEnabled (r->canUndo());
         tempoSlider.setEnabled (! (r->wantsHostTempo() && r->isHostTempoAvailable()));
@@ -1831,6 +1933,7 @@ private:
         if (r == nullptr)
             return;
 
+        r->collectRecorded();
         syncControlsFromModule();
         refreshAllButton();
         statusLabel.setText (formatBeatPosition (r->getPlayheadBeats()) + "   " + tempoStatus (*r),
@@ -1842,6 +1945,7 @@ private:
     PianoRollGrid grid;
     ResizeGrip grip;
 
+    juce::TextButton recButton { "Rec" };
     juce::TextButton playButton { "Play" }, rewindButton { "|<" }, allButton { "Play All" }, hostButton { "Host" }, loopButton { "Loop" },
                      undoButton { "Undo" }, fitButton { "Fit" }, zoomOutButton { "H-" }, zoomInButton { "H+" },
                      rowsOutButton { "V-" }, rowsInButton { "V+" }, followButton { "Follow" },

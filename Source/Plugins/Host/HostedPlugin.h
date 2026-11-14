@@ -23,6 +23,43 @@
 //==============================================================================
 namespace aquanode::plugins
 {
+    // A plugin GUI card's content can lend its editor out: the window's Full
+    // Size view takes the plugin's own editor off the card, shows it alone at
+    // its own size, and gives it back. (HostedEditorHolder implements it.)
+    struct PluginEditorLender
+    {
+        virtual ~PluginEditorLender() = default;
+        virtual juce::Component* lendEditor() = 0;   // off the card; nullptr if there is none
+        virtual void returnEditor() = 0;             // back onto the card
+
+        // false: the card draws no Full Size pill - the content has a button of
+        // its own for it (the Random Preset module's Open)
+        virtual bool wantsFullSizePill() const { return true; }
+        // set by the card: shows the content's editor in the Full Size view
+        std::function<void()> requestFullSize;
+        // set by the card: puts a plugin card holding the content's preset in
+        // the module's place (the Random Plugin Preset module's Open in Plugin)
+        std::function<void()> requestOpenInPlugin;
+    };
+
+    // A plugin that plays a song of its own (Fruit DAW): the Piano Rolls' Play
+    // All / Stop All and Render to File start and stop it too.
+    struct SongPlayer
+    {
+        virtual ~SongPlayer() = default;
+        virtual double songBeats() const = 0;          // how long its song is; 0 = nothing to play
+        virtual void playSongFromStart (bool play) = 0; // audio thread
+    };
+
+    // A plugin shown as several cards that belong together (Fruit DAW's patch
+    // version): cards with the same non-empty group are deleted together and
+    // are not cloned.
+    struct LinkedGroupPlugin
+    {
+        virtual ~LinkedGroupPlugin() = default;
+        virtual juce::String linkGroup() const = 0;
+    };
+
     struct HostedSpec
     {
         juce::String pluginId;          // catalog key, "aquanova"
@@ -56,6 +93,18 @@ namespace aquanode::plugins
         // the hosted processor itself - for the "convert to patch" path, which
         // reads its parameters, and for the editor card
         juce::AudioProcessor* getPlugin() const { return plugin.get(); }
+        // ... kept alive by whoever shows more of it on another card
+        std::shared_ptr<juce::AudioProcessor> sharePlugin() const { return plugin; }
+        double takeTempoRequest() override
+        {
+            if (auto* t = dynamic_cast<aquanode::TempoRequester*> (plugin.get())) return t->takeTempoRequest();
+            return 0.0;
+        }
+        juce::String linkGroup() const override
+        {
+            if (auto* l = dynamic_cast<LinkedGroupPlugin*> (plugin.get())) return l->linkGroup();
+            return {};
+        }
         const HostedSpec& getSpec() const { return spec; }
 
         //=== SynthModule ======================================================
@@ -64,6 +113,9 @@ namespace aquanode::plugins
         void blockStart() override;
         VoiceMode voiceMode() const override { return VoiceMode::Global; }
         void processSample (const StereoFrame* inputs, StereoFrame* outputs) override;
+        // the block the plugin runs behind the patch, plus the plugin's own
+        // latency (a nested Aquanode's patch): passed on to the host
+        int latencySamples() const override;
 
         bool wantsRawMidi() const override { return spec.midiIn; }
         void rawMidiMessage (const juce::MidiMessage& message) override;
@@ -122,7 +174,16 @@ namespace aquanode::plugins
         std::vector<PendingNote> pendingOut;
         juce::int64 driverCounter { 0 }, driverCounterAtLastBlock { -1 };
 
+        // Play All / Stop All, passed on to a SongPlayer (the first block only takes note of the count)
+        juce::uint32 seenRollCommand { 0 };
+        bool rollCommandSeen { false };
+
         std::atomic<int> editorW, editorH;
+        // the last state handed out: the same bytes give back the same text, shared rather than copied -
+        // the undo history (32 steps) then holds a big state (a plugin's samples, a bundle of sounds) once
+        mutable juce::CriticalSection stateCacheLock;
+        mutable juce::MemoryBlock cachedStateBytes;
+        mutable juce::String cachedState;
 
         JUCE_DECLARE_NON_COPYABLE (HostedPluginModule)
     };

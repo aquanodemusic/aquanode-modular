@@ -767,7 +767,7 @@ static ModuleDescriptor chordWavetableDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "osc.chordwavetable";
-    d.displayName = "Chord Wavetable";
+    d.displayName = "Chord Table";
     d.description =
         "A wavetable oscillator that generates colour-bass chord tables: each frame is a sparse set of "
         "harmonics that land on an extended chord (Minor 9, Major 9...) above the played note. Roll for "
@@ -786,10 +786,10 @@ static ModuleDescriptor chordWavetableDescriptor()
     };
     d.params = {
         makeRotary ("volume",     "Volume",    0.0f, 1.0f, 0.7f, 0),
-        makeCombo  ("chord",      "Chord",     ChordWavetableModule::chordChoices(), 0, 0, 3),
+        makeCombo  ("chord",      "Chord",     ChordWavetableModule::chordChoices(), 0, 0, 3).noMod(),   // (the table is rebuilt)
         makeButton ("roll",       "Roll",      0, 1),
-        makeCombo  ("keys",       "Keys",      ChordWavetableModule::keysChoices(), 0, 1, 2),
-        makeCombo  ("morphType",  "Morph",     ChordWavetableModule::morphChoices(), 1, 1, 3),
+        makeCombo  ("keys",       "Keys",      ChordWavetableModule::keysChoices(), 0, 1, 2).noMod(),
+        makeCombo  ("morphType",  "Morph",     ChordWavetableModule::morphChoices(), 1, 1, 3).noMod(),
         makeRotary ("bright",     "Bright",    0.0f, 100.0f, 55.0f, 2, "%", false, 1.0f).noMod(),
         makeRotary ("density",    "Density",   5.0f, 100.0f, 60.0f, 2, "%", false, 1.0f).noMod(),
         makeRotary ("position",   "Position",  0.0f, 100.0f, 0.0f, 2, "%"),

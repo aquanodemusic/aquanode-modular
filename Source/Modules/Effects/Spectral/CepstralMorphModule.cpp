@@ -15,8 +15,8 @@ static aquanode::ModuleDescriptor cepstralMorphDescriptor()
         "talk. The envelope comes from the real cepstrum, so Clarity is the single knob that "
         "matters: low reads broad formant shapes, 100% is the classic setting, and 200% keeps every "
         "quefrency - the envelope becomes the raw spectrum and Carrier is fully replaced. Flip "
-        "swaps which input you hear. Adds 3072 samples of latency, which is not reported to the "
-        "host, so keep it in series rather than parallel with a dry path.";
+        "swaps which input you hear. Adds 3072 samples of latency (reported to the host, "
+        "but not made up inside the patch), so keep it in series rather than parallel with a dry path.";
     d.section = ModuleSection::Effect;
     d.sockets = {
         audioIn  ("carrierIn", "Carrier"),

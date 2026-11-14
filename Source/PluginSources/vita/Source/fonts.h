@@ -28,9 +28,18 @@ class Fonts {
     Font& proportional_title_regular() { return proportional_title_regular_; }
     Font& monospace() { return monospace_; }
 
+    // (Aquanode: let go when JUCE shuts down, not when the DLL unloads -
+    // fonts and looks hold DirectWrite / Direct2D objects on Windows)
     static Fonts* instance() {
-      static Fonts instance;
-      return &instance;
+      struct Holder : public DeletedAtShutdown {
+        Fonts object;
+        ~Holder() override { slot() = nullptr; }
+        static Holder*& slot() { static Holder* h = nullptr; return h; }
+      };
+      auto*& h = Holder::slot();
+      if (h == nullptr)
+        h = new Holder();
+      return &h->object;
     }
 
   private:

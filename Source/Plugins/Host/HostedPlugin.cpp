@@ -29,6 +29,7 @@ ModuleDescriptor makeHostedDescriptor (const HostedSpec& spec)
 // its card is still on screen can never leave the editor dangling.
 class HostedEditorHolder : public juce::Component,
                            public ExtraContentParamListener,
+                           public PluginEditorLender,
                            private juce::ComponentListener
 {
 public:
@@ -59,6 +60,8 @@ public:
     {
         if (editor != nullptr)
         {
+            if (auto* parent = editor->getParentComponent())
+                parent->removeChildComponent (editor.get());   // lent to the full view
             editor->removeComponentListener (this);
             // the host's job (JUCE's editor does not do it itself): without it
             // the plugin still counts this editor as its active one, and the
@@ -72,17 +75,39 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        if (editor == nullptr)
+        if (editor == nullptr || lent)
         {
             g.setColour (juce::Colours::white.withAlpha (0.7f));
-            g.drawText ("This plugin has no window", getLocalBounds(), juce::Justification::centred);
+            g.drawText (editor == nullptr ? "This plugin has no window" : "Shown in full size",
+                        getLocalBounds(), juce::Justification::centred);
         }
     }
 
     void resized() override
     {
-        if (editor != nullptr && editor->getPosition() != juce::Point<int>())
+        if (editor != nullptr && ! lent && editor->getPosition() != juce::Point<int>())
             editor->setTopLeftPosition (0, 0);
+    }
+
+    juce::Component* lendEditor() override
+    {
+        if (editor == nullptr || lent)
+            return nullptr;
+        lent = true;
+        removeChildComponent (editor.get());
+        repaint();
+        return editor.get();
+    }
+
+    void returnEditor() override
+    {
+        if (editor == nullptr || ! lent)
+            return;
+        lent = false;
+        editor->setTransform ({});
+        addAndMakeVisible (editor.get());
+        editor->setTopLeftPosition (0, 0);
+        repaint();
     }
 
 private:
@@ -106,6 +131,7 @@ private:
     std::shared_ptr<juce::AudioProcessor> processor;
     juce::WeakReference<SynthModule> module;
     std::unique_ptr<juce::AudioProcessorEditor> editor;
+    bool lent { false };
 };
 
 //==============================================================================
@@ -190,6 +216,15 @@ void HostedPluginModule::blockStart()
 {
     samplesThisHostBlock = 0;
 
+    if (! rollCommandSeen || hostTransport.rollCommand != seenRollCommand)
+    {
+        if (rollCommandSeen)
+            if (auto* sp = dynamic_cast<SongPlayer*> (plugin.get()))
+                sp->playSongFromStart (hostTransport.rollCommandPlays);
+        seenRollCommand = hostTransport.rollCommand;
+        rollCommandSeen = true;
+    }
+
     if (spec.sideIn && prepared && inSideIdx >= 0)
     {
         const bool want = isInputConnected (inSideIdx);
@@ -220,6 +255,11 @@ void HostedPluginModule::setSideChainEnabled (bool enabled)
         }
     }
     sideRelayoutPending = false;
+}
+
+int HostedPluginModule::latencySamples() const
+{
+    return kBlockSize + (plugin != nullptr ? juce::jmax (0, plugin->getLatencySamples()) : 0);
 }
 
 void HostedPluginModule::rawMidiMessage (const juce::MidiMessage& message)
@@ -418,7 +458,13 @@ juce::String HostedPluginModule::saveCustomState() const
 {
     juce::MemoryBlock mb;
     plugin->getStateInformation (mb);
-    return "w=" + juce::String (editorW.load()) + ";h=" + juce::String (editorH.load()) + ";" + mb.toBase64Encoding();
+    const auto head = "w=" + juce::String (editorW.load()) + ";h=" + juce::String (editorH.load()) + ";";
+    const juce::ScopedLock sl (stateCacheLock);
+    if (mb == cachedStateBytes && cachedState.startsWith (head))
+        return cachedState;
+    cachedStateBytes = mb;
+    cachedState = head + mb.toBase64Encoding();
+    return cachedState;
 }
 
 void HostedPluginModule::loadCustomState (const juce::String& state)

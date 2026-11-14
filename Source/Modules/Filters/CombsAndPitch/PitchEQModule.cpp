@@ -1,4 +1,5 @@
 #include "PitchEQModule.h"
+#include "../../Core/FilterResponse.h"
 
 using namespace aquanode;
 
@@ -231,6 +232,45 @@ void PitchEQModule::rebuildFilters()
             boostFilters[n] = makePeakingEQ (fc, sampleRate, (double) boostDB, bw);
         }
     }
+}
+
+// the same bells rebuildFilters() makes, from the knobs and keys as set
+bool PitchEQModule::magnitudeResponseDb (const float* hz, float* db, int n) const
+{
+    const double dampenDB = getParameterBase (pDampen), boostDB = getParameterBase (pBoost);
+    const double bw = 4.0 * std::exp (-6.0 * (double) juce::jlimit (0.0f, 1.0f, getParameterBase (pWidth)));
+    int lo = juce::jlimit (0, kTotalNotes - 1, (int) getParameterBase (pRangeLo));
+    int hi = juce::jlimit (0, kTotalNotes - 1, (int) getParameterBase (pRangeHi));
+    if (lo > hi) std::swap (lo, hi);
+    bool keep[12] {};
+    bool anyKept = false;
+    for (int i = 0; i < 12; ++i) { keep[i] = getParameterBase (6 + i) > 0.5f; anyKept = anyKept || keep[i]; }
+
+    std::vector<Biquad> bells;
+    if (anyKept)
+        for (int note = lo; note <= hi; ++note)
+        {
+            const double fc = midiNoteToHz (note);
+            if (! keep[note % 12] && dampenDB < -0.01)
+            {
+                const double totalCut = juce::jmax (dampenDB, kMaxDampenPerStage * kMaxDampenStages);
+                const int stages = juce::jlimit (1, kMaxDampenStages, (int) std::ceil (std::abs (totalCut) / std::abs (kMaxDampenPerStage)));
+                for (int st = 0; st < stages; ++st)
+                    bells.push_back (makePeakingEQ (fc, sampleRate, totalCut / stages, bw));
+            }
+            if (keep[note % 12] && boostDB > 0.01)
+                bells.push_back (makePeakingEQ (fc, sampleRate, boostDB, bw));
+        }
+    const double gain = std::pow (10.0, getParameterBase (pGain) / 20.0);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto z1 = response::zInv (hz[i], sampleRate);
+        response::C h = gain;
+        for (const auto& b : bells)
+            h *= response::biquad (b.b0, b.b1, b.b2, b.a1, b.a2, z1);
+        db[i] = response::db (h);
+    }
+    return true;
 }
 
 void PitchEQModule::processSample (const StereoFrame* inputs, StereoFrame* outputs)

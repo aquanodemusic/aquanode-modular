@@ -20,12 +20,12 @@ protected:
     void processSpectrum (int, std::complex<float>* bins, const std::complex<float>*) override
     {
         float maxMag = 1.0e-4f;
-        for (int b = 0; b < kNumBins; ++b)
+        for (int b = 0; b < numBins; ++b)
             maxMag = juce::jmax (maxMag, std::abs (bins[b]));
 
         const bool attenuate = param (pMode) > 0.5f;
 
-        for (int b = 0; b < kNumBins; ++b)
+        for (int b = 0; b < numBins; ++b)
         {
             const float targetDB = binCurve[b] * 63.0f - 60.0f;   // -60 .. +3 dB rel. max
             const float target = maxMag * std::pow (10.0f, targetDB / 20.0f);

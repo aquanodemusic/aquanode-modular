@@ -20,9 +20,10 @@
 // Tone is a filter after the pipe, soft and dark to bright and edgy.
 //
 // Breath is the playing control: the note's breath rises over Attack and falls
-// over Release (velocity sets how hard it starts), and a cable onto Breath moves it by
-// Breath Mod - patch Midi Controls' mod wheel or aftertouch there to play it
-// like a wind controller. Noise is the air around the tone; Vibrato fades in
+// over Release (velocity sets how hard it starts), and aftertouch - or a note's
+// own MPE pressure - blows harder while the note is held (After Touch sets how
+// far), so a pressure keyboard plays it like a wind controller; a cable onto
+// Breath moves it too. Noise is the air around the tone; Vibrato fades in
 // after its Delay. Env In, patched, replaces the internal breath envelope.
 // Per-voice generator. Inputs: 0 = Env In, 1 = Add Midi In.
 // Output: 0 = Audio Out.
@@ -33,7 +34,7 @@ public:
     static constexpr int kJetSize = 4096;
 
     enum ParamIndex { pVolume = 0, pInstrument, pBreath, pTone, pNoise, pVibrato, pVibRate, pVibDelay,
-                      pAttack, pRelease, pVoices, pGlide };
+                      pAttack, pRelease, pVoices, pGlide, pOutTrim, pAfterTouch };
     enum Instrument { flute = 0, panFlute, clarinet };
 
     WindModule();
@@ -59,6 +60,7 @@ private:
         float dcIn { 0.0f }, dcOut { 0.0f };            // its DC blocker
         float outLp { 0.0f }, outDcIn { 0.0f }, outDcOut { 0.0f };
         float breath { 0.0f };                          // the breath envelope
+        float touch { 0.0f };                           // aftertouch / MPE pressure, smoothed
         double vibPhase { 0.0 };
         double sinceOn { 0.0 };                         // seconds since the note began
         juce::uint32 noise { 0x1234567u };

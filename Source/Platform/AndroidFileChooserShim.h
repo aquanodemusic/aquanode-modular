@@ -25,10 +25,14 @@
 //     (an export) is written back into the picked folder afterwards.
 //   - saving: getResult() is a file in a scratch folder; once the plugin's
 //     callback has written it, its bytes go into the document the picker
-//     created.
+//     created - through aqp::files::writeDocument, the one way the app and
+//     every plugin save (AndroidDocuments.h). Every plugin writes its file
+//     inside the callback; one that renders in the background (AudioStretcher)
+//     takes the URI instead and saves through writeDocument itself when done.
 //
 // getURLResult() / getURLResults() still give the picker's own URIs, for code
-// that already handles them.
+// that already handles them. A plugin that only asks for those writes the
+// document itself: then nothing is written back (and nothing reported).
 //==============================================================================
 #include <JuceHeader.h>
 
@@ -103,7 +107,16 @@ public:
                     callback (*self);
                 trace << "\nplugin done";
                 for (const auto& w : pending)
+                {
+                    // a plugin that took only the picker's URI writes the document itself
+                    // (AudioStretcher exports to it from a background thread)
+                    if (! w.folder && ! s->fileAsked)
+                    {
+                        trace << "\nthe plugin writes the document itself";
+                        continue;
+                    }
                     trace << "\n" << w.run();
+                }
             }
             else
             {
@@ -128,10 +141,10 @@ public:
         }, preview);
     }
 
-    File getResult() const               { return files.isEmpty() ? File() : files.getReference (0); }
-    Array<File> getResults() const       { return files; }
-    URL getURLResult() const             { return urls.isEmpty() ? URL() : urls.getReference (0); }
-    Array<URL> getURLResults() const     { return urls; }
+    File getResult() const               { asked (true); return files.isEmpty() ? File() : files.getReference (0); }
+    Array<File> getResults() const       { asked (true); return files; }
+    URL getURLResult() const             { asked (false); return urls.isEmpty() ? URL() : urls.getReference (0); }
+    Array<URL> getURLResults() const     { asked (false); return urls; }
 
     static File importFolder()
     {
@@ -157,23 +170,26 @@ private:
                     writeFolder (local, tree, since, 0);
                 return tree.hasValue() ? "folder written back" : "folder: no access";
             }
-            auto from = local;
-            if (! from.existsAsFile())
+            const auto from = written();
+            if (from == File())
             {
-                // the plugin may have changed the extension: take what it wrote
-                const auto written = local.getParentDirectory().findChildFiles (File::findFiles, false);
-                if (written.isEmpty())
-                {
-                    report ("The plugin did not save anything to " + local.getFileName() + ".", target);
-                    return "nothing saved by the plugin";
-                }
-                from = written.getFirst();
+                report ("The plugin did not save anything to " + local.getFileName() + ".", target);
+                return "nothing saved by the plugin";
             }
-            const auto problem = writeDocument (target, from);
+            const auto problem = aqp::files::writeDocument (target, from);
             if (problem.isNotEmpty())
                 report ("The file could not be written (" + problem + ").", target);
             return problem.isNotEmpty() ? "write-back: " + problem
                                         : "written back: " + String (from.getSize()) + " bytes";
+        }
+
+        // what the plugin wrote (it may have changed the extension), or nothing
+        File written() const
+        {
+            if (local.existsAsFile())
+                return local;
+            const auto all = local.getParentDirectory().findChildFiles (File::findFiles, false);
+            return all.isEmpty() ? File() : all.getFirst();
         }
     };
 
@@ -216,40 +232,9 @@ private:
         return name;
     }
 
-    // empty when it worked, otherwise what went wrong
-    static String writeDocument (const URL& target, const File& from)
-    {
-        MemoryBlock mb;
-        if (! from.loadFileAsData (mb) || mb.getSize() == 0)
-            return "the plugin wrote nothing";
-        // replacing what was there ("wt"): a shorter file over a longer one
-        // must not keep the old one's tail
-        const auto problem = aqp::android::replaceDocument (target, mb.getData(), mb.getSize());
-        if (problem.isEmpty())
-            return {};
-        if (auto out = target.createOutputStream())
-        {
-            if (! out->write (mb.getData(), mb.getSize()))
-                return "writing failed";
-            out->flush();
-            return {};
-        }
-        return problem;
-    }
     static String writeDocument (const AndroidDocument& doc, const File& from)
     {
-        MemoryBlock mb;
-        if (! doc.hasValue() || ! from.loadFileAsData (mb))
-            return "nothing to write";
-        if (mb.getSize() > 0 && aqp::android::replaceDocument (doc.getUrl(), mb.getData(), mb.getSize()).isEmpty())
-            return {};
-        if (auto out = doc.createOutputStream())
-        {
-            out->write (mb.getData(), mb.getSize());
-            out->flush();
-            return {};
-        }
-        return "no write access";
+        return doc.hasValue() ? aqp::files::writeDocument (doc.getUrl(), from) : String ("no document");
     }
 
     // a problem the plugin could not have noticed itself, shown once
@@ -429,7 +414,13 @@ private:
     {
         std::unique_ptr<FileChooser> chooser;
         AqpFileChooser* owner { nullptr };
+        bool fileAsked { false }, urlAsked { false };   // what the plugin's callback took
     };
+    void asked (bool file) const
+    {
+        if (session != nullptr)
+            (file ? session->fileAsked : session->urlAsked) = true;
+    }
     static std::vector<std::shared_ptr<Session>>& sessions()
     {
         static std::vector<std::shared_ptr<Session>> all;

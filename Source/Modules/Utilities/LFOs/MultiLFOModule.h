@@ -37,6 +37,12 @@ public:
     void voiceNoteOn (int v, int note, bool retrigger) override;
     void voiceReset (int v) override;
 
+    // with nothing per voice to follow it free-runs in the global lane (see
+    // SynthModule::freeRunsWhenGlobal), on the state of voice slot 0
+    // (not as a one-shot: that needs its notes)
+    bool freeRunsWhenGlobal() const override { return (int) std::lround (getParameterBase (pMode)) != 1; }
+    void processSample (const aquanode::StereoFrame* in, aquanode::StereoFrame* out) override { processVoiceSample (0, in, out); }
+
     void processVoiceSample (int v, const aquanode::StereoFrame* inputs, aquanode::StereoFrame* outputs) override;
 
     void setParameter (const juce::String& id, float value) override;

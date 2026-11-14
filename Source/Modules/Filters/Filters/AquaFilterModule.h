@@ -49,6 +49,8 @@ public:
         processVoiceSample (0, inputs, outputs);   // global lane = voice slot 0
     }
 
+    bool magnitudeResponseDb (const float* hz, float* db, int n) const override;   // the static curve (Drive left out)
+
 private:
     // fast tanh approximation shared by drive and the ladder stages
     static float tanhA (float x)

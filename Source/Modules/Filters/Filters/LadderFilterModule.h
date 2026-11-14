@@ -39,6 +39,8 @@ public:
         processVoiceSample (0, inputs, outputs);   // global lane = voice slot 0
     }
 
+    bool magnitudeResponseDb (const float* hz, float* db, int n) const override;   // the static curve (Drive left out)
+
 private:
     float s1[aquanode::kMaxVoices][2] {}, s2[aquanode::kMaxVoices][2] {};
     float s3[aquanode::kMaxVoices][2] {}, s4[aquanode::kMaxVoices][2] {};

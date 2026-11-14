@@ -23,6 +23,8 @@ AquanodeModularAudioProcessor::AquanodeModularAudioProcessor()
           .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
     aquanode::forceLinkAllModules();   // guarantees every module is linked + registered
+    if (auto* mm = juce::MessageManager::getInstanceWithoutCreating(); mm != nullptr && mm->isThisTheMessageThread())
+        latencyWatch = std::make_unique<LatencyWatch> (*this);
 
     // Fixed, always-present automation targets. They exist whether or not any
     // DAW Mod module is patched, so a host's automation lanes never shift
@@ -68,10 +70,15 @@ void AquanodeModularAudioProcessor::prepareToPlay (double sampleRate, int sample
     for (auto& inst : instances)
         inst->dsp->prepare (sampleRate);
     outputClipper.reset();
+    latencyScratch.reserve (1024);
 
     for (auto& vs : voiceStates)
         vs = VoiceState();
     refreshActiveVoices();
+
+    // the patch's latency (a graph built off the message thread could not report it yet)
+    if (getLatencySamples() != patchLatency.load (std::memory_order_relaxed))
+        setLatencySamples (patchLatency.load (std::memory_order_relaxed));
 
     purgeRetired();
 }

@@ -28,3 +28,44 @@ namespace aquanode::plugins::phizmo
         return ph != nullptr && ph->randomPreset (style, (juce::int64) seed | 1, status);
     }
 }
+
+// the logo's random styles (Surprise Me, the any-style one, last), for the
+// Random Plugin Preset module; saved as a .phizmo preset
+#include "../Host/RandomPresetSources.h"
+namespace
+{
+    const bool phizmoRandomRegistered = aquanode::plugins::randompreset::registerSource ([]
+    {
+        aquanode::plugins::randompreset::Source s;
+        s.pluginId = "phizmo";
+        s.name = "Phizmo";
+        s.lists = []
+        {
+            using P = aqp_phizmo::PhizmoAudioProcessor;
+            aquanode::plugins::randompreset::Lists l;
+            for (int i = 0; i < (int) P::NumRandomStyles; ++i)
+                l.kinds.add (P::randomStyleName (i));
+            l.defaultKind = (int) P::RandSurprise;
+            return l;
+        };
+        s.roll = [] (juce::AudioProcessor& p, int kind, int, int, juce::uint32 seed) -> juce::String
+        {
+            auto* ph = dynamic_cast<aqp_phizmo::PhizmoAudioProcessor*> (&p);
+            juce::String status;
+            if (ph == nullptr || ! ph->randomPreset (kind, (juce::int64) seed | 1, status))
+                return {};
+            return ph->getCurrentPresetName().isNotEmpty() ? ph->getCurrentPresetName() : status;
+        };
+        s.presetExtension = "phizmo";
+        s.presetData = [] (juce::AudioProcessor& p, const juce::String& name, juce::MemoryBlock& out)
+        {
+            auto* ph = dynamic_cast<aqp_phizmo::PhizmoAudioProcessor*> (&p);
+            if (ph == nullptr)
+                return false;
+            if (name.isNotEmpty())
+                ph->setCurrentPresetName (name);
+            return aquanode::plugins::randompreset::viaTempFile ("phizmo", [ph] (const juce::File& f) { return ph->savePreset (f); }, out);
+        };
+        return s;
+    }());
+}

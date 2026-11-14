@@ -24,6 +24,11 @@ public:
     void reset() override;
     void voiceReset (int v) override;
     void voiceNoteOn (int v, int note, bool retrigger) override;
+    // with nothing per voice to follow it free-runs in the global lane (see
+    // SynthModule::freeRunsWhenGlobal), on the state of voice slot 0
+    bool freeRunsWhenGlobal() const override { return true; }
+    void processSample (const aquanode::StereoFrame* in, aquanode::StereoFrame* out) override { processVoiceSample (0, in, out); }
+
     void processVoiceSample (int v, const aquanode::StereoFrame*, aquanode::StereoFrame* outputs) override;
 
     std::unique_ptr<juce::Component> createExtraContentComponent() override;

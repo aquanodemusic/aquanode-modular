@@ -60,6 +60,8 @@ public:
         processVoiceSample (0, inputs, outputs);   // global lane = voice slot 0 (Kbd Track at middle C)
     }
 
+    bool magnitudeResponseDb (const float* hz, float* db, int n) const override;   // the static curve (at middle C)
+
 private:
     vintagedsp::WarmLadderCore filt[aquanode::kMaxVoices][2];
     int noteOf[aquanode::kMaxVoices] {};   // set to middle C in reset()

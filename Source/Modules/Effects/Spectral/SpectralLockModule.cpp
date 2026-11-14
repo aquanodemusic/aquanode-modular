@@ -821,15 +821,18 @@ static ModuleDescriptor spectralLockDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "fx.spectrallock";
-    d.displayName = "Spectral Lock";
+    d.displayName = "Sine Filterbank Retuner";
     d.description =
-        "A filterbank resynthesizer and retuner: the mid band is split into 36 bands per octave and each "
+        "A sine filter bank that retunes: the mid band is split into 36 bands per octave and each "
         "band sings its level back through a sine, retuned by the matrix in the card (columns = the note it "
         "hears relative to Root, rows = where it goes; the Scale menu stamps a scale) - or, with MIDI lit, "
         "pulled to the notes held on Midi In. Amount blends the retuned tone against the noise, Isolate gates "
         "out unpitched bands, Shimmer adds an octave, Spray a fixed detune scatter, Freeze holds the bands. "
         "Mute Lo / Mute Hi drop the dry tails outside the range. Low CPU runs the band bank at half the rate "
         "for about half the processor time (off: the full-quality sound). Zero latency.";
+    // a bank of band-pass filters whose levels drive sines (an additive
+    // resynthesis, not an FFT): it makes new tones, so it is listed with the
+    // effects' Pitch group
     d.section = ModuleSection::Effect;
     d.sidebarOrder = 62;
     d.sockets = {

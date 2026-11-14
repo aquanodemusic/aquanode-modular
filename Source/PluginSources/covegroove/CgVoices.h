@@ -48,6 +48,7 @@
 // bass an octave up.
 //==============================================================================
 #include "CgDsp.h"
+#include "CgMachines.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -59,7 +60,9 @@ namespace covegroove
     constexpr int kClassicModels = 8;      // the synthesized sounds with an engine of their own per lane
     constexpr int kShapedModels = 2;       // two more per lane, from one shaped engine fitted to recorded hits
     constexpr int kSampleModel = kClassicModels + kShapedModels;   // the lane's own loaded sample
-    constexpr int kNumModels = kSampleModel + 1;
+    constexpr int kFirstMachineModel = kSampleModel + 1;           // then the drum machines' (CgMachines.h)
+    constexpr int kNumModels = kFirstMachineModel + kMachineModels;
+    inline bool isMachineModel (int model) { return model >= kFirstMachineModel && model < kNumModels; }
     enum LaneType { Kick = 0, Bass, Clap, ClosedHat, OpenHat, Cymbal, Perc, Fx };
 
     inline const char* laneName (int lane)
@@ -70,7 +73,9 @@ namespace covegroove
 
     inline const char* modelName (int lane, int model)
     {
-        static const char* n[kNumLanes][kNumModels] = {
+        if (isMachineModel (model))
+            return machineName (lane, model - kFirstMachineModel);
+        static const char* n[kNumLanes][kSampleModel + 1] = {
             { "Hard", "Long", "Tight", "Round", "Analog", "Hybrid", "Kit", "Crunch", "Gated", "Drop", "Sample" },
             { "Sub", "Saw", "Pulse", "Rumble", "Analog", "Acid", "Reese", "Fingered", "Gate Rumble", "Verb Rumble", "Sample" },
             { "Clap", "Snap", "Room", "Snare", "Analog Clap", "Hybrid Clap", "Hybrid Snare", "Kit Snare", "Gate Clap", "Verb Clap", "Sample" },
@@ -79,7 +84,7 @@ namespace covegroove
             { "Ride", "Crash", "Shaker", "Rev Crash", "Analog Cym", "Hybrid Ride", "Kit Ride", "Kit Crash", "Dark Crash", "Swell", "Sample" },
             { "Conga", "Tom", "Bongo", "Rim", "Cowbell", "Analog Tom", "Clave", "Kit Tom", "Gate Tom", "Gate Hit", "Sample" },
             { "Zap", "Stab", "Noise", "Blip", "Tamb", "Maracas", "Riser", "Metal", "Gate FX", "Reverb", "Sample" } };
-        return n[std::clamp (lane, 0, kNumLanes - 1)][std::clamp (model, 0, kNumModels - 1)];
+        return n[std::clamp (lane, 0, kNumLanes - 1)][std::clamp (model, 0, kSampleModel)];
     }
 
     // what a sound does in the pattern (the generator writes the cymbal and FX
@@ -88,13 +93,15 @@ namespace covegroove
 
     inline Role cymbalRole (int model)
     {
-        static const Role r[kNumModels] = { RoleRide, RoleCrash, RoleShaker, RoleSwell, RoleRide, RoleRide, RoleRide, RoleCrash, RoleCrash, RoleSwell, RoleRide };
+        static const Role r[kNumModels] = { RoleRide, RoleCrash, RoleShaker, RoleSwell, RoleRide, RoleRide, RoleRide, RoleCrash, RoleCrash, RoleSwell, RoleRide,
+                                            RoleRide, RoleRide, RoleCrash };
         return r[std::clamp (model, 0, kNumModels - 1)];
     }
 
     inline Role fxRole (int model)
     {
-        static const Role r[kNumModels] = { RoleSweep, RoleStab, RoleSweep, RoleBlip, RoleJingle, RoleShaker, RoleSwell, RoleStab, RoleStab, RoleCrash, RoleStab };
+        static const Role r[kNumModels] = { RoleSweep, RoleStab, RoleSweep, RoleBlip, RoleJingle, RoleShaker, RoleSwell, RoleStab, RoleStab, RoleCrash, RoleStab,
+                                            RoleBlip, RoleShaker, RoleJingle };
         return r[std::clamp (model, 0, kNumModels - 1)];
     }
 
@@ -260,6 +267,13 @@ namespace covegroove
             dc = 0.0f;
             env1 = env2 = env3 = 1.0f;
 
+            if (isMachineModel (model))
+            {
+                kind = Kind::Machine;
+                machine.start (lane, model - kFirstMachineModel, sr, tuneRatio, decay, tone, alt, seed);
+                maxLength = machine.length();
+                return;
+            }
             kind = model == kSampleModel ? Kind::Sampled : (model >= kClassicModels ? Kind::Shaped : Kind::Classic);
             if (kind == Kind::Classic && boxIndex (lane, model) >= 0) kind = Kind::Box;
             if (kind == Kind::Shaped) { startShaped (model - kClassicModels); return; }
@@ -287,7 +301,8 @@ namespace covegroove
             if (! active) return;
             const float t = (float) n / sr;
             float l = 0.0f, r = 0.0f;
-            if (kind == Kind::Shaped) renderShaped (t, l, r);
+            if (kind == Kind::Machine) machine.render (l, r);
+            else if (kind == Kind::Shaped) renderShaped (t, l, r);
             else if (kind == Kind::Box) renderBox (t, l, r);
             else if (kind == Kind::Sampled) renderSample (l, r);
             else switch (lane)
@@ -1438,7 +1453,8 @@ namespace covegroove
         //=== state ===========================================================
         float sr { 48000.0f };
         int lane { 0 }, model { 0 };
-        enum class Kind { Classic, Shaped, Sampled, Box };
+        enum class Kind { Classic, Shaped, Sampled, Box, Machine };
+        MachineVoice machine;
         Kind kind { Kind::Classic };
         int64_t n { 0 };
         bool active { false };

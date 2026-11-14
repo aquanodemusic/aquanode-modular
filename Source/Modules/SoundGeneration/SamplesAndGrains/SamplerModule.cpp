@@ -490,3 +490,319 @@ static ModuleDescriptor samplerDescriptor()
 }
 
 AQUANODE_REGISTER_MODULE (SamplerModule, samplerDescriptor)
+
+//==============================================================================
+// Multi Sample
+//==============================================================================
+void MultiSampleModule::blockStart()
+{
+    const int v = slotVersion.load (std::memory_order_acquire);
+    if (v == seenVersion)
+        return;
+    const juce::SpinLock::ScopedTryLockType sl (slotLock);
+    if (! sl.isLocked())
+        return;                       // next block
+    double longest = 0.0;
+    for (int i = 0; i < kSlots; ++i)
+    {
+        playing[(size_t) i].audio = slots[(size_t) i].audio;      // (the message thread keeps the old ones alive)
+        playing[(size_t) i].rate = slots[(size_t) i].rate;
+        longest = juce::jmax (longest, slots[(size_t) i].seconds());
+    }
+    length = longest;
+    if (position >= length)
+        position = 0.0;
+    seenVersion = v;
+}
+
+void MultiSampleModule::processSample (const aquanode::StereoFrame*, aquanode::StereoFrame* outputs)
+{
+    outputs[0] = { 0.0f, 0.0f };
+    if (restart.exchange (false, std::memory_order_relaxed))
+        position = 0.0;
+    if (param (pPlaying) > 0.5f && length > 0.0)
+    {
+        const int track = juce::jlimit (0, kSlots, juce::roundToInt (param (pTrack)));
+        const float level = param (pLevel);
+        float l = 0.0f, r = 0.0f;
+        for (int i = 0; i < kSlots; ++i)
+        {
+            const auto& s = playing[(size_t) i];
+            if (s.audio == nullptr || (track != 0 && track != i + 1))
+                continue;
+            const double x = position * s.rate;
+            const int i0 = (int) x, n = s.audio->getNumSamples();
+            if (i0 >= n)
+                continue;                                  // a shorter file than the longest: silent after its end
+            const float f = (float) (x - i0);
+            const int i1 = juce::jmin (i0 + 1, n - 1);
+            const float* a = s.audio->getReadPointer (0);
+            const float* b = s.audio->getReadPointer (s.audio->getNumChannels() > 1 ? 1 : 0);
+            l += a[i0] + (a[i1] - a[i0]) * f;
+            r += b[i0] + (b[i1] - b[i0]) * f;
+        }
+        outputs[0] = { l * level, r * level };
+        position += 1.0 / sampleRate;
+        if (position >= length)
+        {
+            position = 0.0;
+            if (param (pLoop) < 0.5f)
+                setParameterByIndex (pPlaying, 0.0f);      // once through, then it waits at the start
+        }
+    }
+    uiPosition.store (position, std::memory_order_relaxed);
+}
+
+void MultiSampleModule::uiButtonClicked (const juce::String& paramId)
+{
+    if (paramId == "restart")
+        restart.store (true, std::memory_order_relaxed);
+}
+
+MultiSampleModule::Slot MultiSampleModule::getSlot (int index) const
+{
+    const juce::SpinLock::ScopedLockType sl (slotLock);
+    return slots[(size_t) juce::jlimit (0, kSlots - 1, index)];
+}
+
+double MultiSampleModule::lengthSeconds() const
+{
+    const juce::SpinLock::ScopedLockType sl (slotLock);
+    double longest = 0.0;
+    for (const auto& s : slots) longest = juce::jmax (longest, s.seconds());
+    return longest;
+}
+
+void MultiSampleModule::setSlot (int index, Slot slot)
+{
+    if (index < 0 || index >= kSlots)
+        return;
+    {
+        const juce::SpinLock::ScopedLockType sl (slotLock);
+        if (slots[(size_t) index].audio != nullptr)
+            retired.push_back (slots[(size_t) index].audio);     // the audio thread may still be reading it
+        if (retired.size() > 2 * kSlots)
+            retired.erase (retired.begin(), retired.begin() + kSlots);
+        slots[(size_t) index] = std::move (slot);
+    }
+    slotVersion.fetch_add (1, std::memory_order_release);
+}
+
+void MultiSampleModule::chooseFile (int index)
+{
+    chooser = std::make_unique<juce::FileChooser> ("Load into track " + juce::String (index + 1), juce::File(),
+                                                   "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+    juce::WeakReference<aquanode::SynthModule> weak (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [weak, index] (const juce::FileChooser& fc)
+        {
+            auto* self = dynamic_cast<MultiSampleModule*> (weak.get());
+            if (self == nullptr)
+                return;
+            juce::String name;
+           #if JUCE_ANDROID
+            const auto url = fc.getURLResult();
+            if (url.isEmpty()) return;
+            if (auto doc = juce::AndroidDocument::fromDocument (url); doc.hasValue()) name = doc.getInfo().getName();
+            self->loadSampleFromURL (url);
+           #else
+            const auto file = fc.getResult();
+            if (! file.existsAsFile()) return;
+            name = file.getFileName();
+            self->loadSampleFromFile (file);
+           #endif
+            // the shared loader leaves the file in the one-sample buffer: move it into its track
+            double rate = 48000.0;
+            if (auto audio = self->getLoadedSample (&rate))
+            {
+                self->setSlot (index, { audio, rate, name.isNotEmpty() ? name : "File " + juce::String (index + 1) });
+                self->setLoadedSample (nullptr, 48000.0);
+            }
+        });
+}
+
+//-- saved with the patch --------------------------------------------------------
+juce::String MultiSampleModule::saveCustomState() const
+{
+    const juce::SpinLock::ScopedLockType sl (slotLock);
+    juce::StringArray parts;
+    for (const auto& s : slots)
+        parts.add (juce::String (s.audio != nullptr ? s.audio->getNumSamples() : 0) + "," + juce::String (s.rate, 3) + ","
+                   + juce::Base64::toBase64 (s.name));
+    return "v1|" + parts.joinIntoString (";");
+}
+
+std::shared_ptr<const juce::AudioBuffer<float>> MultiSampleModule::getAudioToSave (double& rate) const
+{
+    rate = 48000.0;
+    const juce::SpinLock::ScopedLockType sl (slotLock);
+    int total = 0;
+    for (const auto& s : slots) if (s.audio != nullptr) total += s.audio->getNumSamples();
+    if (total == 0)
+        return nullptr;
+    auto all = std::make_shared<juce::AudioBuffer<float>> (2, total);
+    int at = 0;
+    for (const auto& s : slots)
+        if (s.audio != nullptr)
+        {
+            const int n = s.audio->getNumSamples();
+            all->copyFrom (0, at, *s.audio, 0, 0, n);
+            all->copyFrom (1, at, *s.audio, s.audio->getNumChannels() > 1 ? 1 : 0, 0, n);
+            at += n;
+        }
+    return all;
+}
+
+void MultiSampleModule::restoreSavedAudio (std::shared_ptr<juce::AudioBuffer<float>> audio, double)
+{
+    packed = std::move (audio);
+    unpackIfComplete();
+}
+
+void MultiSampleModule::loadCustomState (const juce::String& state)
+{
+    packedIndex = state;
+    juce::int64 total = 0;
+    if (state.startsWith ("v1|"))
+        for (const auto& part : juce::StringArray::fromTokens (state.substring (3), ";", ""))
+            total += juce::jmax (0, part.upToFirstOccurrenceOf (",", false, false).getIntValue());
+    if (total == 0)
+    {
+        // nothing loaded in that patch: no audio will follow
+        for (int i = 0; i < kSlots; ++i) setSlot (i, {});
+        packedIndex = {};
+        packed = nullptr;
+        return;
+    }
+    unpackIfComplete();
+}
+
+void MultiSampleModule::unpackIfComplete()
+{
+    // the audio and the index arrive separately, in either order
+    if (packed == nullptr || ! packedIndex.startsWith ("v1|"))
+        return;
+    const auto parts = juce::StringArray::fromTokens (packedIndex.substring (3), ";", "");
+    int at = 0;
+    for (int i = 0; i < kSlots; ++i)
+    {
+        const auto f = juce::StringArray::fromTokens (i < parts.size() ? parts[i] : juce::String(), ",", "");
+        const int n = f[0].getIntValue();
+        if (n <= 0 || at + n > packed->getNumSamples()) { setSlot (i, {}); continue; }
+        auto one = std::make_shared<juce::AudioBuffer<float>> (packed->getNumChannels(), n);
+        for (int c = 0; c < packed->getNumChannels(); ++c) one->copyFrom (c, 0, *packed, c, at, n);
+        at += n;
+        juce::MemoryOutputStream nameBytes;
+        juce::Base64::convertFromBase64 (nameBytes, f[2]);
+        setSlot (i, { one, juce::jmax (1000.0, f[1].getDoubleValue()), nameBytes.toString() });
+    }
+    packed = nullptr;
+    packedIndex = {};
+}
+
+//-- the card --------------------------------------------------------------------
+namespace
+{
+    class MultiSampleList : public juce::Component, private juce::Timer
+    {
+    public:
+        explicit MultiSampleList (MultiSampleModule& m) : weak (&m) { startTimerHz (15); }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto* m = module.get();
+            if (m == nullptr) return;
+            const int track = juce::roundToInt (m->getParameter ("track"));
+            const double pos = m->positionSeconds(), len = m->lengthSeconds();
+            for (int i = 0; i < MultiSampleModule::kSlots; ++i)
+            {
+                auto r = row (i).toFloat();
+                const auto s = m->getSlot (i);
+                const bool out = s.audio != nullptr && (track == 0 || track == i + 1);
+                g.setColour (juce::Colours::black.withAlpha (out ? 0.42f : 0.24f));
+                g.fillRoundedRectangle (r, 3.0f);
+                if (s.audio != nullptr && len > 0.0)
+                {
+                    // how much of the common length it covers, and where the playback is
+                    auto bar = r.reduced (1.0f).withWidth ((r.getWidth() - 2.0f) * (float) (s.seconds() / len));
+                    g.setColour (juce::Colours::white.withAlpha (out ? 0.16f : 0.07f));
+                    g.fillRoundedRectangle (bar, 2.0f);
+                    if (out && pos < s.seconds())
+                    {
+                        g.setColour (juce::Colours::white.withAlpha (0.85f));
+                        g.fillRect (r.getX() + 1.0f + (r.getWidth() - 2.0f) * (float) (pos / len), r.getY() + 2.0f, 1.5f, r.getHeight() - 4.0f);
+                    }
+                }
+                g.setColour (juce::Colours::white.withAlpha (out ? 1.0f : 0.55f));
+                g.setFont (juce::Font (juce::FontOptions (13.0f, track == i + 1 ? juce::Font::bold : juce::Font::plain)));
+                auto text = r.reduced (6.0f, 0.0f).withTrimmedRight (26.0f);
+                g.drawText (juce::String (i + 1), text.removeFromLeft (16.0f), juce::Justification::centredLeft);
+                if (s.audio != nullptr)
+                {
+                    const int secs = (int) std::round (s.seconds());
+                    g.drawText (juce::String (secs / 60) + ":" + juce::String (secs % 60).paddedLeft ('0', 2), text.removeFromRight (40.0f), juce::Justification::centredRight);
+                    g.drawText (s.name, text, juce::Justification::centredLeft, true);
+                    g.setColour (juce::Colours::white.withAlpha (0.6f));
+                    g.drawText ("x", clearArea (i), juce::Justification::centred);
+                }
+                else
+                    g.drawText ("tap to load a file", text, juce::Justification::centredLeft);
+            }
+        }
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            auto* m = module.get();
+            if (m == nullptr || e.mouseWasDraggedSinceMouseDown()) return;
+            for (int i = 0; i < MultiSampleModule::kSlots; ++i)
+            {
+                if (! row (i).contains (e.getPosition())) continue;
+                const bool has = m->getSlot (i).audio != nullptr;
+                if (has && clearArea (i).expanded (4, 0).contains (e.getPosition())) m->setSlot (i, {});
+                else if (! has || e.mods.isPopupMenu()) m->chooseFile (i);          // long press / right click: another file
+                else m->setParameter ("track", juce::roundToInt (m->getParameter ("track")) == i + 1 ? 0.0f : (float) (i + 1));   // this one / all
+                repaint();
+                return;
+            }
+        }
+
+    private:
+        juce::Rectangle<int> row (int i) const { return { 4, 6 + i * 26, getWidth() - 8, 23 }; }
+        juce::Rectangle<int> clearArea (int i) const { return row (i).removeFromRight (26); }
+        void timerCallback() override { repaint(); }
+        struct Ref { juce::WeakReference<aquanode::SynthModule>& w; MultiSampleModule* get() const { return dynamic_cast<MultiSampleModule*> (w.get()); } };
+        juce::WeakReference<aquanode::SynthModule> weak;
+        Ref module { weak };
+    };
+}
+
+std::unique_ptr<juce::Component> MultiSampleModule::createExtraContentComponent()
+{
+    return std::make_unique<MultiSampleList> (*this);
+}
+
+static ModuleDescriptor multiSampleDescriptor()
+{
+    ModuleDescriptor d;
+    d.typeId = "osc.multisample";
+    d.displayName = "Multi Sample";
+    d.description =
+        "Up to eight audio files played side by side from one common position, and Track for which one goes out: "
+        "All, or one of them. Switch while it plays and it stays in place - for comparing takes or renders, for stems, "
+        "or as a test-signal player in front of an effect. Tap an empty row to load a file, a loaded row to hear it alone "
+        "(again for all), long-press / right-click for another file, x to remove it. Shorter files are silent after their "
+        "end; with Loop off it plays once and waits at the start. The files (up to 10 minutes each) are saved with the patch.";
+    d.section = ModuleSection::Oscillator;
+    d.sidebarOrder = 1;
+    d.sockets = { audioOut ("audioOut", "Audio Out") };
+    d.params = {
+        makeCombo ("playing", "Play", { "Stopped", "Playing" }, 0, 0, 2),
+        makeCombo ("loop", "Loop", { "Off", "On" }, 1, 0, 2),
+        makeCombo ("track", "Track", { "All", "1", "2", "3", "4", "5", "6", "7", "8" }, 0, 1, 2),
+        makeRotary ("level", "Level", 0.0f, 2.0f, 1.0f, 1),
+        makeButton ("restart", "From Start", 1, 2)
+    };
+    return d;
+}
+
+AQUANODE_REGISTER_MODULE (MultiSampleModule, multiSampleDescriptor)

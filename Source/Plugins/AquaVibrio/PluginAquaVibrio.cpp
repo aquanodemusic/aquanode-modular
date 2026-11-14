@@ -49,3 +49,59 @@ namespace aqp_aquavibrio
 #include "../Host/PluginCatalog.h"
 
 AQP_DEFINE_PLUGIN (AquaVibrioGuiModule, "aquavibrio", aqp_aquavibrio)
+
+// the randomiser's characters (Anything, then Super Random), for the Random
+// Plugin Preset module, in either engine (both play the same parameters);
+// saved as the plugin's .json preset
+#include "../Host/RandomPresetSources.h"
+namespace
+{
+    const bool aquaVibrioRandomRegistered = aquanode::plugins::randompreset::registerSource ([]
+    {
+        aquanode::plugins::randompreset::Source s;
+        s.pluginId = "aquavibrio";
+        s.name = "Aqua Vibrio";
+        s.lists = []
+        {
+            aquanode::plugins::randompreset::Lists l;
+            l.kinds = aqp_aquavibrio::aquavibrio::RandomPreset::characterNames();
+            l.defaultKind = (int) aqp_aquavibrio::aquavibrio::RandomPreset::Anything;
+            l.engines = { "Native", "Original" };
+            return l;
+        };
+        s.roll = [] (juce::AudioProcessor& p, int kind, int, int engine, juce::uint32 seed) -> juce::String
+        {
+            using aqp_aquavibrio::aquavibrio::RandomPreset;
+            auto* av = dynamic_cast<aqp_aquavibrio::aquavibrio::AquaVibrioProcessor*> (&p);
+            if (av == nullptr)
+                return {};
+            // the engine first; the plugin's timer sets the master level for it
+            if (auto* e = av->getState().getParameter ("EngineMode"))
+                e->setValueNotifyingHost (engine == 1 ? 1.0f : 0.0f);
+            auto rng = std::make_shared<juce::Random> ((juce::int64) seed);
+            juce::String name;
+            if (kind >= (int) RandomPreset::NumCharacters)      // Super Random, the last entry
+            {
+                av->getNoteLayers().loadWholePatch ([av, rng] { RandomPreset::superRandomise (av->getState(), *rng); }, {});
+                name = RandomPreset::wildName (*rng);
+            }
+            else
+            {
+                const auto c = (RandomPreset::Character) juce::jlimit (0, (int) RandomPreset::Anything, kind);
+                av->getNoteLayers().loadWholePatch ([av, rng, c] { RandomPreset::generate (av->getState(), c, *rng); }, {});
+                name = RandomPreset::nameFor (c, *rng);
+            }
+            return name;
+        };
+        s.presetExtension = "json";
+        s.presetData = [] (juce::AudioProcessor& p, const juce::String& name, juce::MemoryBlock& out)
+        {
+            auto* av = dynamic_cast<aqp_aquavibrio::aquavibrio::AquaVibrioProcessor*> (&p);
+            if (av == nullptr)
+                return false;
+            const auto n = name.isNotEmpty() ? name : juce::String ("Random");
+            return aquanode::plugins::randompreset::viaTempFile ("json", [av, n] (const juce::File& f) { av->saveCurrentPatch (f, n); return f.existsAsFile(); }, out);
+        };
+        return s;
+    }());
+}

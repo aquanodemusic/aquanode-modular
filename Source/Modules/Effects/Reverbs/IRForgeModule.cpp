@@ -1276,7 +1276,7 @@ static ModuleDescriptor irForgeDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "fx.irforge";
-    d.displayName = "IRForge";
+    d.displayName = "Impulse Response Foundry";
     d.description =
         "Forges an impulse response from a sound and convolves Audio In with it. REC records Rec In (up to "
         "three minutes, STOP ends the take); LOAD takes a sound file instead and Range Start / End pick up to "

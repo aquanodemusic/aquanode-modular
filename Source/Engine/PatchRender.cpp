@@ -1,4 +1,5 @@
 #include "PatchRender.h"
+#include "../Plugins/Host/HostedPlugin.h"
 #include "PluginProcessor.h"
 #include "../Modules/Utilities/MIDI/PianoRollModule.h"
 
@@ -20,6 +21,13 @@ namespace aquanode::render
                 continue;
             rolls.push_back ({ id, juce::jlimit (1.0, 999.0, (double) roll->getParameter ("tempo")), roll->loopLengthBeats() });
         }
+        // Fruit DAW cards with a song: played from their start like the rolls, at the patch's tempo
+        for (int id : patch.getModuleIds())
+            if (auto* inst = patch.getInstance (id))
+                if (auto* h = dynamic_cast<aquanode::plugins::HostedPluginModule*> (inst->dsp.get()))
+                    if (auto* sp = dynamic_cast<aquanode::plugins::SongPlayer*> (h->getPlugin()))
+                        if (sp->songBeats() > 0.0)
+                            rolls.push_back ({ id, juce::jlimit (20.0, 400.0, patch.patchBpm.load()), sp->songBeats() });
         return rolls;
     }
 
@@ -39,7 +47,7 @@ namespace aquanode::render
         playSeconds = rollSeconds (rolls, settings);
         if (rolls.empty())
         {
-            problem = "no Piano Roll with notes is patched to anything";
+            problem = "no Piano Roll with notes is patched to anything (and no Fruit DAW song)";
             return;
         }
 
@@ -49,6 +57,8 @@ namespace aquanode::render
         copy = std::make_unique<AquanodeModularAudioProcessor>();
         copy->setPlayConfigDetails (2, 2, settings.sampleRate, 512);
         copy->setStateInformation (state.getData(), (int) state.getSize());
+        if (settings.oneTempo)
+            copy->patchBpm.store (juce::jlimit (20.0, 400.0, settings.bpm));   // what a Fruit DAW song plays at
 
         if (settings.oneTempo)
             for (int id : copy->getModuleIds())

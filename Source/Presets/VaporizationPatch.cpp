@@ -22,15 +22,18 @@ juce::String buildVaporizationPatch (AquanodeModularAudioProcessor& p)
     const int sh = s.add ("util.samplehold", 0);
     s.set (sh, "glide", 0.0f);
 
-    const int vco = s.add ("osc.dualvco", 1);
-    s.setChoice (vco, "wave1", "Saw");
-    s.setChoice (vco, "scale1", "8'");
-    s.setChoice (vco, "wave2", "Saw");
-    s.set (vco, "pitch2", 7.0f);
-    s.setChoice (vco, "scale2", "8'");
-    s.set (vco, "level1", 2.65f);
-    s.set (vco, "level2", 2.55f);
-    s.set (vco, "analog", 50.0f);
+    const int vco = s.add ("osc.dualvcoanalog", 1);   // Dual VCO, its Oscillators engine
+    s.setChoice (vco, "engine", "Oscillators");
+    s.set (vco, "preset", -1.0f);
+    s.set (vco, "level", 0.0f);
+    s.setChoice (vco, "oWave1", "Saw");
+    s.setChoice (vco, "oScale1", "8'");
+    s.setChoice (vco, "oWave2", "Saw");
+    s.set (vco, "oPitch2", 7.0f);
+    s.setChoice (vco, "oScale2", "8'");
+    s.set (vco, "oLevel1", 2.65f);
+    s.set (vco, "oLevel2", 2.55f);
+    s.set (vco, "oAnalog", 50.0f);
     s.set (vco, "voices", 8.0f);
 
     const int eg2 = s.add ("util.analogeg", 1);

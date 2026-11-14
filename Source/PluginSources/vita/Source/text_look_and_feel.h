@@ -37,9 +37,18 @@ class TextLookAndFeel : public DefaultLookAndFeel {
     void drawComboBox(Graphics& g, int width, int height, bool is_down,
                       int button_x, int button_y, int button_w, int button_h, ComboBox& box) override;
 
+    // (Aquanode: let go when JUCE shuts down, not when the DLL unloads -
+    // fonts and looks hold DirectWrite / Direct2D objects on Windows)
     static TextLookAndFeel* instance() {
-      static TextLookAndFeel instance;
-      return &instance;
+      struct Holder : public DeletedAtShutdown {
+        TextLookAndFeel object;
+        ~Holder() override { slot() = nullptr; }
+        static Holder*& slot() { static Holder* h = nullptr; return h; }
+      };
+      auto*& h = Holder::slot();
+      if (h == nullptr)
+        h = new Holder();
+      return &h->object;
     }
 
   private:

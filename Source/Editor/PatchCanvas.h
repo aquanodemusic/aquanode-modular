@@ -11,6 +11,7 @@ class PatchCanvas : public juce::Component
 {
 public:
     explicit PatchCanvas (AquanodeModularAudioProcessor& proc);
+    ~PatchCanvas() override;
 
     void rebuild();                // sync child components with the processor model
     void refreshAllModuleValues(); // pull every module's knob values from the DSP
@@ -27,6 +28,15 @@ public:
     // button moves it too).
     void setRegionSelect (bool on);
     bool isRegionSelect() const { return regionSelect; }
+
+    //=== Move Only (the top bar's switch, 6.2) ==============================
+    // On, every drag, wheel and pinch anywhere in the patch area moves and
+    // zooms the view - over cards, knobs and plugins' own screens too, which
+    // otherwise keep those gestures for themselves (a card zoomed up to fill
+    // the area would leave nothing to grab). Nothing in the patch can be
+    // touched meanwhile.
+    void setMoveOnly (bool on);
+    bool isMoveOnly() const { return moveShield != nullptr; }
     std::vector<int> getSelection() const;          // every selected module (the one tapped, or the box's)
     bool isSelected (int instanceId) const;
     void moduleClicked (int instanceId);            // a press on a card: keeps a box selection that holds it
@@ -119,6 +129,10 @@ public:
     // asked is deleted by the rebuild)
     void convertPluginCard (int instanceId);
 
+    // replaces a Random Plugin Preset module by a card of the plugin it plays,
+    // holding the same preset (async, like convertPluginCard)
+    void openPresetInPlugin (int instanceId);
+
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
     void mouseMagnify (const juce::MouseEvent& e, float scaleFactor) override;
 
@@ -130,9 +144,14 @@ public:
     void mouseDoubleClick (const juce::MouseEvent& e) override;
     bool keyPressed (const juce::KeyPress& key) override;
     std::function<bool (const juce::KeyPress&)> onShortcut;   // the editor's (Undo / Redo)
+    std::function<void (int)> onPluginFullSize;                // a plugin GUI card's Full Size pill (the editor)
+    ModuleComponent* moduleCard (int instanceId) const { return findModuleComponent (instanceId); }
+    std::vector<juce::Point<float>> leafPositions() const;   // where the Glass leaves are (for tests)
     void resized() override;
 
 private:
+    struct GlassLeaves;                          // the Glass look's drifting leaves (PatchCanvas.cpp)
+    std::unique_ptr<GlassLeaves> glassLeaves;
     ModuleComponent* findModuleComponent (int instanceId) const;
     juce::Path cablePath (juce::Point<float> from, juce::Point<float> to) const;
     bool getCableEndpoints (const CableInfo& c, juce::Point<float>& from, juce::Point<float>& to) const;
@@ -172,6 +191,12 @@ private:
     mutable std::vector<DashedCable> dashedCables, dashedParamCables;
     const juce::Path& dashedCable (std::vector<DashedCable>& cache, size_t index, juce::Point<float> from,
                                    juce::Point<float> to, float dash, float gap) const;
+
+    struct MoveShield;
+    std::unique_ptr<MoveShield> moveShield;
+    void shieldDown (const juce::MouseEvent&);
+    void shieldDrag (const juce::MouseEvent&);
+    void shieldUp (const juce::MouseEvent&);
 
     // view panning (drag on empty canvas) + zoom
     float zoom { 1.0f };

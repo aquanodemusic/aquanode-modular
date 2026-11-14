@@ -44,6 +44,92 @@ namespace
 //==============================================================================
 // Editor
 //==============================================================================
+// (the Full Size view, defined first so the editor can own it)
+class AquanodeModularAudioProcessorEditor::PluginFullView final : public juce::Component,
+                                                                    private juce::Timer
+{
+public:
+    PluginFullView (aquanode::plugins::PluginEditorLender& l, juce::Component& ed, std::function<void()> onClose)
+        : lender (&l), editor (&ed), close (std::move (onClose))
+    {
+        setOpaque (true);
+        addAndMakeVisible (stage);
+        stage.addAndMakeVisible (ed);
+        ed.setTopLeftPosition (0, 0);
+        back.setButtonText ("Return to Patch");
+        back.setColour (juce::TextButton::buttonColourId, juce::Colour (0xb0141210));
+        back.setAlpha (0.9f);
+        back.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        back.onClick = [this] { if (close) close(); };
+        addAndMakeVisible (back);
+        startTimerHz (5);
+    }
+
+    ~PluginFullView() override { giveBack(); }
+
+    // the editor back onto its card (unless its card - and with it the editor - is gone)
+    void giveBack()
+    {
+        if (auto* e = editor.getComponent())
+        {
+            stage.removeChildComponent (e);
+            e->setTransform ({});
+            lender->returnEditor();
+        }
+        editor = nullptr;
+    }
+
+    juce::Point<int> nativeSize() const
+    {
+        if (auto* e = editor.getComponent())
+            return { juce::jmax (1, e->getWidth()), juce::jmax (1, e->getHeight()) };
+        return { 1, 1 };
+    }
+
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colour (0xff0b0c0e)); }
+
+    void resized() override
+    {
+        // the plugin as large as fits, centred; empty borders where the shapes differ
+        const auto n = nativeSize();
+        const int h = juce::jmax (1, getHeight());
+        const float scale = juce::jmin ((float) getWidth() / (float) n.x, (float) h / (float) n.y);
+        stage.setBounds (0, 0, n.x, n.y);
+        const float ox = ((float) getWidth() - (float) n.x * scale) * 0.5f;
+        const float oy = ((float) h - (float) n.y * scale) * 0.5f;
+        stage.setTransform (juce::AffineTransform::scale (scale).translated (ox, oy));
+        lastNative = n;
+
+        // small, in the corner: over the plugin's own top bar, out of the way
+       #if JUCE_ANDROID
+        const int bw = 104, bh = 24;
+       #else
+        const int bw = 92, bh = 20;
+       #endif
+        back.setBounds (getWidth() - bw - 4, 4, bw, bh);
+        back.toFront (false);
+    }
+
+private:
+    void timerCallback() override
+    {
+        if (editor == nullptr)
+        {
+            if (close) close();     // its card was rebuilt or deleted: back to the patch
+            return;
+        }
+        if (nativeSize() != lastNative)
+            resized();              // the plugin changed its own size
+    }
+
+    aquanode::plugins::PluginEditorLender* lender;
+    juce::Component::SafePointer<juce::Component> editor;
+    std::function<void()> close;
+    juce::Component stage;
+    juce::TextButton back;
+    juce::Point<int> lastNative;
+};
+
 AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (AquanodeModularAudioProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p),
@@ -174,9 +260,18 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     addChildComponent (*midiKeyboard);
     midiKeyboard->setVisible (keyboardVisible);
 
-    for (auto* b : { &initButton, &regionButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton,
+    for (auto* b : { &initButton, &regionButton, &moveOnlyButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton,
                      &mutatorButton, &sidebarButton, &keysButton, &undoPatchButton, &redoPatchButton })
         toolbarStrip.content.addAndMakeVisible (b);
+    toolbarStrip.content.addAndMakeVisible (bpmBox);
+    if (hasFullScreenButton())
+    {
+        toolbarStrip.content.addAndMakeVisible (fullScreenButton);
+        fullScreenButton.setTooltip ("The window over the whole screen, and back (F11)");
+        fullScreenButton.setClickingTogglesState (false);
+        fullScreenButton.onClick = [this] { toggleFullScreen(); };
+    }
+    canvas.onPluginFullSize = [this] (int id) { showPluginFullSize (id); };
 
     // Region Select: a drag on empty space draws a box and selects the modules
     // it touches, rather than moving the view
@@ -191,6 +286,19 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     {
         processor.uiRegionSelect = regionButton.getToggleState();
         canvas.setRegionSelect (processor.uiRegionSelect);
+    };
+    // Move Only: every drag, wheel and pinch moves and zooms the view, over
+    // cards and plugins too (one zoomed up to fill the area keeps nothing back)
+    moveOnlyButton.setClickingTogglesState (true);
+    moveOnlyButton.setToggleState (processor.uiMoveOnly, juce::dontSendNotification);
+    canvas.setMoveOnly (processor.uiMoveOnly);
+    moveOnlyButton.setTooltip ("On: every drag, wheel and pinch anywhere in the patch area moves and zooms the view - over "
+                               "modules and plugins' screens too, which otherwise keep those gestures. Nothing in the patch "
+                               "can be touched while it is on");
+    moveOnlyButton.onClick = [this]
+    {
+        processor.uiMoveOnly = moveOnlyButton.getToggleState();
+        canvas.setMoveOnly (processor.uiMoveOnly);
     };
     cloneButton.setTooltip ("A copy of the selected module (or of every module a Region Select box holds, with the cables between them)");
     deleteButton.setTooltip ("Delete the selected module (or every module a Region Select box holds) with its cables");
@@ -209,6 +317,11 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     canvas.onShortcut = [this] (const juce::KeyPress& k)
     {
         const auto mods = k.getModifiers();
+        if (k.getKeyCode() == juce::KeyPress::F11Key && hasFullScreenButton())
+        {
+            toggleFullScreen();
+            return true;
+        }
         if (! mods.isCommandDown())
             return false;
         const int c = juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) k.getKeyCode());
@@ -348,7 +461,7 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
                 juce::MemoryOutputStream zipped;
                 juce::String problem = processor.exportPatchToStream (zipped) ? juce::String() : juce::String ("the patch could not be packed");
                 if (problem.isEmpty())
-                    problem = aqp::android::replaceDocument (url, zipped.getData(), zipped.getDataSize());
+                    problem = aqp::files::writeDocument (url, zipped.getData(), zipped.getDataSize());
 
                 // a name typed without the ending gets it
                 if (problem.isEmpty())
@@ -472,9 +585,9 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     // minimum while opening or closing it).
     setSize (kBaseWidth, kBaseHeight);
     setResizable (true, true);
-    setResizeLimits (kBaseWidth / 2, kBaseHeight / 2, kBaseWidth * 3, kBaseHeight * 3);
-    if (auto* c = getConstrainer())
-        c->setFixedAspectRatio ((double) kBaseWidth / (double) kBaseHeight);
+    // free resizing (5.16): no fixed aspect ratio - resized() scales by the
+    // smaller side and lays the rest out in the room there is
+    setResizeLimits (kBaseWidth / 2, kBaseHeight / 2, kBaseWidth * 4, kBaseHeight * 4);
    #endif
 
     canvas.rebuild();
@@ -494,6 +607,7 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
 
 AquanodeModularAudioProcessorEditor::~AquanodeModularAudioProcessorEditor()
 {
+    pluginFullView = nullptr;   // the plugin's editor back onto its card first
     historyTimer.stopTimer();
     processor.removeChangeListener (this);
 }
@@ -521,6 +635,24 @@ void AquanodeModularAudioProcessorEditor::changeListenerCallback (juce::ChangeBr
 
 void AquanodeModularAudioProcessorEditor::paint (juce::Graphics& g)
 {
+    if (themeColours().glass)
+    {
+        // Glass: the jungle behind the bars too (they are frosted panes over it)
+        glass::backdrop().draw (g, getLocalBounds());   // (the patch area draws its piece of the same picture)
+        // the sidebar's whole column frosted here (its scroll bar's lane and
+        // any room below the list too - the sidebar itself paints none)
+        if (sidebarViewport.isVisible())
+        {
+            // (in the editor's own pixels: the sidebar is drawn through the
+            // UI scale's transform, its bounds are not)
+            const auto col = sidebarViewport.getBoundsInParent();
+            g.setColour (themeColours().get (ThemeColours::Sidebar).withAlpha (0.58f));
+            g.fillRect (col);
+            g.setColour (juce::Colours::white.withAlpha (0.06f));
+            g.fillRect (col);
+        }
+        return;
+    }
     g.fillAll (themeColours().get (ThemeColours::Sidebar));
 }
 
@@ -547,8 +679,8 @@ void AquanodeModularAudioProcessorEditor::applyBarColours()
 {
     // the top bar's and the mutator's buttons follow the colourway; on the
     // default colours they keep the look-and-feel's own
-    std::vector<juce::Button*> buttons { &initButton, &regionButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton,
-                                         &mutatorButton, &sidebarButton, &keysButton, &zoomOutButton, &zoomInButton,
+    std::vector<juce::Button*> buttons { &fullScreenButton, &initButton, &regionButton, &moveOnlyButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton,
+                                         &bpmBox, &mutatorButton, &sidebarButton, &keysButton, &zoomOutButton, &zoomInButton,
                                          &undoPatchButton, &redoPatchButton };
     for (auto* b : mutatorPanel.getButtons())
         buttons.push_back (b);
@@ -556,7 +688,8 @@ void AquanodeModularAudioProcessorEditor::applyBarColours()
     const auto bar = aquanode::barColour();
     const auto face = bar.interpolatedWith (themeColours().get (ThemeColours::Oscillator), 0.35f).brighter (0.15f);
     const auto on = themeColours().get (ThemeColours::Oscillator);
-    auto* gloss = themeColours().skeuomorphic ? &aeroButtonLookAndFeel() : nullptr;   // Skeuomorphic: glossy pills
+    juce::LookAndFeel* gloss = themeColours().skeuomorphic ? static_cast<juce::LookAndFeel*> (&aeroButtonLookAndFeel())   // Skeuomorphic: glossy pills
+                             : themeColours().glass ? static_cast<juce::LookAndFeel*> (&glassLookAndFeel()) : nullptr;   // Glass: panes
     for (auto* b : buttons)
     {
         b->setLookAndFeel (gloss);
@@ -573,6 +706,19 @@ void AquanodeModularAudioProcessorEditor::applyBarColours()
         b->repaint();
     }
     mutatorPanel.applyBarColours (themed, face, on);
+
+    // the sidebar's scroll bar: a pale pill with Glass, the look's own otherwise
+    auto& sb = sidebarViewport.getVerticalScrollBar();
+    if (themeColours().glass)
+    {
+        sb.setColour (juce::ScrollBar::thumbColourId, juce::Colours::white.withAlpha (0.38f));
+        sb.setColour (juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
+        sb.setColour (juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
+    }
+    else
+        for (auto id : { juce::ScrollBar::thumbColourId, juce::ScrollBar::backgroundColourId, juce::ScrollBar::trackColourId })
+            sb.removeColour (id);
+    sb.repaint();
     toolbarStrip.repaint();
     mutatorPanel.repaint();
 }
@@ -604,7 +750,7 @@ void AquanodeModularAudioProcessorEditor::resized()
     // together - text included.
     uiScale = juce::jmax (0.1f, juce::jmin ((float) getWidth() / (float) kBaseWidth, (float) getHeight() / (float) kBaseHeight));
     for (auto* child : getChildren())
-        if (dynamic_cast<juce::ResizableCornerComponent*> (child) == nullptr)
+        if (dynamic_cast<juce::ResizableCornerComponent*> (child) == nullptr && child != (juce::Component*) pluginFullView.get())
             child->setTransform (juce::AffineTransform::scale (uiScale));
    #endif
     // the layout's own size: the window's, before the scale
@@ -695,8 +841,14 @@ void AquanodeModularAudioProcessorEditor::resized()
 
     {
         // left to right on screen: Keys, Sidebar, Initialize ... Mutator, then [-][+]
-        std::vector<juce::TextButton*> buttons { &keysButton, &sidebarButton, &undoPatchButton, &redoPatchButton, &initButton,
-                                                 &regionButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton, &mutatorButton };
+        // (the standalone app's Full Screen first: on a narrow window the bar
+        // scrolls, and a button at its far end was out of sight)
+        std::vector<juce::TextButton*> buttons;
+        if (hasFullScreenButton())
+            buttons.push_back (&fullScreenButton);
+        for (juce::TextButton* b : std::initializer_list<juce::TextButton*> { &keysButton, &sidebarButton, &undoPatchButton, &redoPatchButton, &initButton,
+                         &regionButton, &moveOnlyButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton, &bpmBox, &mutatorButton })
+            buttons.push_back (b);
        #if JUCE_ANDROID
         const int zw = 30;
        #else
@@ -748,7 +900,7 @@ void AquanodeModularAudioProcessorEditor::resized()
         auto r = juce::Rectangle<int> (layoutW, layoutH).reduced (8);
        #else
         auto r = juce::Rectangle<int> (area.getX() + 12, area.getY() + 50,
-                                       juce::jmin (620, area.getWidth() - 24), juce::jmin (420, area.getHeight() - 62));
+                                       juce::jmin (740, area.getWidth() - 24), juce::jmin (420, area.getHeight() - 62));   // (wide enough for the title beside the looks and colourways)
        #endif
         themePanel->setBounds (r);
         themePanel->toFront (false);
@@ -761,7 +913,63 @@ void AquanodeModularAudioProcessorEditor::resized()
         renderPanel->toFront (false);
     }
 
+    // Full Size: over everything but the on-screen keyboard, which lies over the
+    // bottom of the plugin with its grip (so moving it never resizes the plugin;
+    // hidden with it when the Keys button hides it)
+    if (pluginFullView != nullptr)
+    {
+        auto full = getLocalBounds();   // in real pixels
+        if (midiKeyboard != nullptr && keyboardVisible)
+        {
+           #if JUCE_ANDROID
+            const float kbKeys = 30.0f, kbMinKey = 26.0f;
+            const int zoomPillW = 36;
+           #else
+            const float kbKeys = 36.0f, kbMinKey = 18.0f;
+            const int zoomPillW = 26;
+           #endif
+            const int gripH = fullViewGripHeight();
+            auto kbArea = full.withTop (full.getBottom() - fullViewKeyboardHeight (getHeight()));
+            for (auto* c : { (juce::Component*) midiKeyboard.get(), (juce::Component*) &keyboardHandle, (juce::Component*) &keyZoomToggle })
+                c->setTransform ({});
+            midiKeyboard->setBounds (kbArea);
+            const float baseKey = juce::jmax (kbMinKey, kbArea.getWidth() / kbKeys);
+            if (auto* kb = dynamic_cast<ExpressiveKeyboard*> (midiKeyboard.get()))
+                kb->setBaseKeyWidth (baseKey);
+            else
+                midiKeyboard->setKeyWidth (baseKey);
+            keyboardHandle.setBounds (kbArea.getCentreX() - 50, kbArea.getY() - gripH, 100, gripH);
+            keyZoomToggle.setBounds (kbArea.getCentreX() + 28 + 8, kbArea.getY() - gripH, zoomPillW, gripH);
+        }
+        pluginFullView->setBounds (full);
+        pluginFullView->toFront (false);
+        if (midiKeyboard != nullptr && keyboardVisible)
+        {
+            midiKeyboard->toFront (false);
+            keyboardHandle.toFront (false);
+            keyZoomToggle.toFront (false);
+        }
+    }
+
     updateZoomReadout();
+}
+
+int AquanodeModularAudioProcessorEditor::fullViewGripHeight() const
+{
+   #if JUCE_ANDROID
+    return 26;   // finger-sized
+   #else
+    return 16;
+   #endif
+}
+
+int AquanodeModularAudioProcessorEditor::fullViewKeyboardHeight (int windowHeight) const
+{
+    if (midiKeyboard == nullptr || ! keyboardVisible)
+        return 0;
+    // the height the grip set (as in the patch view), kept within the window
+    const int wanted = processor.uiKeyboardHeight > 0 ? processor.uiKeyboardHeight : 50;
+    return juce::jlimit (50, juce::jmax (60, (int) (windowHeight * 0.5f)), wanted);
 }
 
 //==============================================================================
@@ -980,4 +1188,134 @@ juce::Point<int> AquanodeModularAudioProcessorEditor::spawnPosition()
 void AquanodeModularAudioProcessorEditor::updateZoomReadout()
 {
     sidebarHeader.setZoomText (juce::String (juce::roundToInt (canvas.getZoom() * 100.0f)) + "%");
+}
+
+//==============================================================================
+// Full Screen (the standalone app on a desktop) and the plugins' Full Size view
+//==============================================================================
+bool AquanodeModularAudioProcessorEditor::hasFullScreenButton() const
+{
+   #if JUCE_ANDROID
+    return false;
+   #else
+    return processor.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
+   #endif
+}
+
+void AquanodeModularAudioProcessorEditor::toggleFullScreen()
+{
+   #if ! JUCE_ANDROID
+    auto* top = getTopLevelComponent();
+    if (top == nullptr)
+        return;
+    auto& desktop = juce::Desktop::getInstance();
+    const bool goFull = desktop.getKioskModeComponent() != top;
+    desktop.setKioskModeComponent (goFull ? top : nullptr, false);
+    fullScreenButton.setButtonText (goFull ? "Window" : "Full Screen");
+    resized();
+   #endif
+}
+
+void AquanodeModularAudioProcessorEditor::showPluginFullSize (int instanceId)
+{
+    if (pluginFullView != nullptr)
+        return;
+    auto* card = canvas.moduleCard (instanceId);
+    auto* lender = card != nullptr ? dynamic_cast<aquanode::plugins::PluginEditorLender*> (card->getExtraContent()) : nullptr;
+    auto* ed = lender != nullptr ? lender->lendEditor() : nullptr;
+    if (ed == nullptr)
+        return;
+
+    juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
+    pluginFullView = std::make_unique<PluginFullView> (*lender, *ed, [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->closePluginFullSize(); });
+    });
+    addAndMakeVisible (*pluginFullView);
+
+   #if ! JUCE_ANDROID
+    // the window takes the plugin's own size, as if it were loaded alone
+    sizeBeforeFullView = getLocalBounds();
+    const auto n = pluginFullView->nativeSize();
+    setResizeLimits (160, 120, juce::jmax (kBaseWidth * 4, n.x), juce::jmax (kBaseHeight * 4, n.y));
+    setSize (n.x, n.y);
+   #endif
+    resized();
+}
+
+void AquanodeModularAudioProcessorEditor::closePluginFullSize()
+{
+    if (pluginFullView == nullptr)
+        return;
+    pluginFullView->giveBack();
+    pluginFullView = nullptr;
+   #if ! JUCE_ANDROID
+    setResizeLimits (kBaseWidth / 2, kBaseHeight / 2, kBaseWidth * 4, kBaseHeight * 4);
+    if (! sizeBeforeFullView.isEmpty())
+        setSize (sizeBeforeFullView.getWidth(), sizeBeforeFullView.getHeight());
+   #endif
+    resized();
+    canvas.repaint();
+}
+
+//==============================================================================
+// the BPM box
+AquanodeModularAudioProcessorEditor::BpmBox::BpmBox (AquanodeModularAudioProcessor& p) : proc (p)
+{
+    setTooltip ("The patch's tempo, where no host gives one: drag up or down, or tap to type it");
+    setClickingTogglesState (false);
+    refresh();
+    startTimerHz (4);
+}
+
+void AquanodeModularAudioProcessorEditor::BpmBox::refresh()
+{
+    const bool host = proc.hostGivesBpm.load();
+    const double bpm = host ? proc.currentBpm.load() : proc.patchBpm.load();
+    const auto txt = (std::abs (bpm - std::round (bpm)) < 0.05 ? juce::String (juce::roundToInt (bpm)) : juce::String (bpm, 1)) + " BPM";
+    if (txt != getButtonText()) setButtonText (txt);
+    setAlpha (host ? 0.6f : 1.0f);
+}
+
+void AquanodeModularAudioProcessorEditor::BpmBox::mouseDown (const juce::MouseEvent& e)
+{
+    juce::TextButton::mouseDown (e);
+    dragStart = proc.patchBpm.load();
+    dragged = false;
+}
+
+void AquanodeModularAudioProcessorEditor::BpmBox::mouseDrag (const juce::MouseEvent& e)
+{
+    if (proc.hostGivesBpm.load()) return;
+    const int d = e.getDistanceFromDragStartX() - e.getDistanceFromDragStartY();
+    if (! dragged && std::abs (d) < 4) return;
+    dragged = true;
+    const double step = e.mods.isShiftDown() ? 0.05 : 0.25;
+    const double bpm = juce::jlimit (20.0, 400.0, std::round ((dragStart + d * step) * 10.0) / 10.0);
+    proc.patchBpm.store (bpm);
+    refresh();
+}
+
+void AquanodeModularAudioProcessorEditor::BpmBox::mouseUp (const juce::MouseEvent& e)
+{
+    juce::TextButton::mouseUp (e);
+    if (dragged || proc.hostGivesBpm.load() || ! getLocalBounds().contains (e.getPosition()))
+        return;
+    entry = std::make_unique<juce::AlertWindow> ("Tempo", "Beats per minute (20 - 400):", juce::MessageBoxIconType::NoIcon);
+    entry->addTextEditor ("bpm", juce::String (proc.patchBpm.load(), 1));
+    entry->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    entry->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<BpmBox> safe (this);
+    entry->enterModalState (true, juce::ModalCallbackFunction::create ([safe] (int r)
+    {
+        if (safe == nullptr || safe->entry == nullptr) return;
+        if (r == 1)
+        {
+            const double v = safe->entry->getTextEditorContents ("bpm").getDoubleValue();
+            if (v >= 20.0 && v <= 400.0)
+                safe->proc.patchBpm.store (std::round (v * 100.0) / 100.0);
+        }
+        safe->entry.reset();
+        safe->refresh();
+    }), false);
 }

@@ -76,7 +76,7 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // host tempo (120 BPM fallback). The standalone app and Android have no
     // play head at all, so HostTransport::hasBpm tells modules that offer a
     // "lock to host" whether there is anything to lock to.
-    double bpm = 120.0;
+    double bpm = patchBpm.load();      // the BPM box
     HostTransport hostTransport;
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
@@ -89,6 +89,8 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             }
             hostTransport.isPlaying = pos->getIsPlaying();
         }
+    currentBpm.store (bpm, std::memory_order_relaxed);
+    hostGivesBpm.store (hostTransport.hasBpm, std::memory_order_relaxed);
     // MTS-ESP: a master may have come or gone since the last block
     aquanode::tuning::refresh();
 
@@ -129,6 +131,13 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         n->dsp->setHostTransport (hostTransport);
         n->dsp->setMidiControls (&midiState);
         n->dsp->setHostModValues (dawModSnapshot.data());
+        // a tempo a module asks for: into the BPM box - or, where a host sets the tempo (a nested
+        // Aquanode's is the patch around it), on to that host
+        if (const double wanted = n->dsp->takeTempoRequest(); wanted > 0.0)
+        {
+            if (hostTransport.hasBpm) tempoRequest.store (wanted, std::memory_order_relaxed);
+            else patchBpm.store (juce::jlimit (20.0, 999.0, wanted));
+        }
         n->dsp->blockStart();
     }
 
@@ -206,6 +215,26 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     for (size_t ni = 0; ni < graph->nodes.size(); ++ni)
         if (graph->hostOut[ni])
             softClip = juce::jmax (softClip, graph->nodes[ni]->dsp->hostSoftClip());
+
+    // the patch's delay as it is right now (see patchLatency)
+    {
+        if (latencyScratch.size() < graph->nodes.size())
+            latencyScratch.resize (graph->nodes.size());   // (reserved in prepareToPlay; a bigger patch grows it once)
+        int longest = 0;
+        for (size_t ni = 0; ni < graph->nodes.size(); ++ni)
+        {
+            int in = 0;
+            for (const auto& e : graph->incoming[ni])
+                if (! e.feedback)
+                    in = juce::jmax (in, latencyScratch[(size_t) e.srcNode]);
+            latencyScratch[ni] = in + juce::jmax (0, graph->nodes[ni]->dsp->latencySamples());
+            if (graph->hostOut[ni])
+                longest = juce::jmax (longest, latencyScratch[ni]);
+        }
+        if (softClip > 0.0f)
+            longest += AudioOutModule::kLatency;
+        patchLatency.store (longest, std::memory_order_relaxed);
+    }
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -361,6 +390,8 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 // ---- per-voice lane: run this module once for every active
                 // voice, with that voice's own inputs
                 const bool gated = graph->midi[ni].gated;
+                const bool tapping = node.dsp->tapOn.load (std::memory_order_relaxed);   // (its card's graph)
+                float tapIn = 0.0f, tapOut = 0.0f;
 
                 for (int k = 0; k < numActiveVoices; ++k)
                 {
@@ -415,8 +446,19 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     midiState.currentVoice = v;   // its own MPE bend
                     node.dsp->processVoiceSample (v, node.inBuf.data(),
                                                   node.outV.data() + (size_t) (v * node.numOut));
+                    if (tapping)
+                    {
+                        if (node.numIn > 0) tapIn += 0.5f * (node.inBuf[0][0] + node.inBuf[0][1]);
+                        if (node.numOut > 0)
+                        {
+                            const auto& o = node.outV[(size_t) (v * node.numOut)];
+                            tapOut += 0.5f * (o[0] + o[1]);
+                        }
+                    }
                 }
                 midiState.currentVoice = -1;
+                if (tapping)
+                    node.dsp->tapWrite (tapIn, tapOut);
             }
             else
             {
@@ -476,6 +518,9 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 }
 
                 node.dsp->processSample (node.inBuf.data(), node.outBuf.data());
+                if (node.dsp->tapOn.load (std::memory_order_relaxed))
+                    node.dsp->tapWrite (node.numIn > 0 ? 0.5f * (node.inBuf[0][0] + node.inBuf[0][1]) : 0.0f,
+                                        node.numOut > 0 ? 0.5f * (node.outBuf[0][0] + node.outBuf[0][1]) : 0.0f);
 
                 if (graph->hostOut[ni])
                 {

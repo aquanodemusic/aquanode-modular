@@ -39,9 +39,10 @@ private:
 
     AquanodeModularAudioProcessor& processor;
 
-    // Desktop: the window resizes with a fixed aspect ratio and everything in it
-    // scales uniformly - the layout always works on a kBaseWidth x kBaseHeight
-    // area, and every child is drawn through a scale of uiScale.
+    // Desktop: the window resizes freely; everything in it scales uniformly
+    // with the smaller of its width and height against kBaseWidth x
+    // kBaseHeight, and the layout fills whatever room is left over (a wider
+    // window gives the patch area more width, not a stretched picture).
     static constexpr int kBaseWidth = 1200, kBaseHeight = 700;
     float uiScale { 1.0f };
 
@@ -97,6 +98,20 @@ private:
 
         void paint (juce::Graphics& g) override
         {
+            if (aquanode::themeColours().glass)
+            {
+                // Glass: a frosted pane over the jungle, a sheen from the top, a pale edge below
+                const auto b = getLocalBounds().toFloat();
+                g.fillAll (aquanode::barColour().withAlpha (0.55f));
+                g.fillAll (juce::Colours::white.withAlpha (0.07f));
+                juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.14f), 0.0f, b.getY(),
+                                            juce::Colours::white.withAlpha (0.02f), 0.0f, b.getBottom(), false);
+                g.setGradientFill (sheen);
+                g.fillRect (b);
+                g.setColour (juce::Colours::white.withAlpha (0.26f));
+                g.fillRect (b.withTop (b.getBottom() - 1.0f));
+                return;
+            }
             g.fillAll (aquanode::barColour().withAlpha ((juce::uint8) 0xdd));
             if (aquanode::themeColours().skeuomorphic)
             {
@@ -151,12 +166,48 @@ private:
 
     juce::TextButton initButton    { "Initialize Patch" };
     juce::TextButton regionButton  { "Region Select" };   // a drag on empty space selects (PatchCanvas::setRegionSelect)
+    juce::TextButton moveOnlyButton { "Move Only" };      // every gesture moves and zooms the view (PatchCanvas::setMoveOnly)
     juce::TextButton cloneButton   { "Clone Selected" };
     juce::TextButton deleteButton  { "Delete Selected" };
     juce::TextButton exportButton  { "Export Patch" };
     juce::TextButton importButton  { "Import Patch" };
     juce::TextButton renderButton  { "Render" };
+
+    // the patch's tempo: drag up / down on it, or tap to type one; shows the
+    // host's tempo (and leaves it alone) where a DAW gives one
+    struct BpmBox : public juce::TextButton, private juce::Timer
+    {
+        explicit BpmBox (AquanodeModularAudioProcessor& p);
+        void mouseDown (const juce::MouseEvent&) override;
+        void mouseDrag (const juce::MouseEvent&) override;
+        void mouseUp (const juce::MouseEvent&) override;
+        void timerCallback() override { refresh(); }
+        void refresh();
+        AquanodeModularAudioProcessor& proc;
+        double dragStart = 120.0;
+        bool dragged = false;
+        std::unique_ptr<juce::AlertWindow> entry;
+    };
+    BpmBox bpmBox { processor };
     juce::TextButton mutatorButton { "Mutator" };
+
+    // the standalone app on a desktop: the window over the whole screen (F11 too)
+    juce::TextButton fullScreenButton { "Full Screen" };
+    bool hasFullScreenButton() const;
+    void toggleFullScreen();
+
+    // Full Size: a plugin GUI card's own editor alone over the whole window, as
+    // if that plugin were loaded on its own - on the desktop the window takes
+    // the plugin's size, on Android it fills the screen (scaled, with borders)
+    class PluginFullView;
+    std::unique_ptr<PluginFullView> pluginFullView;
+    juce::Rectangle<int> sizeBeforeFullView;
+    void showPluginFullSize (int instanceId);
+    // Full Size: the on-screen keyboard over the bottom of the plugin, in real
+    // pixels (and its grip's height), 0 while the keyboard is hidden
+    int fullViewKeyboardHeight (int windowHeight) const;
+    int fullViewGripHeight() const;
+    void closePluginFullSize();
 
     // Panel toggles. Hiding the sidebar and the keyboard gives the patch area
     // the whole screen, which is the difference between usable and unusable on

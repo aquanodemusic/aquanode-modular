@@ -1,3 +1,4 @@
+#include "../../../Platform/AndroidDocuments.h"
 #include "RecordModule.h"
 
 using namespace aquanode;
@@ -253,51 +254,17 @@ void RecordModule::writeToDestination (const juce::URL& destination, int numFram
         return;
     }
 
-    // Now copy the known-good scratch file to the real destination: a plain
-    // FileOutputStream if it's a real path, falling back to an
-    // AndroidDocument stream for a content:// URI (or if the "local" path
-    // turns out to be one of the scoped-storage paths that only looks
-    // writable - see loadAudioFile()'s equivalent fallback in the
-    // AudioStretcher app).
-    std::unique_ptr<juce::OutputStream> outputStream;
-
-    if (destination.isLocalFile())
-    {
-        auto outputFile = destination.getLocalFile();
-        outputFile.deleteFile();
-
-        std::unique_ptr<juce::FileOutputStream> fileStream (outputFile.createOutputStream());
-        if (fileStream != nullptr && fileStream->openedOk())
-            outputStream = std::move (fileStream);
-    }
-
-    if (outputStream == nullptr)
-    {
-       #if JUCE_ANDROID
-        auto androidDoc = juce::AndroidDocument::fromDocument (destination);
-        if (androidDoc.hasValue())
-            outputStream = androidDoc.createOutputStream();
-       #else
-        outputStream = destination.createOutputStream();
-       #endif
-    }
-
-    if (outputStream == nullptr)
-    {
-        tempFile.deleteFile();
-        return;
-    }
-
-    {
-        juce::FileInputStream tempIn (tempFile);
-        if (tempIn.openedOk())
+    // Now the known-good scratch file goes to the chosen place, the one way the
+    // app saves (Platform/AndroidDocuments.h): on Android the picked document,
+    // written through the content resolver and cut to length (a shorter take
+    // saved over a longer one keeps no old tail); on the desktop the file.
+    const auto problem = aqp::files::writeDocument (destination, tempFile);
+    if (problem.isNotEmpty())
+        juce::MessageManager::callAsync ([problem]
         {
-            outputStream->writeFromInputStream (tempIn, -1);
-            outputStream->flush();
-        }
-    }
-
-    outputStream.reset();   // close/commit the destination before cleaning up
+            juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Record",
+                                                         "The recording could not be saved: " + problem + ".");
+        });
     tempFile.deleteFile();
 }
 

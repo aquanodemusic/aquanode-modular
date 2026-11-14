@@ -1,23 +1,30 @@
 //==============================================================================
-// Reassigned Spectrogram - SpectralResolve's visualizer as a module
+// Spectrogram - SpectralResolve's visualizer as a module (it was "Reassigned
+// Spectrogram" until 5.19.2)
 //
-// A scrolling spectrogram (x time, y frequency, brightness amplitude) drawn
-// with spectral reassignment: every bin's energy is moved to the frequency -
-// and, with Time Reassign, the moment - it really belongs to, so a sine is a
-// thin line instead of a blurred band and a click a sharp stroke.
+// A scrolling spectrogram: x = time, y = frequency, brightness = amplitude.
+// With Reassign on, every bin's energy is moved to the frequency - and, with
+// Time Fix, the moment - it really belongs to, so a sine is a thin line
+// instead of a blurred band and a click a sharp stroke; off, it is the plain
+// FFT, bin by bin. Draw Sharp keeps every point (or bin) crisp, Smooth blurs
+// them softly into each other. Envelope draws, faintly at the right edge, each
+// input's slow average spectrum (level across, frequency up).
 //
-// Three inputs, one colour each: 1 cyan, 2 magenta, 3 yellow. Where they
-// overlap the colours add up like light (cyan + magenta = a light blue, all
-// three white), so it is easy to see where two sounds fight for the same
-// frequencies. Thru passes input 1 on unchanged, to put the module inline.
+// Three inputs, one colour each: Cyan, Pink and Yellow. Where they overlap
+// the colours add up like light, so it is easy to see where two sounds fight
+// for the same frequencies. With Delta on, Yellow shows instead where Cyan and
+// Pink differ (the brighter, the bigger the difference). Thru passes Cyan on
+// unchanged, to put the module inline.
 //
 // Compared with the plugin's view:
 //   - each reassigned point is drawn with sub-pixel precision (split between
 //     the two pixel rows - and, with Time Reassign, the two columns - it falls
 //     between), the way a good spectrum view keeps its lines sharp at any
 //     zoom, and the brightest of the points landing on a pixel wins
-//   - Decimation Auto picks the largest decimation that still keeps High,
-//     so a low range gets the finest frequency resolution by itself
+//   - Decimation (Off by default) Auto picks the largest decimation that still keeps High,
+//     so a low range gets the finest frequency resolution by itself; the hop
+//     is kept the same length in real time with Speed Lock on, so the scroll
+//     speed never changes with it (until 5.19.3 a low High slowed it down)
 //   - the analysis runs on a background thread, never inside the audio
 //     callback (a 16384-point frame on a phone would otherwise click)
 //   - Low and High pick any range (20 - 200 Hz, 10 - 11 kHz ...), on a log or
@@ -36,17 +43,21 @@ namespace
 
     const juce::StringArray& fftChoices()   { static const juce::StringArray c { "1024", "2048", "4096", "8192", "16384" }; return c; }
     const juce::StringArray& hopChoices()   { static const juce::StringArray c { "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" }; return c; }
-    const juce::StringArray& winChoices()   { static const juce::StringArray c { "Hann", "Blackman-Harris", "Nuttall", "Kaiser" }; return c; }
+    // ("Blackman" is the 4-term Blackman-Harris; the list is one unit wide since 5.19.3)
+    const juce::StringArray& winChoices()   { static const juce::StringArray c { "Hann", "Blackman", "Nuttall", "Kaiser" }; return c; }
     const juce::StringArray& decimChoices() { static const juce::StringArray c { "Auto", "Off", "/2", "/4", "/8", "/16" }; return c; }
 
-    // light colours, added up where the inputs overlap
-    constexpr float kColour[kInputs][3] = { { 0.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 0.0f } };
+    // light colours, added up where the inputs overlap: cyan, pink, yellow
+    constexpr float kColour[kInputs][3] = { { 0.0f, 1.0f, 1.0f }, { 1.0f, 0.35f, 0.75f }, { 1.0f, 1.0f, 0.0f } };
 
     // one hop's worth of all three inputs, handed from the analysis thread to the display
     struct FrameSet
     {
         std::array<std::vector<Event>, kInputs> events;
         std::array<int, kInputs> count {};
+        std::array<std::vector<float>, kInputs> bins;   // the plain spectrum (Reassign off, or Delta)
+        std::array<int, kInputs> numBins {};
+        double binHz { 1.0 };
         int serial { 0 };   // the analysis settings it was made with
     };
 }
@@ -55,22 +66,34 @@ class ReassignedSpectrogramModule final : public SynthModule,
                                           private juce::TimeSliceClient
 {
 public:
-    enum P { pLow, pHigh, pRange, pGain, pSpeed, pFft, pHop, pWindow, pDecim, pScale, pLabels, pTimeRe,
-             pThreshold, pMaxShift, pFreeze };
+    // (patches save knobs by name, so a new one can sit where it belongs)
+    enum P { pLow, pHigh, pRange, pGain, pSpeed, pFft, pHop, pWindow, pSpeedLock, pDecim, pScale, pLabels, pTimeRe,
+             pThreshold, pMaxShift, pFreeze, pReassign, pDraw, pEnvelope, pDelta, pAccuracy };
+
+    // Accuracy: how far a reassigned point may move from its bin and still be
+    // drawn (anything moved further is mostly noise). 0 % lets points move 4
+    // bins, 50 % one bin, 100 % only a tenth of one - a log scale either side
+    static float maxShiftForAccuracy (float a)
+    {
+        a = juce::jlimit (0.0f, 1.0f, a);
+        return a <= 0.5f ? std::pow (4.0f, 1.0f - 2.0f * a) : std::pow (10.0f, -(2.0f * a - 1.0f));
+    }
 
     static ModuleDescriptor descriptor()
     {
         ModuleDescriptor d;
         d.typeId = "util.spectrogram";
-        d.displayName = "Reassigned Spectrogram";
-        d.description = "SpectralResolve's scrolling spectrogram (time across, frequency up, brightness the level) "
-                        "with spectral reassignment: every bin's energy moved to its true frequency (and time), so "
-                        "tones are thin lines. Three inputs in cyan, magenta and yellow - their colours add up where "
-                        "they overlap. Low / High pick any range, Labels show the frequencies, a tap shows the "
-                        "frequency and note under it. Thru passes input 1 on.";
+        d.displayName = "Spectrogram";
+        d.description = "A scrolling spectrogram: x = time, y = frequency, brightness = amplitude. Reassign moves every "
+                        "bin's energy to its true frequency (and time, with Time Fix), so tones are thin lines; Accuracy "
+                        "drops the points that had to move too far (noise), stricter the higher it is. Off, the plain FFT. Draw Sharp or Smooth; Envelope adds each input's slow average spectrum, faintly, at "
+                        "the right edge. Three inputs - Cyan, Pink, Yellow - whose colours add up where they overlap; "
+                        "with Delta on, Yellow shows where Cyan and Pink differ. Low / High pick any range, a tap shows "
+                        "the frequency and note under it. Decimate trades time for finer frequencies (Off by default); "
+                        "Speed Lock keeps the scroll speed while it does. Thru passes Cyan on.";
         d.section = ModuleSection::Utility;
         d.sidebarOrder = 40;
-        d.sockets = { audioIn ("in1", "In 1 Cyan"), audioIn ("in2", "In 2 Magenta"), audioIn ("in3", "In 3 Yellow"),
+        d.sockets = { audioIn ("in1", "Cyan"), audioIn ("in2", "Pink"), audioIn ("in3", "Yellow"),
                       audioOut ("thru", "Thru") };
         d.params = {
             makeRotary ("low", "Low", 20.0f, 20000.0f, 20.0f, 0, "Hz", true),
@@ -81,15 +104,23 @@ public:
 
             makeCombo ("fft", "FFT", fftChoices(), 2, 1, 1).noMod(),
             makeCombo ("hop", "Hop", hopChoices(), 2, 1, 1).noMod(),
-            makeCombo ("window", "Window", winChoices(), 3, 1, 2).noMod(),
-            makeCombo ("decim", "Decimate", decimChoices(), 0, 1, 1).noMod(),
+            makeCombo ("window", "Window", winChoices(), 3, 1, 1).noMod(),
+            makeCombo ("speedLock", "Speed Lock", { "Off", "On" }, 1, 1, 1).noMod(),
+            makeCombo ("decim", "Decimate", decimChoices(), 1, 1, 1).noMod(),   // Off (5.19.3; it was Auto)
 
             makeCombo ("scale", "Axis", { "Log", "Linear" }, 0, 2, 1).noMod(),
             makeCombo ("labels", "Labels", { "Off", "On" }, 1, 2, 1).noMod(),
             makeCombo ("timeRe", "Time Fix", { "Off", "On" }, 1, 2, 1).noMod(),
             makeRotary ("threshold", "Floor", -100.0f, -5.0f, -60.0f, 2, "dB"),
-            makeRotary ("maxShift", "Max Shift", 0.1f, 4.0f, 1.0f, 2, "bins"),
-            makeCombo ("freeze", "Freeze", { "Run", "Freeze" }, 0, 3, 1).noMod()
+            // (5.19.3: Accuracy below took its place; kept for older patches)
+            makeRotary ("maxShift", "Max Shift", 0.1f, 4.0f, 1.0f, 2, "bins").hide(),
+            makeCombo ("freeze", "Freeze", { "Run", "Freeze" }, 0, 3, 1).noMod(),
+            // (after the old ones: saved patches keep their places)
+            makeCombo ("reassign", "Reassign", { "Off", "On" }, 1, 3, 1).noMod().whenMissing (1.0f),
+            makeCombo ("draw", "Draw", { "Sharp", "Smooth" }, 0, 3, 1).noMod().whenMissing (0.0f),
+            makeCombo ("envelope", "Envelope", { "Off", "On" }, 1, 3, 1).noMod().whenMissing (0.0f),
+            makeCombo ("delta", "Delta", { "Off", "On" }, 0, 3, 1).noMod().whenMissing (0.0f),
+            makeRotary ("accuracy", "Accuracy", 0.0f, 100.0f, 50.0f, 2, "%")
         };
         return d;
     }
@@ -166,9 +197,15 @@ private:
         c.window = juce::jlimit (0, 3, (int) knob (pWindow));
         const int dc = juce::jlimit (0, 5, (int) knob (pDecim));
         c.decim = dc == 0 ? autoDecimation (sampleRate, knob (pHigh)) : (1 << (dc - 1));
+        // the hop counts decimated samples: with Speed Lock it is kept the same
+        // length in real time, so decimating (Auto: a lower High) never slows
+        // the scroll; off, a decimated picture scrolls slower (and costs less)
+        if (knob (pSpeedLock) > 0.5f)
+            c.hopDenom *= c.decim;
         c.timeReassign = knob (pTimeRe) > 0.5f;
         c.thresholdDb = knob (pThreshold);
-        c.maxShiftBins = knob (pMaxShift);
+        c.maxShiftBins = maxShiftForAccuracy (knob (pAccuracy) * 0.01f);
+        c.keepBins = knob (pReassign) < 0.5f || knob (pDelta) > 0.5f;   // the plain spectrum, when it is drawn
         return c;
     }
 
@@ -241,11 +278,18 @@ private:
             for (int i = 0; i < kInputs; ++i)
             {
                 set.count[(size_t) i] = 0;
+                set.numBins[(size_t) i] = 0;
                 if (! (mask & (1 << i)))
                     continue;
                 const auto& a = analyzers[(size_t) i];
                 set.count[(size_t) i] = a.eventCount();
                 std::copy (a.eventData(), a.eventData() + a.eventCount(), set.events[(size_t) i].begin());
+                if (cfg.keepBins)
+                {
+                    set.numBins[(size_t) i] = a.binCount();
+                    set.bins[(size_t) i].assign (a.binData(), a.binData() + a.binCount());
+                    set.binHz = a.binHz();
+                }
             }
             set.serial = serial.load();
             ++queueCount;
@@ -297,6 +341,34 @@ namespace
                     g.drawImage (image, plot.getX() + right, plot.getY(), writeCol, h, 0, 0, writeCol, h);
             }
 
+            // Envelope: each input's slow average spectrum, faintly, along the right
+            // edge (its level leftwards from the edge, frequency up as the picture)
+            if (m->knob (ReassignedSpectrogramModule::pEnvelope) > 0.5f)
+            {
+                const float range = m->knob (ReassignedSpectrogramModule::pRange);
+                const float gain = m->knob (ReassignedSpectrogramModule::pGain);
+                const float span = (float) plot.getWidth() * 0.22f;
+                const bool delta = m->knob (ReassignedSpectrogramModule::pDelta) > 0.5f;
+                for (int i = 0; i < kInputs; ++i)
+                {
+                    const auto& e = envelope[(size_t) i];
+                    if ((int) e.size() != plot.getHeight() || ! (m->inputLive (i) || (i == 2 && delta)))
+                        continue;
+                    juce::Path p;
+                    bool open = false;
+                    for (int cy = 0; cy < (int) e.size(); ++cy)
+                    {
+                        const float t = juce::jlimit (0.0f, 1.0f, (e[(size_t) cy] + gain + range) / range);
+                        if (t <= 0.01f) { open = false; continue; }
+                        const float x = (float) plot.getRight() - 2.0f - t * span, y = (float) plot.getY() + (float) cy;
+                        if (! open) { p.startNewSubPath (x, y); open = true; } else p.lineTo (x, y);
+                    }
+                    const auto c = juce::Colour::fromFloatRGBA (kColour[i][0], kColour[i][1], kColour[i][2], 1.0f);
+                    g.setColour (c.withAlpha (0.5f));
+                    g.strokePath (p, juce::PathStrokeType (1.1f));
+                }
+            }
+
             // the frequency grid
             if (m->knob (ReassignedSpectrogramModule::pLabels) > 0.5f)
             {
@@ -317,12 +389,13 @@ namespace
             {
                 auto legend = getLocalBounds().removeFromBottom (14).reduced (4, 0);
                 g.setFont (juce::Font (juce::FontOptions (9.5f)));
-                const char* names[kInputs] = { "1", "2", "3" };
+                const bool deltaOn = m->knob (ReassignedSpectrogramModule::pDelta) > 0.5f;
+                const char* names[kInputs] = { "Cyan", "Pink", deltaOn ? "Cyan / Pink" : "Yellow" };
                 for (int i = 0; i < kInputs; ++i)
                 {
                     const auto c = juce::Colour::fromFloatRGBA (kColour[i][0], kColour[i][1], kColour[i][2], 1.0f);
-                    const bool live = m->inputLive (i);
-                    auto cell = legend.removeFromLeft (26);
+                    const bool live = i == 2 && deltaOn ? (m->inputLive (0) && m->inputLive (1)) : m->inputLive (i);
+                    auto cell = legend.removeFromLeft (i == 2 && deltaOn ? 76 : 48);
                     g.setColour (c.withAlpha (live ? 1.0f : 0.25f));
                     g.fillEllipse (cell.removeFromLeft (10).toFloat().withSizeKeepingCentre (7.0f, 7.0f));
                     g.drawText (names[i], cell, juce::Justification::centredLeft);
@@ -452,51 +525,139 @@ namespace
             const int ih = image.getHeight();
             bool any = false;
 
+            const bool reassign = m->knob (ReassignedSpectrogramModule::pReassign) > 0.5f;
+            const bool smoothDraw = m->knob (ReassignedSpectrogramModule::pDraw) > 0.5f;
+            const bool delta = m->knob (ReassignedSpectrogramModule::pDelta) > 0.5f;
+            for (auto& e : envelope)
+                if ((int) e.size() != ih) e.assign ((size_t) ih, -200.0f);
+
+            // a brightness for a level, and the level on a row from the plain spectrum
+            auto brightOf = [&] (float db)
+            {
+                const float v = juce::jlimit (0.0f, 1.0f, (db + gain + range) / range);
+                return v * v * (3.0f - 2.0f * v);   // smooth, darker floor
+            };
+            auto rowDb = [&] (const FrameSet& set, int i, int cy)
+            {
+                const int nb = set.numBins[(size_t) i];
+                const auto& bins = set.bins[(size_t) i];
+                const double h0 = hzOf ((float) cy + 0.5f), h1 = hzOf ((float) cy - 0.5f), hc = hzOf ((float) cy);
+                const int k0 = (int) std::floor (juce::jmin (h0, h1) / set.binHz), k1 = (int) std::ceil (juce::jmax (h0, h1) / set.binHz);
+                if (k1 - k0 > 2)
+                {
+                    float v = -200.0f;   // several bins on this row: the loudest
+                    for (int k = juce::jmax (1, k0); k <= juce::jmin (nb - 1, k1); ++k)
+                        v = juce::jmax (v, bins[(size_t) k]);
+                    return v;
+                }
+                // a bin taller than a row: Sharp holds it (steps), Smooth slides between bins
+                const double kf = hc / set.binHz;
+                const int lo = juce::jlimit (1, juce::jmax (1, nb - 2), (int) std::floor (kf));
+                if (! smoothDraw)
+                    return bins[(size_t) juce::jlimit (1, nb - 1, (int) std::lround (kf))];
+                const float f = (float) (kf - (double) lo);
+                return bins[(size_t) lo] + (bins[(size_t) lo + 1] - bins[(size_t) lo]) * f;
+            };
+
             m->drainFrames ([&] (const FrameSet& set)
             {
                 if (set.serial != shownSerial)
                     return;
                 any = true;
                 block.assign ((size_t) speed * (size_t) ih * 3, 0.0f);
+                rowLevel.assign ((size_t) kInputs * (size_t) ih, -200.0f);
+
+                auto put = [&] (int cx, int cy, float b, int i)
+                {
+                    if (cy < 0 || cy >= ih || cx < 0 || cx >= speed || b <= 0.0f)
+                        return;
+                    float* px = &block[((size_t) cx * (size_t) ih + (size_t) cy) * 3];
+                    for (int c = 0; c < 3; ++c)
+                        px[c] = juce::jmax (px[c], b * kColour[i][c] * 1.6f);
+                };
 
                 for (int i = 0; i < kInputs; ++i)
                 {
-                    const auto* ev = set.events[(size_t) i].data();
-                    for (int n = 0; n < set.count[(size_t) i]; ++n)
+                    if (i == 2 && delta)
+                        continue;   // Yellow shows the delta instead
+
+                    if (reassign)
                     {
-                        const float v = juce::jlimit (0.0f, 1.0f, (ev[n].db + gain + range) / range);
-                        if (v <= 0.0f)
-                            continue;
-                        const float bright = v * v * (3.0f - 2.0f * v);   // smooth, darker floor
-                        const float y = yOf (ev[n].hz);
-                        if (y < -1.0f || y > h)
-                            continue;
-                        // sub-pixel in frequency: split between the two rows it falls between.
-                        // In time the point spans its frame's columns, brightest at the
-                        // moment reassignment puts it (a tone stays one unbroken line, a
-                        // click stays a narrow stroke)
-                        const float centre = ((float) speed - 1.0f) * 0.5f + ev[n].hops * (float) speed;
-                        const int y0 = (int) std::floor (y);
-                        const float fy = y - (float) y0;
-                        for (int cx = 0; cx < speed; ++cx)
+                        const auto* ev = set.events[(size_t) i].data();
+                        for (int n = 0; n < set.count[(size_t) i]; ++n)
                         {
-                            const float dist = std::abs ((float) cx - centre) / (float) speed;
-                            const float wx = speed == 1 ? 1.0f : juce::jmax (0.0f, 1.0f - dist * dist);
-                            if (wx <= 0.0f)
+                            const float bright = brightOf (ev[n].db);
+                            if (bright <= 0.0f)
                                 continue;
-                            for (int dy = 0; dy < 2; ++dy)
+                            const float y = yOf (ev[n].hz);
+                            if (y < -3.0f || y > h + 2.0f)
+                                continue;
+                            const int yr = juce::jlimit (0, ih - 1, (int) std::lround (y));
+                            rowLevel[(size_t) i * (size_t) ih + (size_t) yr] = juce::jmax (rowLevel[(size_t) i * (size_t) ih + (size_t) yr], ev[n].db);
+                            // sub-pixel in frequency: split between the two rows it falls between
+                            // (Smooth: spread softly over a few). In time the point spans its
+                            // frame's columns, brightest at the moment reassignment puts it
+                            const float centre = ((float) speed - 1.0f) * 0.5f + ev[n].hops * (float) speed;
+                            const int y0 = (int) std::floor (y);
+                            const float fy = y - (float) y0;
+                            for (int cx = 0; cx < speed; ++cx)
                             {
-                                const int cy = y0 + dy;
-                                if (cy < 0 || cy >= ih)
+                                const float dist = std::abs ((float) cx - centre) / (float) speed;
+                                const float wx = speed == 1 || smoothDraw ? 1.0f : juce::jmax (0.0f, 1.0f - dist * dist);
+                                if (wx <= 0.0f)
                                     continue;
-                                const float w = wx * (dy == 0 ? 1.0f - fy : fy);
-                                float* px = &block[((size_t) cx * (size_t) ih + (size_t) cy) * 3];
-                                for (int c = 0; c < 3; ++c)
-                                    px[c] = juce::jmax (px[c], bright * w * kColour[i][c] * 1.6f);
+                                if (smoothDraw)
+                                {
+                                    for (int dy = -2; dy <= 3; ++dy)
+                                    {
+                                        const float d = (float) dy - fy;
+                                        put (cx, y0 + dy, bright * wx * std::exp (-0.6f * d * d), i);
+                                    }
+                                }
+                                else
+                                {
+                                    put (cx, y0, bright * wx * (1.0f - fy), i);
+                                    put (cx, y0 + 1, bright * wx * fy, i);
+                                }
                             }
                         }
                     }
+                    else if (set.numBins[(size_t) i] > 2)
+                    {
+                        // the plain FFT, row by row
+                        for (int cy = 0; cy < ih; ++cy)
+                        {
+                            const float db = rowDb (set, i, cy);
+                            rowLevel[(size_t) i * (size_t) ih + (size_t) cy] = db;
+                            const float bright = brightOf (db);
+                            for (int cx = 0; cx < speed; ++cx)
+                                put (cx, cy, bright, i);
+                        }
+                    }
                 }
+
+                // Delta: where Cyan and Pink differ, in yellow (from their plain spectra)
+                if (delta && set.numBins[0] > 2 && set.numBins[1] > 2)
+                {
+                    for (int cy = 0; cy < ih; ++cy)
+                    {
+                        const float a = rowDb (set, 0, cy), b = rowDb (set, 1, cy);
+                        const float level = brightOf (juce::jmax (a, b));
+                        const float diff = juce::jlimit (0.0f, 1.0f, std::abs (a - b) / 24.0f);
+                        rowLevel[2 * (size_t) ih + (size_t) cy] = juce::jmax (a, b) - (1.0f - diff) * range;
+                        for (int cx = 0; cx < speed; ++cx)
+                            put (cx, cy, level * diff, 2);
+                    }
+                }
+
+                // the slow average spectra (Envelope), in dB
+                for (int i = 0; i < kInputs; ++i)
+                    for (int cy = 0; cy < ih; ++cy)
+                    {
+                        float& e = envelope[(size_t) i][(size_t) cy];
+                        const float v = juce::jmax (rowLevel[(size_t) i * (size_t) ih + (size_t) cy], -gain - range - 6.0f);
+                        e = e <= -199.0f ? v : e + 0.04f * (v - e);
+                    }
 
                 // the inputs' colours add up like light
                 for (int cx = 0; cx < speed; ++cx)
@@ -522,7 +683,8 @@ namespace
         juce::WeakReference<SynthModule> module;
         juce::Image image;
         int writeCol { 0 };
-        std::vector<float> block;
+        std::vector<float> block, rowLevel;
+        std::array<std::vector<float>, kInputs> envelope;   // each input's slow average, dB per row
         std::tuple<float, float, bool, int, int> axisKey {};
         int shownSerial { -1 };
         std::optional<juce::Point<float>> probe;

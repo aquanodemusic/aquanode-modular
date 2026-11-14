@@ -1,18 +1,20 @@
 //==============================================================================
-// Spectrum Compare - SpectralCompare's periodogram as a module
+// Periodogram - x = frequency, y = amplitude (SpectralCompare's view, with the
+// EQ Curve Viewer folded in; it was "Spectrum Compare" until 5.19.2, the type
+// id is kept so patches open)
 //
-// Two sounds' spectra over each other (x frequency, y level): source 1 in
-// green, source 2 in purple, and their difference (1 minus 2, in dB) - or
-// that difference alone - in yellow around a centre line, so you see where
-// one is louder than the other. As a connected graph or as bars; and in
-// Reassigned precision every partial is drawn as a stem at the frequency
-// spectral reassignment finds for it (not the FFT bin's centre), so two
-// close tones that one bin would blur show up apart.
+// Up to three sounds' spectra over each other: Cyan, Pink and Yellow. With
+// Delta on, Yellow is instead the difference Cyan minus Pink (in dB) around a
+// centre line, so you see where one is louder than the other. As a connected
+// graph or as bars; and in Reassigned precision every partial is drawn at the
+// frequency spectral reassignment finds for it (not the FFT bin's centre),
+// so two close tones that one bin would blur show up apart.
 //
-// The FFT runs on a background thread. Smooth lets the curves fall back
-// slowly (they rise at once); Hold keeps each one's peaks. A tap (or a held
-// finger) reads out the frequency, the note and both levels there. Thru
-// passes source 1 on unchanged.
+// The FFT runs on a background thread. Speed is how quickly the curves fall
+// back (they rise at once): Very Fast not at all; Envelope draws a faint line
+// over each that falls slowly (Slow) or keeps the highest (Hold). A tap (or a
+// held finger) reads out the frequency, the note and the levels there. Thru
+// passes Cyan on unchanged.
 //==============================================================================
 #include "SpectralAnalysis.h"
 
@@ -21,9 +23,10 @@ using namespace aquanode::spectral;
 
 namespace
 {
-    constexpr int kSources = 2;
-    const juce::Colour kSourceColour[kSources] = { juce::Colour (0xff3ee07a), juce::Colour (0xffb070ff) };
-    const juce::Colour kDeltaColour (0xffffd23f);
+    constexpr int kSources = 3;
+    const juce::Colour kSourceColour[kSources] = { juce::Colour (0xff3fe6f2), juce::Colour (0xffff6fbe), juce::Colour (0xffffd23f) };
+    const juce::Colour kDeltaColour (0xffffd23f);   // (Yellow: the delta takes its place)
+    constexpr float kSpeedSmooth[4] = { 0.0f, 0.55f, 0.8f, 0.94f };   // Very Fast, Fast, Medium, Slow
 
     const juce::StringArray& fftChoices() { static const juce::StringArray c { "1024", "2048", "4096", "8192", "16384" }; return c; }
 }
@@ -33,25 +36,26 @@ class SpectrumCompareModule final : public SynthModule,
 {
 public:
     enum P { pView, pStyle, pPrecision, pLow, pHigh, pTop, pRange, pDeltaRange, pSmooth, pFft, pWindow, pScale, pLabels,
-             pHold, pFreeze };
+             pHold, pFreeze, pDelta, pSpeed };
 
     static ModuleDescriptor descriptor()
     {
         ModuleDescriptor d;
         d.typeId = "util.spectrumcompare";
-        d.displayName = "Spectrum Compare";
-        d.description = "SpectralCompare's periodogram (frequency across, level up): source 1 in green, source 2 in "
-                        "purple and their difference (1 minus 2) in yellow - or the difference alone - as a graph or as "
-                        "bars. Reassigned draws every partial at the frequency spectral reassignment finds for it, "
-                        "finer than the FFT's bins. Smooth, Hold, any range; a tap reads out the frequency, note and "
-                        "both levels. Thru passes source 1 on.";
+        d.displayName = "Periodogram";
+        d.description = "A periodogram: x = frequency, y = amplitude (dBFS). Up to three sounds over each other - Cyan, "
+                        "Pink and Yellow - or, with Delta on, Yellow is the difference Cyan minus Pink around a centre "
+                        "line, where one is louder than the other. As a graph or as bars; Reassigned draws every partial "
+                        "at the frequency spectral reassignment finds for it, finer than the FFT's bins. Speed from Very "
+                        "Fast to Slow, a faint Envelope that falls slowly (or holds), any range; a tap reads out the "
+                        "frequency, note and levels. Thru passes Cyan on, so it can sit in a chain.";
         d.section = ModuleSection::Utility;
         d.sidebarOrder = 41;
-        d.sockets = { audioIn ("in1", "Source 1"), audioIn ("in2", "Source 2"), audioOut ("thru", "Thru") };
+        d.sockets = { audioIn ("in1", "Cyan"), audioIn ("in2", "Pink"), audioIn ("in3", "Yellow"), audioOut ("thru", "Thru") };
         d.params = {
-            makeCombo ("view", "View", { "1 + 2 + Delta", "1 + 2", "Delta Only", "1 Only", "2 Only" }, 0, 0, 2).noMod(),
+            makeCombo ("view", "View", { "All", "Cyan + Pink", "Yellow Only", "Cyan Only", "Pink Only" }, 0, 0, 2).noMod(),
             makeCombo ("style", "Style", { "Graph", "Bars" }, 0, 0, 1).noMod(),
-            makeCombo ("precision", "Precision", { "FFT", "Reassigned" }, 0, 0, 2).noMod(),
+            makeCombo ("precision", "Reassign", { "Off", "On" }, 0, 0, 1).noMod(),
 
             makeRotary ("low", "Low", 20.0f, 20000.0f, 20.0f, 1, "Hz", true),
             makeRotary ("high", "High", 20.0f, 22000.0f, 20000.0f, 1, "Hz", true),
@@ -59,14 +63,17 @@ public:
             makeRotary ("range", "Range", 24.0f, 140.0f, 90.0f, 1, "dB"),
             makeRotary ("deltaRange", "Delta +/-", 3.0f, 60.0f, 24.0f, 1, "dB"),
 
-            makeRotary ("smooth", "Smooth", 0.0f, 0.99f, 0.8f, 2),
+            makeRotary ("smooth", "Smooth", 0.0f, 0.99f, 0.8f, 2).hide().noMod(),   // (before Speed: kept for old patches)
             makeCombo ("fft", "FFT", fftChoices(), 3, 2, 1).noMod(),
             makeCombo ("window", "Window", { "Hann", "Blackman-Harris", "Nuttall", "Kaiser" }, 1, 2, 2).noMod(),
             makeCombo ("scale", "Axis", { "Log", "Linear" }, 0, 2, 1).noMod(),
 
             makeCombo ("labels", "Labels", { "Off", "On" }, 1, 3, 1).noMod(),
-            makeCombo ("hold", "Hold", { "Off", "On" }, 0, 3, 1).noMod(),
-            makeCombo ("freeze", "Freeze", { "Run", "Freeze" }, 0, 3, 1).noMod()
+            makeCombo ("hold", "Envelope", { "Off", "Slow", "Hold" }, 1, 3, 1).noMod().whenMissing (0.0f),
+            makeCombo ("freeze", "Freeze", { "Run", "Freeze" }, 0, 3, 1).noMod(),
+            // (after the old ones, so saved patches keep their places)
+            makeCombo ("delta", "Delta", { "Off", "On" }, 0, 0, 1).noMod().whenMissing (1.0f),
+            makeCombo ("speed", "Speed", { "Very Fast", "Fast", "Medium", "Slow" }, 1, 2, 2).noMod().whenMissing (2.0f)
         };
         return d;
     }
@@ -213,9 +220,11 @@ namespace
             const int view = (int) m->knob (SpectrumCompareModule::pView);
             const bool bars = m->knob (SpectrumCompareModule::pStyle) > 0.5f;
             const bool reassigned = m->knob (SpectrumCompareModule::pPrecision) > 0.5f;
-            const bool showDelta = view == 0 || view == 2;
-            const bool show1 = view == 0 || view == 1 || view == 3;
-            const bool show2 = view == 0 || view == 1 || view == 4;
+            const bool delta = m->knob (SpectrumCompareModule::pDelta) > 0.5f;
+            const bool showYellow = view == 0 || view == 2;
+            const bool showDelta = delta && showYellow;
+            const bool showSource[kSources] = { view == 0 || view == 1 || view == 3, view == 0 || view == 1 || view == 4,
+                                                showYellow && ! delta };
 
             // the grid: frequencies, and the level every 12 dB (or the delta's every 6)
             g.setFont (juce::Font (juce::FontOptions (9.5f)));
@@ -233,7 +242,7 @@ namespace
                     g.drawText (hzText (hz), (int) x + 2, (int) plot.getBottom() - 12, 60, 11, juce::Justification::left);
                 }
             }
-            if (view != 2)
+            if (! (view == 2 && delta))
             {
                 const float top = m->knob (SpectrumCompareModule::pTop);
                 for (float db = std::floor (top / 12.0f) * 12.0f; db > top - range(); db -= 12.0f)
@@ -257,32 +266,32 @@ namespace
             // the sources
             for (int i = 0; i < kSources; ++i)
             {
-                if ((i == 0 && ! show1) || (i == 1 && ! show2) || ! m->inputLive (i))
+                if (! showSource[i] || ! m->inputLive (i))
                     continue;
                 const auto& col = shown[(size_t) i];
-                if (reassigned)
-                    drawStems (g, col, kSourceColour[i], plot);
-                else if (bars)
+                if (bars)
                     drawBars (g, col, kSourceColour[i], plot);
+                else if (reassigned)
+                    drawStems (g, col, kSourceColour[i], plot);
                 else
                     drawGraph (g, col, kSourceColour[i], plot);
                 if (m->knob (SpectrumCompareModule::pHold) > 0.5f)
-                    drawHold (g, peak[(size_t) i], kSourceColour[i], plot);
+                    drawHold (g, peak[(size_t) i], kSourceColour[i], plot);   // the faint envelope
             }
 
-            // 1 minus 2
+            // Cyan minus Pink (Yellow's place, with Delta on)
             if (showDelta && m->inputLive (0) && m->inputLive (1))
                 drawDelta (g, plot, bars);
 
             // legend
             {
                 auto legend = getLocalBounds().removeFromTop (14).reduced (6, 0);
-                const char* names[3] = { "Source 1", "Source 2", "1 - 2" };
+                const char* names[3] = { "Cyan", "Pink", delta ? "Cyan - Pink" : "Yellow" };
                 const juce::Colour cols[3] = { kSourceColour[0], kSourceColour[1], kDeltaColour };
                 for (int k = 0; k < 3; ++k)
                 {
-                    auto cell = legend.removeFromLeft (70);
-                    const bool live = k < 2 ? m->inputLive (k) : (m->inputLive (0) && m->inputLive (1));
+                    auto cell = legend.removeFromLeft (k == 2 ? 84 : 56);
+                    const bool live = k < 2 ? m->inputLive (k) : (delta ? (m->inputLive (0) && m->inputLive (1)) : m->inputLive (2));
                     g.setColour (cols[k].withAlpha (live ? 1.0f : 0.3f));
                     g.fillRect (cell.removeFromLeft (10).toFloat().withSizeKeepingCentre (8.0f, 3.0f));
                     g.drawText (names[k], cell.withTrimmedLeft (3), juce::Justification::centredLeft);
@@ -304,10 +313,11 @@ namespace
                 g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom());
                 juce::String text = hzText (hz) + "  " + noteName (hz);
                 auto level = [&] (int i) { return px < (int) shown[(size_t) i].size() ? shown[(size_t) i][(size_t) px] : kFloor; };
-                if (m->inputLive (0)) text << "   1: " << dbText (level (0));
-                if (m->inputLive (1)) text << "   2: " << dbText (level (1));
-                if (m->inputLive (0) && m->inputLive (1) && level (0) > kFloor && level (1) > kFloor)
-                    text << "   1-2: " << juce::String (level (0) - level (1), 1) << " dB";
+                if (m->inputLive (0)) text << "   C: " << dbText (level (0));
+                if (m->inputLive (1)) text << "   P: " << dbText (level (1));
+                if (! delta && m->inputLive (2)) text << "   Y: " << dbText (level (2));
+                if (delta && m->inputLive (0) && m->inputLive (1) && level (0) > kFloor && level (1) > kFloor)
+                    text << "   C-P: " << juce::String (level (0) - level (1), 1) << " dB";
                 g.setFont (juce::Font (juce::FontOptions (10.5f, juce::Font::bold)));
                 const int w = juce::jmin ((int) plot.getWidth() - 4, (int) juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 12);
                 auto box = juce::Rectangle<int> (0, 0, w, 17).withCentre ({ (int) x, (int) plot.getY() + 12 })
@@ -540,7 +550,8 @@ namespace
                 probe.reset();
 
             const bool reassigned = m->knob (SpectrumCompareModule::pPrecision) > 0.5f;
-            const float smooth = juce::jlimit (0.0f, 0.99f, m->knob (SpectrumCompareModule::pSmooth));
+            const float smooth = kSpeedSmooth[juce::jlimit (0, 3, (int) std::lround (m->knob (SpectrumCompareModule::pSpeed)))];
+            const int envelope = juce::jlimit (0, 2, (int) std::lround (m->knob (SpectrumCompareModule::pHold)));
             const auto key = std::make_tuple (lo(), hi(), logAxis(), reassigned, plotArea().getWidth());
             if (key != axisKey)
             {
@@ -571,6 +582,9 @@ namespace
                         d = (d <= kFloor + 1.0f) ? v : d * smooth + juce::jmax (v, floorDb) * (1.0f - smooth);
                     if (d < floorDb)
                         d = kFloor;
+                    // the envelope: the highest so far - falling 9 dB a second (Slow), or kept (Hold)
+                    if (envelope == 1 && p[x] > kFloor + 1.0f)
+                        p[x] = p[x] - 0.3f < floorDb ? kFloor : p[x] - 0.3f;
                     p[x] = juce::jmax (p[x], d);
                 }
                 changed = true;

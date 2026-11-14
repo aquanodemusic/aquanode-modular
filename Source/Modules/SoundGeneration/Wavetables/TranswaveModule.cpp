@@ -876,8 +876,8 @@ static ModuleDescriptor transwaveDescriptor()
     };
     d.params = {
         makeRotary ("volume",    "Volume",    0.0f, 1.0f, 0.8f, 0),
-        makeCombo  ("archetype", "Archetype", TranswaveModule::archetypeChoices(), 0, 0, 3),
-        makeCombo  ("frames",    "Frames",    TranswaveModule::frameChoices(), 0, 1, 2),
+        makeCombo  ("archetype", "Archetype", TranswaveModule::archetypeChoices(), 0, 0, 3).noMod(),   // (the table is rebuilt)
+        makeCombo  ("frames",    "Frames",    TranswaveModule::frameChoices(), 0, 1, 2).noMod(),
         makeRotary ("position",  "Position",  0.0f, 100.0f, 0.0f, 2, "%"),
         makeRotary ("posDepth",  "Pos Mod",   -100.0f, 100.0f, 100.0f, 2, "%"),
         makeCombo  ("scanMode",  "Scan",      { "Off", "Forward", "Backward", "Ping-Pong", "Once" }, 1, 1, 3),

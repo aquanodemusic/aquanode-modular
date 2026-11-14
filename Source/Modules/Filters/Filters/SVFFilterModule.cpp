@@ -1,6 +1,20 @@
 #include "SVFFilterModule.h"
+#include "../../Core/FilterResponse.h"
 
 using namespace aquanode;
+
+bool SVFFilterModule::magnitudeResponseDb (const float* hz, float* db, int n) const
+{
+    const double fc = juce::jmin (juce::jlimit (20.0, 20000.0, (double) getParameterBase (pCutoff)), sampleRate * 0.49);
+    const double k = 1.0 - getParameterBase (pResonance) * 0.98;
+    const int mode = (int) getParameterBase (pMode);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto r = response::svf (response::sOf (hz[i], fc, sampleRate), k);
+        db[i] = response::db (mode == 0 ? r.low : (mode == 1 ? r.band : r.high));
+    }
+    return true;
+}
 
 void SVFFilterModule::processVoiceSample (int v, const StereoFrame* inputs, StereoFrame* outputs)
 {

@@ -50,7 +50,7 @@ void WindModule::voiceReset (int v)
     std::fill (s.bore.begin(), s.bore.end(), 0.0f);
     std::fill (s.jet.begin(), s.jet.end(), 0.0f);
     s.boreWrite = s.jetWrite = 0;
-    s.loop = s.lastBore = s.dcIn = s.dcOut = s.outLp = s.outDcIn = s.outDcOut = s.breath = 0.0f;
+    s.loop = s.lastBore = s.dcIn = s.dcOut = s.outLp = s.outDcIn = s.outDcOut = s.breath = s.touch = 0.0f;
     s.vibPhase = 0.0;
     s.sinceOn = 0.0;
     s.noise = 0x1234567u + (juce::uint32) v * 7919u;
@@ -124,7 +124,13 @@ void WindModule::processVoiceSample (int v, const StereoFrame* inputs, StereoFra
     const float vib = vibDepth * vibIn * (float) std::sin (juce::MathConstants<double>::twoPi * s.vibPhase);
 
     // Breath 0..100 % spans the pipe's playing range: barely speaking .. pushed
-    const float amount = juce::jlimit (0.0f, 1.0f, param (pBreath) * 0.01f);   // a cable onto Breath moves it
+    // aftertouch (or the note's MPE pressure) blows harder while the note is held
+    float pressNow = 0.0f;
+    if (midiControls != nullptr)
+        pressNow = juce::jmax (midiControls->voicePressure[v], midiControls->aftertouch);
+    s.touch += (pressNow - s.touch) * (1.0f - std::exp (-dt / 0.006f));
+    const float amount = juce::jlimit (0.0f, 1.0f, param (pBreath) * 0.01f       // a cable onto Breath moves it
+                                                    + 0.6f * param (pAfterTouch) * 0.01f * s.touch);
     const float pressure = inst == clarinet ? 0.62f + 0.5f * amount : 0.93f + 0.25f * amount;
     float breath = pressure * env * (1.0f + 0.08f * vib);
     const float noiseAmt = tune.noise * (0.3f + 1.7f * param (pNoise) * 0.01f);
@@ -192,9 +198,9 @@ static ModuleDescriptor windDescriptor()
     d.description =
         "Blown pipes, physically modelled: Flute (an air jet over an open pipe), Pan Flute (a slower jet "
         "over a duller pipe - hollow and airy) and Clarinet (a reed over a cylindrical bore). Breath is the playing "
-        "control: it rises over Attack, falls over Release, velocity sets how hard it starts, and a cable "
-        "onto Breath moves it (mod wheel or aftertouch from Midi Controls) - more breath, a louder, "
-        "fuller note. Tone runs from soft and dark to bright and edgy. Noise is the air around "
+        "control: it rises over Attack, falls over Release, velocity sets how hard it starts, and "
+        "aftertouch (or MPE pressure) blows harder while you hold the note, by After Touch - more breath, "
+        "a louder, fuller note; a cable onto Breath moves it too. Tone runs from soft and dark to bright and edgy. Noise is the air around "
         "the tone, Vibrato fades in after its Delay. Env In, patched, replaces the breath envelope.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 15;
@@ -220,6 +226,7 @@ static ModuleDescriptor windDescriptor()
         makeRotary ("glide",      "Glide",      0.0f, 1000.0f, 0.0f, 3, "ms").visibleWhen ("voices", 1.0f)
     };
     d.params.push_back (makeOutputTrim (-8.0f));   // brought down to sit with the other sources
+    d.params.push_back (makeRotary ("afterTouch", "After Touch", 0.0f, 100.0f, 50.0f, 3, "%"));
     return d;
 }
 

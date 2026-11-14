@@ -37,7 +37,7 @@ namespace covegroove
         setColour (juce::TooltipWindow::textColourId, colours::text);
     }
 
-    // AlphaBeta's knob, made rugged: a brushed-steel cap on a knurled gunmetal
+    // AlphaBeta's knob, made rugged: a brushed-steel cap on a knurled dark steel
     // skirt, inside a dark scale that lights in the lane's colour (from the
     // middle on the bipolar knobs: pan, tune, tone), a bright dot at its end
     void CgLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end, juce::Slider& s)

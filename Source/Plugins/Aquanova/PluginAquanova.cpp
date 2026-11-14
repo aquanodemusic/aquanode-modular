@@ -18,3 +18,56 @@ namespace aqp_aquanova
 #include "../Host/PluginCatalog.h"
 
 AQP_DEFINE_PLUGIN (AquanovaGuiModule, "aquanova", aqp_aquanova)
+
+// the randomiser's characters (Anything, then Super Random), for the Random
+// Plugin Preset module; saved as an .aquanova patch
+#include "../Host/RandomPresetSources.h"
+namespace
+{
+    const bool aquanovaRandomRegistered = aquanode::plugins::randompreset::registerSource ([]
+    {
+        aquanode::plugins::randompreset::Source s;
+        s.pluginId = "aquanova";
+        s.name = "Aquanova";
+        s.lists = []
+        {
+            aquanode::plugins::randompreset::Lists l;
+            l.kinds = aqp_aquanova::aquanova::RandomPreset::characterNames();
+            l.defaultKind = (int) aqp_aquanova::aquanova::RandomPreset::Anything;
+            return l;
+        };
+        s.roll = [] (juce::AudioProcessor& p, int kind, int, int, juce::uint32 seed) -> juce::String
+        {
+            using aqp_aquanova::aquanova::RandomPreset;
+            auto* an = dynamic_cast<aqp_aquanova::aquanova::AquaNovaProcessor*> (&p);
+            if (an == nullptr)
+                return {};
+            juce::Random rng ((juce::int64) seed);
+            juce::String name;
+            if (kind > (int) RandomPreset::Anything)
+            {
+                RandomPreset::superRandomise (an->apvts, rng);
+                name = RandomPreset::wildName (rng);
+            }
+            else
+            {
+                const auto c = (RandomPreset::Character) juce::jlimit (0, (int) RandomPreset::Anything, kind);
+                RandomPreset::generate (an->apvts, c, rng);
+                name = RandomPreset::nameFor (c, rng);
+            }
+            an->setPatchName (name);
+            return name;
+        };
+        s.presetExtension = "aquanova";
+        s.presetData = [] (juce::AudioProcessor& p, const juce::String& name, juce::MemoryBlock& out)
+        {
+            auto* an = dynamic_cast<aqp_aquanova::aquanova::AquaNovaProcessor*> (&p);
+            if (an == nullptr)
+                return false;
+            if (name.isNotEmpty())
+                an->setPatchName (name);
+            return aquanode::plugins::randompreset::viaTempFile ("aquanova", [an] (const juce::File& f) { return an->savePatch (f); }, out);
+        };
+        return s;
+    }());
+}

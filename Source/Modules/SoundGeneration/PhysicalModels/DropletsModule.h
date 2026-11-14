@@ -27,7 +27,7 @@ public:
 
     enum ParamIndex { pSize = 0, pSizeVar, pRate, pRateVar,
                       pRise, pDepth, pBright, pWidth,
-                      pVolume, pDensity };
+                      pVolume, pDensity, pVoices, pTune };
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Flexible; }
 
@@ -55,8 +55,9 @@ public:
             dcX1[v][c] = dcY1[v][c] = 0.0f;
     }
 
-    void voiceNoteOn (int v, int, bool) override
+    void voiceNoteOn (int v, int note, bool) override
     {
+        noteHz[v] = (float) aquanode::midiNoteToHz ((double) note);
         pool.noteOn (v, voiceLimit());
         noteHeld[v] = true;
         clockPhase[v] = 1.0f;   // first drip lands immediately, like the plugin's noteOn
@@ -120,6 +121,7 @@ private:
     float clockPhase [aquanode::kMaxVoices] {};
     bool  noteHeld   [aquanode::kMaxVoices] {};
     float vel        [aquanode::kMaxVoices] {};
+    float noteHz     [aquanode::kMaxVoices] {};   // the key's pitch (Tune By Key)
     float dcX1 [aquanode::kMaxVoices][2] {};   // DC blocker state
     float dcY1 [aquanode::kMaxVoices][2] {};
     juce::Random random;

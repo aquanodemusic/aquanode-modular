@@ -1,6 +1,22 @@
 #include "DualFilterModule.h"
+#include "../../Core/FilterResponse.h"
 
 using namespace aquanode;
+
+// DualFilterCore: the high-pass's high into the low-pass's low (its input
+// clip is unity at ordinary levels), then Output
+bool DualFilterModule::magnitudeResponseDb (const float* hz, float* db, int n) const
+{
+    const double hpFc = juce::jlimit (8.0, sampleRate * 0.45, (double) getParameterBase (pHpfCutoff));
+    const double lpFc = juce::jlimit (8.0, sampleRate * 0.45, (double) getParameterBase (pLpfCutoff));
+    const double hpK = vintagedsp::ResonantSvf::damping (getParameterBase (pHpfPeak) * 0.1f);
+    const double lpK = vintagedsp::ResonantSvf::damping (getParameterBase (pLpfPeak) * 0.1f);
+    const double out = getParameterBase (pOutput);
+    for (int i = 0; i < n; ++i)
+        db[i] = response::db (out * response::svf (response::sOf (hz[i], hpFc, sampleRate), hpK).high
+                                  * response::svf (response::sOf (hz[i], lpFc, sampleRate), lpK).low);
+    return true;
+}
 
 static ModuleDescriptor dualFilterDescriptor()
 {

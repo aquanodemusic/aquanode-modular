@@ -1,6 +1,25 @@
 #include "WarmLadderModule.h"
+#include "../../Core/FilterResponse.h"
 
 using namespace aquanode;
+
+// WarmLadderCore: four one-poles, the last fed back a sample late, the
+// resonance's make-up gain after them; Input scales what goes in
+bool WarmLadderModule::magnitudeResponseDb (const float* hz, float* db, int n) const
+{
+    const double fc = juce::jlimit (10.0, sampleRate * 0.42, (double) getParameterBase (pCutoff));
+    const double g = 1.0 - std::exp (-juce::MathConstants<double>::twoPi * fc / sampleRate);
+    const double k = 4.7 * juce::jlimit (0.0, 1.0, getParameterBase (pResonance) * 0.1);
+    const double gain = getParameterBase (pInput) * 0.5 * (1.0 + 0.5 * k);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto z1 = response::zInv (hz[i], sampleRate);
+        const auto h1 = response::onePole (g, z1);
+        const auto h4 = (h1 * h1) * (h1 * h1);
+        db[i] = response::db (gain * h4 / (1.0 + k * z1 * h4));
+    }
+    return true;
+}
 
 static ModuleDescriptor warmLadderDescriptor()
 {

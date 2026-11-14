@@ -17,3 +17,101 @@ namespace aqp_alphabeta
 #include "../Host/PluginCatalog.h"
 
 AQP_DEFINE_PLUGIN (AlphaBetaGuiModule, "alphabeta", aqp_alphabeta)
+
+// the RANDOM menu (without its Variations), for the Random Plugin Preset module,
+// in either engine - as AlphaBeta's own button does it: an entry only the other
+// engine has is generated there and translated over; saved as an .abpreset
+#include "../Host/RandomPresetSources.h"
+namespace
+{
+    const bool alphaBetaRandomRegistered = aquanode::plugins::randompreset::registerSource ([]
+    {
+        aquanode::plugins::randompreset::Source s;
+        s.pluginId = "alphabeta";
+        s.name = "AlphaBeta";
+        s.lists = []
+        {
+            using namespace aqp_alphabeta;
+            aquanode::plugins::randompreset::Lists l;
+            const auto names = RandomPatch::characterNames();
+            const int nc = names.size() - 2;                 // minus "Anything" and "Super Random"
+            for (int i = 0; i < nc; ++i)
+            {
+                l.kinds.add (names[i]);
+                l.kindHeadings.add (RandomPatch::sectionBefore (i));
+            }
+            l.kinds.add ("Keys");  l.kindHeadings.add ("From the Alpha presets");
+            l.kinds.add ("FX");    l.kindHeadings.add ({});
+            l.kinds.add ("Drum");  l.kindHeadings.add ({});
+            l.defaultKind = l.kinds.size();
+            l.kinds.add ("Anything");      l.kindHeadings.add ("Surprise");
+            l.kinds.add ("Super Random");  l.kindHeadings.add ({});
+            l.engines = { "Native", "Original" };
+            return l;
+        };
+        s.roll = [] (juce::AudioProcessor& p, int kind, int, int engine, juce::uint32 seed) -> juce::String
+        {
+            using namespace aqp_alphabeta;
+            auto* ab = dynamic_cast<AlphaBetaAudioProcessor*> (&p);
+            if (ab == nullptr)
+                return {};
+            auto& st = ab->apvts;
+            const bool orig = engine == 1;
+            if (auto* e = st.getParameter (OrigP::ENGINE))
+                e->setValueNotifyingHost (orig ? 1.0f : 0.0f);
+
+            juce::Random rng ((juce::int64) seed);
+            const auto names = RandomPatch::characterNames();
+            const int nc = names.size() - 2;
+            enum { KEYS = 0, FX, DRUM, ANYTHING, SUPER };
+            const int extra = kind - nc;                     // < 0: a native character
+            auto origMode = [] (int ex) { switch (ex) { case KEYS: return 2; case FX: return 5; case DRUM: return 6; case ANYTHING: return 0; default: return -1; } };
+            juce::String name;
+            if (orig)
+            {
+                int mode = extra >= 0 ? origMode (extra) : -1;
+                if (extra < 0)
+                {
+                    const auto label = names[juce::jlimit (0, nc - 1, kind)];
+                    if (label == "Bass") mode = 1; else if (label == "Lead") mode = 3; else if (label == "Pad") mode = 4;
+                }
+                if (mode >= 0)
+                    name = OrigPanel::randomizeState (*ab, rng, mode);
+                else
+                {
+                    EngineTransfer::Snapshot keep; keep.take (st, false);
+                    name = RandomPatch::generate (st, extra < 0 ? kind : RandomPatch::superRandomIndex(), rng);
+                    EngineTransfer::nativeToOriginal (st);
+                    keep.restore();
+                }
+            }
+            else
+            {
+                if (extra < 0)              name = RandomPatch::generate (st, kind, rng);
+                else if (extra == ANYTHING) name = RandomPatch::generate (st, RandomPatch::anythingIndex(), rng);
+                else if (extra >= SUPER)    name = RandomPatch::generate (st, RandomPatch::superRandomIndex(), rng);
+                else
+                {
+                    EngineTransfer::Snapshot keep; keep.take (st, true);
+                    name = OrigPanel::randomizeState (*ab, rng, origMode (extra));
+                    EngineTransfer::originalToNative (st);
+                    keep.restore();
+                }
+            }
+            ab->setPatchName (name);
+            return name;
+        };
+        s.presetExtension = "abpreset";
+        s.presetData = [] (juce::AudioProcessor& p, const juce::String& name, juce::MemoryBlock& out)
+        {
+            auto* ab = dynamic_cast<aqp_alphabeta::AlphaBetaAudioProcessor*> (&p);
+            if (ab == nullptr)
+                return false;
+            if (name.isNotEmpty())
+                ab->setPatchName (name);
+            ab->getPresetInformation (out);
+            return out.getSize() > 0;
+        };
+        return s;
+    }());
+}

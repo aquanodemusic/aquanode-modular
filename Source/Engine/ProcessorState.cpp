@@ -69,11 +69,78 @@ struct ModuleMigration
 {
     juce::String type;
     std::vector<std::pair<juce::String, float>> set;   // knobs set after the patch's own
+    std::vector<std::pair<juce::String, juce::String>> renamed = {};   // a knob's old id -> its id now (its cables follow)
 };
 
 static ModuleMigration migrateModuleType (const juce::String& typeId, const juce::XmlElement& moduleXml)
 {
     if (typeId == "osc.feltpiano") return { "osc.piano", { { "model", 0.0f } } };
+
+    // 5.19: Dual VCO and Dual VCO Analog are one card. The old Dual VCO plays
+    // on its Oscillators engine (its knobs renamed), and an older Dual VCO
+    // Analog patch's preset number moves up one, past the new Init
+    // 5.19.2: the EQ Curve Viewer is the Periodogram (its settings carried over)
+    if (typeId == "util.eqcurve")
+    {
+        juce::String range = "96 dB", speed = "Medium", peak = "On", fft = "4096", reassign = "Off";
+        for (auto* pe : moduleXml.getChildWithTagNameIterator ("Param"))
+        {
+            const auto id = pe->getStringAttribute ("id"), v = pe->getStringAttribute ("value");
+            if (id == "range") range = v;
+            else if (id == "speed") speed = v;
+            else if (id == "peak") peak = v;
+            else if (id == "fft") fft = v;
+            else if (id == "reassign") reassign = v;
+        }
+        const float speedIndex = speed == "Fast" ? 1.0f : speed == "Slow" ? 3.0f : 2.0f;
+        const int size = fft.getIntValue();
+        const float fftIndex = size >= 8192 ? 3.0f : size >= 4096 ? 2.0f : size >= 2048 ? 1.0f : 0.0f;
+        return { "util.spectrumcompare",
+                 { { "view", 3.0f }, { "delta", 0.0f }, { "range", juce::jlimit (24.0f, 140.0f, (float) range.getIntValue()) },
+                   { "top", 6.0f }, { "speed", speedIndex }, { "hold", peak == "On" ? 1.0f : 0.0f },
+                   { "fft", fftIndex }, { "precision", reassign == "On" ? 1.0f : 0.0f } },
+                 { { "range", "_eqRange" }, { "speed", "_eqSpeed" }, { "peak", "_eqPeak" }, { "fft", "_eqFft" }, { "reassign", "_eqReassign" } } };
+    }
+
+    // 5.19.3: the Spectrogram's Max Shift (bins) is Accuracy (%, higher is stricter)
+    if (typeId == "util.spectrogram")
+    {
+        bool hasAccuracy = false, hasShift = false;
+        float shift = 1.0f;
+        for (auto* pe : moduleXml.getChildWithTagNameIterator ("Param"))
+        {
+            const auto id = pe->getStringAttribute ("id");
+            if (id == "accuracy") hasAccuracy = true;
+            if (id == "maxShift") { hasShift = true; shift = (float) pe->getStringAttribute ("value").getDoubleValue(); }
+        }
+        if (hasShift && ! hasAccuracy)
+        {
+            shift = juce::jlimit (0.1f, 4.0f, shift);
+            const float a = shift >= 1.0f ? 0.5f * (1.0f - std::log (shift) / std::log (4.0f))
+                                          : 0.5f * (1.0f - std::log10 (shift));
+            return { typeId, { { "accuracy", std::round (a * 1000.0f) * 0.1f } } };
+        }
+    }
+
+    if (typeId == "osc.dualvco")
+        return { "osc.dualvcoanalog", { { "engine", 1.0f }, { "preset", -1.0f } },
+                 { { "wave1", "oWave1" }, { "pw1", "oPw1" }, { "scale1", "oScale1" }, { "wave2", "oWave2" },
+                   { "pitch2", "oPitch2" }, { "scale2", "oScale2" }, { "fine", "oFine" }, { "level1", "oLevel1" },
+                   { "level2", "oLevel2" }, { "analog", "oAnalog" }, { "pitchMod", "oPitchMod" }, { "glide", "oGlide" } } };
+    if (typeId == "osc.dualvcoanalog")
+    {
+        bool hasEngine = false;
+        float preset = 0.0f;
+        bool hasPreset = false;
+        for (auto* pe : moduleXml.getChildWithTagNameIterator ("Param"))
+        {
+            const auto id = pe->getStringAttribute ("id");
+            if (id == "engine") hasEngine = true;
+            if (id == "preset") { preset = (float) pe->getStringAttribute ("value").getDoubleValue(); hasPreset = true; }
+        }
+        if (! hasEngine)
+            return { typeId, { { "engine", 0.0f }, { "preset", hasPreset && preset >= 0.0f ? preset + 1.0f : (hasPreset ? preset : 1.0f) } } };
+    }
     if (typeId == "osc.midpiano")  return { "osc.piano", { { "model", 1.0f } } };
     if (typeId == "osc.hardpiano") return { "osc.piano", { { "model", 2.0f } } };
 
@@ -111,6 +178,17 @@ static int renamedChoice (const juce::String& typeId, const juce::String& paramI
         { "fx.resonate", "mode", "B", 1 },        //                                     Odd
         { "osc.spectralresynth", "reassign", "Off", 0 },   // Spectral Resynthesis 5.6: Reassign Off / On,
         { "osc.spectralresynth", "reassign", "On", 1 },    // since 5.7 the Engine: Bins / Partials
+        // Spectrum Compare became the Periodogram (5.19.2): its views named by colour,
+        // Precision a Reassign switch, Hold an Envelope (Off / Slow / Hold)
+        { "util.spectrumcompare", "view", "1 + 2 + Delta", 0 },
+        { "util.spectrumcompare", "view", "1 + 2", 1 },
+        { "util.spectrumcompare", "view", "Delta Only", 2 },
+        { "util.spectrumcompare", "view", "1 Only", 3 },
+        { "util.spectrumcompare", "view", "2 Only", 4 },
+        { "util.spectrumcompare", "precision", "FFT", 0 },
+        { "util.spectrumcompare", "precision", "Reassigned", 1 },
+        { "util.spectrumcompare", "hold", "On", 2 },
+        { "util.spectrogram", "window", "Blackman-Harris", 1 },   // 5.19.3: a narrower list, "Blackman"
     };
     for (const auto& r : renamed)
         if (typeId == r.type && paramId == r.param && text == r.old)
@@ -152,6 +230,8 @@ std::unique_ptr<juce::XmlElement> AquanodeModularAudioProcessor::buildPatchXml (
 
     auto root = std::make_unique<juce::XmlElement> ("AquanodePatch");
     root->setAttribute ("version", 1);
+    // the patch's own tempo (the top bar's BPM box), used where no host gives one
+    root->setAttribute ("bpm", patchBpm.load());
 
     // the colours travel with the patch (and with the session the app and a DAW keep)
     {
@@ -160,6 +240,8 @@ std::unique_ptr<juce::XmlElement> AquanodeModularAudioProcessor::buildPatchXml (
         for (int i = 0; i < aquanode::ThemeColours::NumSlots; ++i)
             col->setAttribute (aquanode::ThemeColours::key (i), t.colour[i].toDisplayString (false));
         col->setAttribute ("grid", t.showGrid ? 1 : 0);
+        col->setAttribute ("wires", t.wireLines ? 1 : 0);
+        col->setAttribute ("leaves", t.fallingLeaves ? 1 : 0);
     }
 
     auto* modulesEl = root->createNewChildElement ("Modules");
@@ -172,6 +254,10 @@ std::unique_ptr<juce::XmlElement> AquanodeModularAudioProcessor::buildPatchXml (
         m->setAttribute ("y", inst->position.y);
         if (inst->collapsed)
             m->setAttribute ("collapsed", 1);
+        if (inst->showGraph)
+            m->setAttribute ("graph", 1);
+        if (inst->showGraph)
+            m->setAttribute ("graphView", inst->graphView);
         if (! inst->customColour.isTransparent())
             m->setAttribute ("colour", inst->customColour.toDisplayString (false));
 
@@ -290,21 +376,26 @@ void AquanodeModularAudioProcessor::applyPatchXml (const juce::XmlElement& xml,
 
     clearPatch();
     patchName = "Patch";   // a patch never stores a name; importPatchFrom* name it after its file
+    patchBpm.store (juce::jlimit (20.0, 400.0, xml.getDoubleAttribute ("bpm", 120.0)));   // older patches: 120
 
     // its colours; a patch saved before they were kept with it leaves the
     // current ones as they are
     {
         auto& t = aquanode::themeColours();
-        if (auto* col = xml.getChildByName ("Colours"))
+        if (auto* col = nestingLevel == 0 ? xml.getChildByName ("Colours") : nullptr)   // a nested Aquanode leaves the app's colours alone
         {
             for (int i = 0; i < aquanode::ThemeColours::NumSlots; ++i)
                 if (col->hasAttribute (aquanode::ThemeColours::key (i)))
                     t.colour[i] = juce::Colour::fromString (col->getStringAttribute (aquanode::ThemeColours::key (i))).withAlpha (1.0f);
             t.showGrid = col->getIntAttribute ("grid", 1) != 0;
+            // (patches from before Wire and Leaves leave them as they are)
+            if (col->hasAttribute ("wires"))  t.wireLines = col->getIntAttribute ("wires") != 0;
+            if (col->hasAttribute ("leaves")) t.fallingLeaves = col->getIntAttribute ("leaves") != 0;
         }
     }
 
     int maxId = 0;
+    std::map<int, std::vector<std::pair<juce::String, juce::String>>> renamedKnobs;   // by module: its knobs renamed on loading
 
     if (auto* modulesEl = xml.getChildByName ("Modules"))
     {
@@ -313,24 +404,35 @@ void AquanodeModularAudioProcessor::applyPatchXml (const juce::XmlElement& xml,
             const auto migration = migrateModuleType (m->getStringAttribute ("type"), *m);
             const auto typeId = migration.type;
             auto* reg = ModuleFactory::instance().find (typeId);
-            if (reg == nullptr)
-                continue;   // module type no longer registered - skip gracefully
+            if (reg == nullptr || ! mayHost (typeId))
+                continue;   // module type no longer registered (or nested too deep) - skip gracefully
 
             auto inst = std::make_shared<ModuleInstance>();
             inst->id = m->getIntAttribute ("id");
             inst->reg = reg;
-            inst->dsp = ModuleFactory::instance().createInstance (typeId);
+            {
+                const int before = creatingLevel();
+                creatingLevel() = nestingLevel;
+                inst->dsp = ModuleFactory::instance().createInstance (typeId);
+                creatingLevel() = before;
+            }
             inst->position = { m->getIntAttribute ("x"), m->getIntAttribute ("y") };
             inst->collapsed = m->getBoolAttribute ("collapsed", false);
+            inst->showGraph = m->getBoolAttribute ("graph", false);
+            inst->graphView = m->getIntAttribute ("graphView", 1);   // (Wave unless saved otherwise)
             if (m->hasAttribute ("colour"))
                 inst->customColour = juce::Colour::fromString ("ff" + m->getStringAttribute ("colour")).withAlpha (1.0f);
             maxId = juce::jmax (maxId, inst->id);
             initInstanceBuffers (*inst);
             attachModuleHooks (*inst);
 
+            if (! migration.renamed.empty())
+                renamedKnobs[inst->id] = migration.renamed;
             for (auto* pe : m->getChildWithTagNameIterator ("Param"))
             {
-                const auto paramId = pe->getStringAttribute ("id");
+                auto paramId = pe->getStringAttribute ("id");
+                for (const auto& [from, to] : migration.renamed)
+                    if (paramId == from) { paramId = to; break; }
                 const auto* spec = reg->descriptor.findParam (paramId);
                 if (spec == nullptr)
                 {
@@ -454,6 +556,9 @@ void AquanodeModularAudioProcessor::applyPatchXml (const juce::XmlElement& xml,
             pc.fromSocket = pe->getStringAttribute ("fromSocket");
             pc.toModule = pe->getIntAttribute ("toModule");
             pc.paramId = pe->getStringAttribute ("param");
+            if (const auto rk = renamedKnobs.find (pc.toModule); rk != renamedKnobs.end())
+                for (const auto& [from, to] : rk->second)
+                    if (pc.paramId == from) { pc.paramId = to; break; }
             pc.depth = juce::jlimit (-1.0f, 1.0f, (float) pe->getDoubleAttribute ("depth", 0.3));
 
             // Curve CV cables set the knob absolutely now, and start at 100 %.

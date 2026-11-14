@@ -215,7 +215,7 @@ static ModuleDescriptor analogDriftDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "osc.drift";
-    d.displayName = "Analog Drift";
+    d.displayName = "Analog";
     d.description =
         "The Oscillator with the digital precision sanded off: every voice and every unison "
         "partial wanders off pitch on its own random walk, notes start at random phase, and "

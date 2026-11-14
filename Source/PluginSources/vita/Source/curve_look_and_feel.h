@@ -29,9 +29,18 @@ class CurveLookAndFeel : public DefaultLookAndFeel {
 
     void drawCurve(Graphics& g, Slider& slider, int x, int y, int width, int height, bool active, bool bipolar);
 
+    // (Aquanode: let go when JUCE shuts down, not when the DLL unloads -
+    // fonts and looks hold DirectWrite / Direct2D objects on Windows)
     static CurveLookAndFeel* instance() {
-      static CurveLookAndFeel instance;
-      return &instance;
+      struct Holder : public DeletedAtShutdown {
+        CurveLookAndFeel object;
+        ~Holder() override { slot() = nullptr; }
+        static Holder*& slot() { static Holder* h = nullptr; return h; }
+      };
+      auto*& h = Holder::slot();
+      if (h == nullptr)
+        h = new Holder();
+      return &h->object;
     }
 
   private:

@@ -114,6 +114,11 @@ namespace aquanode::plugins
 
     // Replaces a GUI card by the patch version of its current sound.
     juce::String convertGuiToPatch (AquanodeModularAudioProcessor& patch, int guiInstanceId);
+
+    // Replaces a Random Plugin Preset module by the GUI card of the plugin it
+    // plays, holding the same sound and wired the same way; the card's
+    // instance id, or -1.
+    int openHeldPresetInPlugin (AquanodeModularAudioProcessor& patch, int instanceId);
 }
 
 //==============================================================================

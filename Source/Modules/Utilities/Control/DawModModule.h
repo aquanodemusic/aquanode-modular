@@ -2,10 +2,10 @@
 
 #include "../../Core/ModuleCore.h"
 
-// DAW Mod - a modulation source the host automates. The plugin exposes twelve
-// fixed automation parameters ("DAW Mod 1".."DAW Mod 12"); each DAW Mod module
+// DAW Mod - a modulation source the host automates. The plugin exposes 24
+// fixed automation parameters ("DAW Mod 1".."DAW Mod 24"); each DAW Mod module
 // you add claims the next free one, in the order the modules were created, and
-// shows its number in its title bar. A thirteenth instance finds no free slot,
+// shows its number in its title bar. A 25th instance finds no free slot,
 // shows "off", and silently outputs nothing rather than fighting over a slot.
 //
 // Output is the host parameter's raw 0..1 value. Patch DC Offset after it
@@ -14,7 +14,7 @@
 class DawModModule : public aquanode::SynthModule
 {
 public:
-    static constexpr int kMaxSlots = 12;
+    static constexpr int kMaxSlots = 24;   // (twelve up to 6.2)
 
     // assigned by the processor whenever the graph is rebuilt; -1 = no slot
     void setSlot (int s) { slot = s; }

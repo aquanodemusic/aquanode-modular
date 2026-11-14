@@ -106,7 +106,7 @@ public:
     {
         ModuleDescriptor d;
         d.typeId = "fx.clippreserve";
-        d.displayName = "Clip Preserve";
+        d.displayName = "Clip Drive";
         d.description = "ClipPreserve's detail-preserving clipper: Drive pushes the sound into a hard clip at "
                         "Threshold, and Preserve of what the clip cut off - high-passed (HP), optionally low-passed "
                         "(LP) - is folded back on top, so the hats and transients on a loud bass survive. A loud "

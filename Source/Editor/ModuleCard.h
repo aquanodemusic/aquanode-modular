@@ -18,6 +18,7 @@ public:
     ModuleComponent (AquanodeModularAudioProcessor& proc, PatchCanvas& canvas, int instanceId);
 
     int getInstanceId() const { return instanceId; }
+    AquanodeModularAudioProcessor& getProcessor() const { return processor; }
 
     struct SocketRef
     {
@@ -78,6 +79,21 @@ public:
     juce::Rectangle<int> convertPillArea() const;
     bool showsConvertPill() const;
 
+    // ... and the "Full Size" pill on the left of the title, on every plugin
+    // GUI card: the plugin's own window alone, at its own size (the editor's
+    // PluginFullView), with a small Return to Patch button
+    juce::Rectangle<int> fullSizePillArea() const;
+    bool showsFullSizePill() const;
+    juce::Component* getExtraContent() const { return extraContent.get(); }
+
+    // the filters' live graph: a "Graph" pill at the right of the top row
+    // shows or hides it under the card's controls (saved with the patch)
+    bool showsGraphPill() const;
+    static bool hasCurve (const aquanode::SynthModule& dsp);   // a filter's static curve (magnitudeResponseDb)
+    juce::Rectangle<int> graphPillArea() const;
+    void toggleGraph();
+    std::unique_ptr<juce::Component> makeGraph (aquanode::SynthModule& dsp);
+
     // false while collapsed, or when the knob is hidden by a visibleWhen rule.
     // The canvas asks before drawing (or hit-testing) a param cable.
     bool isKnobVisible (const juce::String& paramId) const;
@@ -120,6 +136,7 @@ private:
     std::vector<ControlEntry> controls;
     std::vector<SocketRef> sockets;
     std::unique_ptr<juce::Component> extraContent;
+    std::unique_ptr<juce::Component> graph;   // the live graph, while shown
     int headerHeight { 0 };
     std::vector<std::pair<int, juce::String>> sectionHeaders;   // y and title of each separator (rowSections)
 

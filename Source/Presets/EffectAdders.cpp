@@ -218,6 +218,124 @@ namespace
         } };
     }
 
+    Step dubEcho()
+    {
+        return { "fx.dubecho", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "time", d.range (280.0f, 520.0f));
+            s.set (id, "feedback", d.range (55.0f, 82.0f));
+            s.set (id, "tone", d.range (40.0f, 65.0f));
+            s.set (id, "drive", d.range (25.0f, 55.0f));
+            s.set (id, "mix", d.range (22.0f, 34.0f));
+        } };
+    }
+
+    Step bitcrush()
+    {
+        return { "fx.bitcrush", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "bits", d.range (7.0f, 12.0f));
+            s.set (id, "dryWet", d.range (35.0f, 70.0f));
+        } };
+    }
+
+    Step srReduce()
+    {
+        return { "fx.srreduce", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "rate", d.range (7000.0f, 16000.0f));
+            s.set (id, "dryWet", d.range (60.0f, 100.0f));
+        } };
+    }
+
+    Step drive()
+    {
+        return { "fx.drive", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.setChoice (id, "mode", d.chance (0.5f) ? "Tube" : "Tape");
+            s.set (id, "drive", d.range (18.0f, 45.0f));
+            s.set (id, "tone", d.range (-20.0f, 20.0f));
+            s.setChoice (id, "autogain", "On");
+        } };
+    }
+
+    Step compressor()
+    {
+        return { "fx.compress", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "threshold", d.range (-24.0f, -12.0f));
+            s.set (id, "ratio", d.range (2.0f, 4.0f));
+            s.set (id, "attack", d.range (8.0f, 30.0f));
+            s.set (id, "release", d.range (100.0f, 300.0f));
+            s.set (id, "makeup", d.range (2.0f, 5.0f));
+        } };
+    }
+
+    Step limiter()
+    {
+        return { "fx.limiter", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "gain", d.range (0.0f, 4.0f));
+            s.set (id, "ceiling", -0.5f);
+            s.set (id, "release", d.range (50.0f, 150.0f));
+        } };
+    }
+
+    Step granulation()
+    {
+        return { "fx.granulation", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "grains", d.range (8.0f, 16.0f));
+            s.set (id, "size", d.range (80.0f, 220.0f));
+            s.set (id, "spray", d.range (20.0f, 50.0f));
+            s.set (id, "stereo", d.range (50.0f, 90.0f));
+            s.set (id, "pitchDisp", d.range (0.0f, 15.0f));
+            s.set (id, "dryWet", d.range (25.0f, 40.0f));
+        } };
+    }
+
+    Step rotary()
+    {
+        return { "fx.rotary", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "rate", d.chance (0.5f) ? d.range (30.0f, 55.0f) : d.range (140.0f, 190.0f));   // chorale or tremolo
+            s.set (id, "drive", d.range (5.0f, 30.0f));
+        } };
+    }
+
+    Step flanger()
+    {
+        return { "fx.flanger", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "rate", d.range (0.08f, 0.35f));
+            s.set (id, "depth", d.range (40.0f, 80.0f));
+            s.set (id, "feedback", d.range (30.0f, 70.0f) * (d.chance (0.5f) ? 1.0f : -1.0f));
+            s.set (id, "dryWet", d.range (40.0f, 55.0f));
+        } };
+    }
+
+    Step autoWah()
+    {
+        return { "fx.wah", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.setChoice (id, "mode", "Auto");
+            s.set (id, "resonance", d.range (4.0f, 9.0f));
+            s.set (id, "sens", d.range (50.0f, 80.0f));
+            s.set (id, "mix", d.range (70.0f, 100.0f));
+        } };
+    }
+
+    Step chorus()
+    {
+        return { "fx.chorus", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "rate", d.range (0.2f, 0.9f));
+            s.set (id, "depth", d.range (40.0f, 70.0f));
+            s.set (id, "spread", d.range (60.0f, 100.0f));
+            s.set (id, "dryWet", d.range (35.0f, 50.0f));
+        } };
+    }
+
     // picks `count` different entries of `pool`, keeping their order
     std::vector<Step> pick (const std::vector<Step>& pool, int count, Dice& dice)
     {
@@ -403,7 +521,7 @@ const std::vector<EffectAdder>& effectAdders()
                 return v;
             }));
         v.push_back (chainAdder ("Delay",
-            "Adds an echo in front of Audio Out: a tempo Echo or a Stereo / Cross Delay.",
+            "Adds an echo in front of Audio Out: a tempo Echo or a Stereo Delay.",
             [] (Dice& d) { return std::vector<Step> { d.chance (0.5f) ? echo() : crossDelay() }; }));
         v.push_back (chainAdder ("Modulation",
             "Adds movement in front of Audio Out: two of Liquid Chorus, Ensemble, Stereo Phaser and Tape "
@@ -414,9 +532,53 @@ const std::vector<EffectAdder>& effectAdders()
             "and Spectral Freeze (evolving hold).",
             [] (Dice& d) { return pick ({ specEnhance(), specDelay(), specFreeze() }, 2 + d.index (2), d); }));
         v.push_back (chainAdder ("Color",
-            "Adds a Spectral Lock in front of Audio Out: the sound is retuned to its scale and shimmers, mixed "
+            "Adds a Sine Filterbank Retuner in front of Audio Out: the sound is retuned to its scale and shimmers, mixed "
             "in with the dry signal.",
             [] (Dice&) { return std::vector<Step> { spectralLock() }; }));
+        // the short chains
+        v.push_back (chainAdder ("Dub Tape",
+            "Adds a tape Dub Echo in front of Audio Out - deep feedback, a little drive and hiss - sometimes "
+            "with a Springer spring in front of it.",
+            [] (Dice& d)
+            {
+                std::vector<Step> v { dubEcho() };
+                if (d.chance (0.45f)) v.insert (v.begin(), springer());
+                return v;
+            }));
+        v.push_back (chainAdder ("Lo-Fi",
+            "Adds a worn, crunchy chain in front of Audio Out: two of Bitcrush, Sample Rate Reduce and Tape "
+            "Wobble.",
+            [] (Dice& d) { return pick ({ bitcrush(), srReduce(), tapeWobble() }, 2, d); }));
+        v.push_back (chainAdder ("Warm Drive",
+            "Adds a Drive (tube or tape, auto gain) into a gentle Compressor in front of Audio Out.",
+            [] (Dice&) { return std::vector<Step> { drive(), compressor() }; }));
+        v.push_back (chainAdder ("Glue",
+            "Adds a Compressor and a Limiter in front of Audio Out: everything sits together and stops "
+            "just under 0 dB.",
+            [] (Dice&) { return std::vector<Step> { compressor(), limiter() }; }));
+        v.push_back (chainAdder ("Ambient Wash",
+            "Adds a cloud of grains (Granulation) into a long reverb in front of Audio Out.",
+            [] (Dice& d) { return std::vector<Step> { granulation(), d.chance (0.5f) ? smoothHall() : aquaton() }; }));
+        v.push_back (chainAdder ("Rotary",
+            "Adds a Rotary speaker in front of Audio Out (slow chorale or fast tremolo), sometimes with a "
+            "little Drive before it.",
+            [] (Dice& d)
+            {
+                std::vector<Step> v { rotary() };
+                if (d.chance (0.5f)) v.insert (v.begin(), drive());
+                return v;
+            }));
+        v.push_back (chainAdder ("Jet Echo",
+            "Adds a Flanger into a Stereo Delay in front of Audio Out.",
+            [] (Dice&) { return std::vector<Step> { flanger(), crossDelay() }; }));
+        v.push_back (chainAdder ("Wah",
+            "Adds an envelope-following Auto Wah, and sometimes a Chorus after it, in front of Audio Out.",
+            [] (Dice& d)
+            {
+                std::vector<Step> v { autoWah() };
+                if (d.chance (0.5f)) v.push_back (chorus());
+                return v;
+            }));
         return v;
     }();
     return list;

@@ -1,6 +1,7 @@
 #include "ExtraEngines.h"
 #include "../Engine/PluginProcessor.h"
 #include "../Plugins/Host/HostedPlugin.h"
+#include "../Modules/SoundGeneration/Oscillators/WarpOscModule.h"
 
 namespace aquanode::plugins::tidebreeze { bool rollProgram (juce::AudioProcessor&, int category, juce::uint32 seed); }
 namespace aquanode::plugins::phizmo     { bool randomPreset (juce::AudioProcessor&, int style, juce::uint32 seed); }
@@ -452,6 +453,138 @@ namespace
     }
 }
 
+//==============================================================================
+// Spectra Pad - remade from a reference pad (Spectra_Pads, its first ten
+// seconds). What the analysis found, and how it is built here:
+//   * a dense cluster of soft, nearly sine tones on six notes of the major
+//     scale (root, 2, 3, 4, 5, 6 - no 7th), spread over four octaves: for C#3
+//     played, G#1 C#2 C#3 F#3 A#3 D#4 F#4 G#4 as fundamentals, their few
+//     harmonics filling in the rest (the 3rds come from the roots' 5th
+//     harmonic) -> Graphic Midi Add with that voicing into a Warp oscillator
+//     whose custom spectrum is the measured per-tone harmonic recipe
+//   * every partial a cluster of copies up to +-45 cents apart, beating
+//     slowly (the partials' levels wander +-6 dB at 0.1 - 0.5 Hz) -> 9 to 12
+//     unison voices, +-35 - 45 cents
+//   * nothing above ~1 kHz but a faint pink floor ~50 dB down -> a steep low
+//     pass near 1 kHz and a whisper of pink noise per voice
+//   * very wide (L/R correlation ~0.2 overall, ~0.6 in the bass) -> unison
+//     spread, a gentle ensemble, a hall, Stereo Width with the lows kept mono
+//   * a soft quarter-second attack, a long release
+// variation 0 = the reference as measured; 1 = the Random Preset's spread.
+juce::String buildSpectraPad (AquanodeModularAudioProcessor& p, juce::uint32 seed, float variation)
+{
+    // A remake of a reference pad (a static, very wide C# drone): measured,
+    // its strongest partials are equal-tempered notes of C# major without
+    // the 7th - C#, D#, F, F#, G#, A# - spread from G#1 to C#5, nothing much
+    // above 900 Hz, the notes beating slowly (10 - 19 cents of unison
+    // spread), a faint pink floor, wide stereo with a narrower bass, a
+    // long soft hall.
+    // Two layers of Warp oscillators play it: the loud notes, and the quiet
+    // ones 7 dB down. Variation 0 is the measured patch; the Random Preset
+    // engine varies the voicing, spread and space around it.
+    PatchSketch s (p);
+    Dice d (seed ^ 0x5bec7a11u);
+    auto vary = [&d, variation] (float centre, float spread) { return centre + variation * d.range (-spread, spread); };
+
+    // over the played root (which sounds in both layers): for C#3 the loud
+    // layer adds G#1 C#2 F#3 C#4 D#4 F#4 G#4, the quiet one D#2 A#2 F3 A#3 F4 A#4 C#5
+    struct Voicing { std::vector<int> loud, quiet; };
+    static const std::vector<Voicing> voicings {
+        { { -17, -12, 5, 12, 14, 17, 19 }, { -10, -3, 4, 9, 16, 21, 24 } },   // the reference
+        { { -12, -5, 7, 12, 14, 16, 19 },  { -17, 4, 9, 21, 24 } },     // 6/9, the 3rd on top
+        { { -17, -12, 2, 7, 12, 14, 19 },  { -5, 9, 16, 21, 26 } },     // sus 2, open
+        { { -12, -5, 5, 12, 14, 17, 21 },  { -17, 2, 9, 19, 24 } },     // sus 4, a 13th
+        { { -17, -12, 7, 9, 12, 16, 19 },  { -5, 4, 14, 21, 23 } } };   // with the major 7th
+    const auto& v = voicings[(size_t) (variation <= 0.0f ? 0 : d.index ((int) voicings.size()))];
+
+    const int env = s.add ("util.adsr", 0);
+    s.set (env, "attack", juce::jmax (30.0f, vary (260.0f, 180.0f)));
+    s.set (env, "decay", 3000.0f);
+    s.set (env, "sustain", 1.0f);
+    s.set (env, "release", juce::jmax (800.0f, vary (2600.0f, 1400.0f)));
+
+    // the tone: a few harmonics, as measured on the reference's partials
+    // (dB re the fundamental); varied a little per patch, the same for both layers
+    std::vector<std::complex<float>> specA (1), specB (1);
+    {
+        static const float recipeDb[9] = { 0.0f, -11.0f, -13.0f, -21.0f, -15.0f, -25.0f, -36.0f, -30.0f, -40.0f };
+        for (int h = 1; h <= 9; ++h)
+        {
+            const float dbA = recipeDb[h - 1] + (h > 1 ? variation * d.range (-4.0f, 4.0f) : 0.0f);
+            const float dbB = dbA + (h > 1 ? d.range (-3.0f, 3.0f) : 0.0f);
+            const float ph = d.range (0.0f, juce::MathConstants<float>::twoPi);
+            specA.push_back (std::polar (juce::Decibels::decibelsToGain (dbA), ph));
+            specB.push_back (std::polar (juce::Decibels::decibelsToGain (dbB), ph));
+        }
+    }
+    const float detune = juce::jlimit (30.0f, 90.0f, vary (52.0f, 14.0f));
+    const float blend = juce::jlimit (40.0f, 100.0f, vary (70.0f, 12.0f));
+    const int unison = variation <= 0.0f ? 7 : 6 + d.index (3);
+
+    const int sum = s.add ("util.polysum", 3);
+    s.set (sum, "amount", 0.35f);
+
+    auto layer = [&] (const std::vector<int>& chord, float volume, int column)
+    {
+        const int midiAdd = addChord (s, column, chord);
+        const int osc = s.add ("osc.warp", column + 1);
+        s.setChoice (osc, "wave", "Custom");
+        s.set (osc, "shape", 0.0f);
+        if (auto* w = dynamic_cast<WarpOscModule*> (s.dsp (osc)))
+            w->setCustomSpectra (specA, specB);
+        s.set (osc, "unison", (float) unison);
+        s.set (osc, "detune", detune);
+        s.set (osc, "spread", 100.0f);
+        s.set (osc, "blend", blend);
+        s.set (osc, "volume", volume);
+        s.setChoice (osc, "morphType", "None");
+        s.wire (env, "modOut", osc, "envIn");
+        s.wire (midiAdd, "midiOut", osc, "addMidiIn");
+        s.wire (osc, "audioOut", sum, "audioIn");
+    };
+    layer (v.loud, 0.7f, 0);
+    layer (v.quiet, 0.7f * juce::Decibels::decibelsToGain (vary (-7.0f, 2.0f)), 0);
+
+    // the faint pink floor, per voice - joining after the lowpasses (it is
+    // flat right up to 12 kHz in the reference, some 50 dB down)
+    const int noise = s.add ("osc.noise", 1);
+    s.setChoice (noise, "type", "Pink");
+    s.set (noise, "level", juce::jlimit (0.0f, 1.0f, vary (0.004f, 0.002f)));
+    const int noiseAmp = s.add ("util.volume", 2);
+    s.wire (noise, "audioOut", noiseAmp, "audioIn");
+    s.wire (env, "modOut", noiseAmp, "volMod");
+    const int noiseSum = s.add ("util.polysum", 3);
+    s.set (noiseSum, "amount", 0.5f);
+    s.wire (noiseAmp, "audioOut", noiseSum, "audioIn");
+
+    // nothing much above 900 Hz: two 24 dB lowpasses (48 dB/oct), after the sum
+    // (no chorus: its short delays comb the bass away - the unison beats instead)
+    Chain c { s, sum };
+    const float cutoff = vary (800.0f, 150.0f);
+    for (int k = 0; k < 2; ++k)
+    {
+        const int lp = s.add ("filter.lowpass", 4);
+        s.set (lp, "cutoff", cutoff);
+        s.set (lp, "resonance", 0.0f);
+        s.setChoice (lp, "slope", "24 dB/oct");
+        c.then (lp);
+    }
+    const int h = s.add ("fx.smoothhall", 5);
+    s.wire (noiseSum, "audioOut", h, "audioIn");
+    s.set (h, "time", vary (4.5f, 1.5f));
+    s.set (h, "preDelay", vary (25.0f, 15.0f));
+    s.set (h, "highDamp", vary (5500.0f, 1500.0f));
+    s.set (h, "dryWet", vary (28.0f, 8.0f));
+    c.then (h);
+    const int width = s.add ("fx.stereowidth", 5);
+    s.set (width, "width", vary (150.0f, 15.0f));
+    s.set (width, "bassMono", vary (70.0f, 20.0f));
+    c.then (width);
+    c.finish (6, 0.3f);   // (as loud as the other engines' pads)
+    s.layout();
+    return variation <= 0.0f ? "Spectra Pad (Reference)" : "Spectra Pad";
+}
+
 const std::vector<ExtraEngine>& extraEngines()
 {
     static const std::vector<ExtraEngine> list = []
@@ -467,6 +600,8 @@ const std::vector<ExtraEngine>& extraEngines()
         add ("Psychill", "Arp",  [] (auto& p, auto seed) { return buildPsy (p, seed, 2); });
 
         add ("Slow FM", "Pad",  [] (auto& p, auto seed) { return buildSlowFM (p, seed, 0); });
+        // (one tap in five builds the measured remake itself, "Spectra Pad (Reference)")
+        add ("Spectra", "Pad",  [] (auto& p, auto seed) { return buildSpectraPad (p, seed, Dice (seed ^ 0x2e7au).chance (0.2f) ? 0.0f : 1.0f); });
         add ("Slow FM", "Keys", [] (auto& p, auto seed) { return buildSlowFM (p, seed, 1); });
         add ("Slow FM", "Bell", [] (auto& p, auto seed) { return buildSlowFM (p, seed, 2); });
 

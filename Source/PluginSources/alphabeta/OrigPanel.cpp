@@ -373,6 +373,13 @@ namespace {
 }
 
 juce::String OrigPanel::randomize(juce::Random& rng, int mode) {
+    presetBox.setSelectedId(0, juce::dontSendNotification);
+    return randomizeState(proc, rng, mode);
+}
+
+// the randomizer itself, on the processor alone - also for Aquanode Modular's
+// Random Plugin Preset module, which has no panel
+juce::String OrigPanel::randomizeState(AlphaBetaAudioProcessor& proc, juce::Random& rng, int mode) {
     auto& a = proc.apvts;
     auto set = [&](const juce::String& id, float real) {
         if (auto* prm = a.getParameter(id)) {
@@ -382,7 +389,6 @@ juce::String OrigPanel::randomize(juce::Random& rng, int mode) {
         }
     };
     auto get = [&](const juce::String& id) { return a.getRawParameterValue(id)->load(); };
-    presetBox.setSelectedId(0, juce::dontSendNotification);
     static const char* words[] = { "Glass", "Tide", "Velvet", "Quartz", "Haze", "Drift", "Cathode", "Liquid", "Orbit", "Nimbus",
                                    "Amber", "Silk", "Echo", "Frost", "Ember", "Lumen", "Hollow", "Prism", "Dune", "Coral" };
     auto word = [&]() { return juce::String(words[rng.nextInt(20)]); };

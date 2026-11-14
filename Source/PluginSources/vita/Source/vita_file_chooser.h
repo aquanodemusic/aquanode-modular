@@ -8,8 +8,16 @@
 enum class VitaBrowseMode { kOpen, kSave, kDirectory };
 
 inline std::unique_ptr<FileChooser>& vitaCurrentChooser() {
-  static std::unique_ptr<FileChooser> chooser;
-  return chooser;
+  // (Aquanode: a chooser left over is let go when JUCE shuts down, not when the DLL unloads)
+  struct Holder : public DeletedAtShutdown {
+    std::unique_ptr<FileChooser> chooser;
+    ~Holder() override { slot() = nullptr; }
+    static Holder*& slot() { static Holder* h = nullptr; return h; }
+  };
+  auto*& h = Holder::slot();
+  if (h == nullptr)
+    h = new Holder();
+  return h->chooser;
 }
 
 inline void vitaBrowse(Component* guard, VitaBrowseMode mode, const String& title, const File& start,

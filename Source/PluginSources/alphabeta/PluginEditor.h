@@ -104,6 +104,7 @@ public:
     void resized() override;
     // mode: 0 anything, 1..6 category (OrigRandom::kCatNames), 7 mutate current, 8 blend two bank presets
     juce::String randomize(juce::Random& rng, int mode);   // returns a patch name
+    static juce::String randomizeState(AlphaBetaAudioProcessor& p, juce::Random& rng, int mode);   // the same, without the panel
     static juce::StringArray randomModeNames();
     CrtMatrix& matrix() { return crt; }
     void loadBankPreset(int index);

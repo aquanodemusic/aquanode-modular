@@ -15,6 +15,9 @@ static ModuleDescriptor dualVcoDescriptor()
     d.section = ModuleSection::Oscillator;
     d.family = ModuleFamily::Vintage;
     d.sidebarOrder = 40;
+    // 5.19: the Oscillators engine of Dual VCO (osc.dualvcoanalog) - its old
+    // patches open there; this card is no longer listed
+    d.listedInSidebar = false;
     d.sockets = {
         modIn    ("pitchIn",   "Pitch In"),
         midiIn   ("addMidiIn", "Add Midi In"),

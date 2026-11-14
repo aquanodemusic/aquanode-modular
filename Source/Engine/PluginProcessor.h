@@ -21,6 +21,11 @@ struct ModuleInstance
     // and gets saved with the patch alongside the position.
     bool collapsed { false };
 
+    // editor-only: the card shows its live graph (the filters' visualizer),
+    // saved with the patch when on
+    bool showGraph { false };
+    int graphView { 1 };   // which of its graphs (Clip Preserve, Spline Folder: 0 Spectrum, 1 Wave, 2 Wave at a fixed -1..1 height)
+
     // editor-only: a colour of its own for this one card (transparent = the
     // module type's colour), saved with the patch only when set
     juce::Colour customColour;
@@ -91,10 +96,12 @@ struct ParamCableInfo
 
 //==============================================================================
 class AquanodeModularAudioProcessor : public juce::AudioProcessor,
-                                      public juce::ChangeBroadcaster
+                                      public juce::ChangeBroadcaster,
+                                      public aquanode::TempoRequester
 {
 public:
     AquanodeModularAudioProcessor();
+    int debugLatency() const { return patchLatency.load (std::memory_order_relaxed); }   // (tests)
     ~AquanodeModularAudioProcessor() override;
 
     //=== AudioProcessor =======================================================
@@ -123,7 +130,8 @@ public:
 
     //=== patch model (message thread) =========================================
     int addModule (const juce::String& typeId, juce::Point<int> position);
-    void removeModule (int instanceId);                 // removes touching cables too
+    void removeModule (int instanceId);                 // removes touching cables too (and the cards linked to it)
+    bool removingLinked { false };
     int cloneModule (int instanceId);                   // params + sample, no cables
     void setModulePosition (int instanceId, juce::Point<int> position);
 
@@ -171,6 +179,27 @@ public:
     // its file. Message thread only.
     juce::String patchName { "Init" };
 
+    // Aquanode Modular inside itself: 0 for the app, 1 for one on a card in its
+    // patch, 2 for one inside that, and so on to 4 - which hosts no further one:
+    // five layers in all (6.2; three before). While a patch creates its
+    // modules, creatingLevel() says whose they are, so a nested one knows how
+    // deep it sits.
+    static constexpr int kMaxNestingLevel = 4;
+    int nestingLevel { 0 };
+    static int& creatingLevel() { static thread_local int level = 0; return level; }
+    bool mayHost (const juce::String& typeId) const { return typeId != "plugin.aquanode" || nestingLevel < kMaxNestingLevel; }
+
+    // the top bar's BPM box: the patch's tempo wherever no host gives one
+    // (the standalone app, Android); saved with the patch
+    std::atomic<double> patchBpm { 120.0 };
+    // a tempo asked for from inside while a host sets the tempo: handed on to that host if it is an
+    // Aquanode patch (takeTempoRequest); a DAW's tempo stays the DAW's
+    std::atomic<double> tempoRequest { 0.0 };
+    double takeTempoRequest() override { return tempoRequest.exchange (0.0, std::memory_order_relaxed); }
+    // what the last block ran at, and whether a host set it (the box then shows it)
+    std::atomic<double> currentBpm { 120.0 };
+    std::atomic<bool> hostGivesBpm { false };
+
     // On-screen keyboard (the bottom keyboard every build shows, toggled by
     // the Keys button). The editor attaches a MidiKeyboardComponent to this
     // state; processBlock merges its events into the incoming MIDI so clicks
@@ -201,6 +230,7 @@ public:
     float uiKeyZoom { 0.0f };              // the on-screen keys' width zoom (0 = not read from the settings yet)
     int uiKeyPinch { -1 };                 // two fingers zoom the keys (1) or play (0); -1 = not read yet
     bool uiRegionSelect { false };         // the top bar's Region Select
+    bool uiMoveOnly { false };             // the top bar's Move Only
     juce::StringArray uiExpandedHeaders;   // sidebar categories left open
 
     // set by generatePatch: the next editor to open zooms to fit the whole
@@ -384,6 +414,26 @@ private:
 
     void rebuildGraph();
     void purgeRetired();
+    // the patch's delay, reported to the host so a DAW lines the track up: the
+    // longest chain of late modules (FFTs, hosted plugins and their own
+    // latency) to an Audio Out, plus Soft Clip's 31 samples while it is on.
+    // The audio thread works it out every block (a knob or a freshly loaded
+    // plugin changes it without a new graph); the watch tells the host.
+    std::atomic<int> patchLatency { 0 };
+    struct LatencyWatch : juce::Timer
+    {
+        explicit LatencyWatch (AquanodeModularAudioProcessor& p) : owner (p) { startTimerHz (5); }
+        ~LatencyWatch() override { stopTimer(); }
+        void timerCallback() override
+        {
+            const int wanted = owner.patchLatency.load (std::memory_order_relaxed);
+            if (owner.getLatencySamples() != wanted)
+                owner.setLatencySamples (wanted);
+        }
+        AquanodeModularAudioProcessor& owner;
+    };
+    std::unique_ptr<LatencyWatch> latencyWatch;
+    std::vector<int> latencyScratch;       // audio thread
     void clearPatch();
     static void initInstanceBuffers (ModuleInstance& inst);
 
@@ -450,9 +500,10 @@ private:
     std::vector<CableInfo> cables;
     std::vector<ParamCableInfo> paramCables;
 
-    // twelve host-automatable modulation slots, claimed by DAW Mod modules
-    std::array<juce::AudioParameterFloat*, 12> dawModParams { };
-    std::array<float, 12> dawModSnapshot { };   // audio thread: one read per block
+    // 24 host-automatable modulation slots (12 up to 6.2: the new ones come after,
+    // so a host's automation of the first twelve stays where it was), claimed by DAW Mod modules
+    std::array<juce::AudioParameterFloat*, 24> dawModParams { };
+    std::array<float, 24> dawModSnapshot { };   // audio thread: one read per block
     juce::uint64 audioLastGraphSerial { 0 };   // audio thread only: param-mod zeroing on graph swap
     int nextInstanceId { 1 };
 

@@ -60,34 +60,31 @@ namespace
             { "Audio Routing",   { "io.audioIn", "io.audioOut" } },
             { "MIDI",            { "io.keyboardmidi", "io.midicontrols", "io.midilearn" } } };
         static const std::vector<ModuleGroup> oscillators {
-            { "Oscillators",     { "osc.basic", "osc.additive", "osc.complex", "osc.drift", "osc.dualvco", "osc.pd",
-                                   "osc.pwmosc", "osc.warp", "osc.unison", "osc.formant", "osc.acid303" } },
+            { "Oscillators",     { "osc.basic", "osc.additive", "osc.complex", "osc.drift", "osc.dualvco", "osc.dualvcoanalog", "osc.pd",
+                                   "osc.pwmosc", "osc.warp", "osc.unison", "osc.formant", "osc.acid303", "osc.randompreset" } },
             { "Wavetables",      { "osc.wavetable", "osc.chordwavetable", "osc.transwave" } },
             { "FM",              { "osc.dxop" } },
-            { "Physical Models", { "osc.bowed", "osc.pluck", "osc.piano", "osc.grand",
-                                   "osc.wind", "osc.droplets", "osc.modaldrum" } },
-            { "Drums",           { "osc.clap", "osc.snare", "osc.kick", "osc.hats" } },
-            { "Samples & Grains", { "osc.sampler", "osc.granulate" } },
-            { "Resynthesis",     { "osc.spectralresynth", "osc.resynthpiano" } },
+            { "Physical Models", { "osc.bowed", "osc.pluck", "osc.wind", "osc.droplets" } },
+            { "Piano",           { "osc.piano", "osc.resynthpiano", "osc.grand" } },
+            { "Drums",           { "osc.clap", "osc.snare", "osc.kick", "osc.hats", "osc.modaldrum" } },
+            { "Samples",         { "osc.sampler", "osc.multisample", "osc.granulate", "osc.spectralresynth" } },
             { "Noise",           { "osc.noise" } } };
         static const std::vector<ModuleGroup> filters {
-            { "Filters",         { "filter.lowpass", "filter.highpass", "filter.notch", "filter.svf", "filter.warmladder", "filter.ladder",
+            { "Filters",         { "filter.lowpass", "filter.highpass", "filter.bandpass", "filter.notch", "filter.svf", "filter.warmladder", "filter.ladder",
                                    "filter.dualfilter", "filter.aquafilter", "filter.formant" } },
-            { "EQ",              { "filter.bell", "filter.belleq", "filter.shelfeq", "filter.resonance" } },
+            { "EQ",              { "filter.bell", "filter.belleq", "filter.shelfeq", "filter.programeq", "filter.resonance" } },
             { "Combs & Pitch",   { "filter.combfilter", "fx.centercomb", "fx.pitcheq" } } };
         static const std::vector<ModuleGroup> effects {
-            { "Delays",          { "fx.delay", "fx.freedelay", "fx.echo", "fx.crossdelay", "fx.adelaysr" } },
-            { "Reverbs",         { "fx.reverb", "fx.aquaton", "fx.smoothhall", "fx.springer", "fx.irforge" } },
+            { "Delays",          { "fx.delay", "fx.freedelay", "fx.echo", "fx.dubecho", "fx.crossdelay", "fx.adelaysr" } },
+            { "Reverbs",         { "fx.reverb", "fx.aquaton", "fx.smoothhall", "fx.springer", "fx.irforge", "fx.convolver" } },
             { "Grains",          { "fx.granulation" } },
             { "Modulation",      { "fx.chorus", "fx.liquidchor", "fx.ensemble", "fx.flanger", "fx.phaser", "fx.wah", "fx.stereophaser",
-                                   "fx.tapewobble", "fx.anyfm" } },
-            { "Pitch",           { "fx.pitchshift" } },
-            { "Distortion",      { "fx.drive", "fx.clippreserve", "fx.bitcrush", "fx.srreduce", "fx.waveshaper" } },
-            { "Dynamics",        { "fx.compress", "fx.sidechaincomp", "fx.threebandcomp", "fx.limiter" } },
+                                   "fx.tapewobble", "fx.anyfm", "fx.rotary", "fx.circulator" } },
+            { "Pitch",           { "fx.pitchshift", "fx.spectrallock" } },
+            { "Distortion",      { "fx.drive", "fx.clippreserve", "fx.bitcrush", "fx.srreduce", "fx.waveshaper", "fx.splinefold" } },
+            { "Dynamics",        { "fx.compress", "fx.opto", "fx.fet", "fx.sidechaincomp", "fx.threebandcomp", "fx.limiter", "fx.clipfold" } },
             { "Resonators",      { "fx.resonate", "fx.resonate5", "fx.vocode" } },
-            { "Stereo & Bands",  { "fx.stereowidth", "effect.bandsplitter", "fx.precision" } },
-            { "Spectral",        { "fx.spectrallock" } },
-            { "VST3",            { "fx.externalplugin" } } };
+            { "Stereo & Bands",  { "fx.stereowidth", "effect.bandsplitter", "fx.precision" } } };
         static const std::vector<ModuleGroup> utilities {
             { "Envelopes",       { "util.adsr", "util.analogeg", "util.curveenv", "util.dxenv", "util.dxpitcheg",
                                    "util.envfollow" } },
@@ -98,10 +95,12 @@ namespace
             { "Sequencers & Clocks", { "util.clock", "util.euclid", "util.stepseq", "util.gate" } },
             { "Control",         { "util.curvecv", "util.dcoffset", "util.samplehold", "util.slew", "util.quantize",
                                    "util.dawmod", "util.keytrack", "util.logic", "util.vector" } },
-            { "Audio Tools",     { "util.volume", "util.mixer", "util.panning", "util.crossfade", "util.ringmod", "util.splitter",
-                                   "util.thru", "util.polysum", "util.record", "util.dcblock" } },
+            { "Audio Tools",     { "util.volume", "util.mixer", "util.panning", "util.crossfade", "util.abswitch", "util.latency",
+                                   "util.ringmod", "util.splitter", "util.thru", "util.polysum", "util.record", "util.dcblock" } },
             { "Routing",         { "util.reroutesend", "util.reroutereturn", "util.macro" } },
-            { "Analysis",        { "util.spectrogram", "util.spectrumcompare", "util.tuner" } } };
+            { "Analysis",        { "util.spectrogram", "util.spectrumcompare", "util.waveform", "util.tuner", "util.inspector", "util.chordname" } },
+            { "Notes",           { "util.text" } },
+            { "VST3",            { "fx.externalplugin" } } };   // (6.2.1: here, as it hosts synths as well as effects)
         switch (section)
         {
             case ModuleSection::InputOutput: return inputOutput;
@@ -120,18 +119,18 @@ namespace
         const auto& id = d.typeId;
         if (d.isPluginModule())
             return d.displayName.upToFirstOccurrenceOf (" - ", false, false);   // the plugin it comes from
-        if (id.startsWith ("fx.spec"))
-            return "Spectral";
         for (const auto& g : groupsOf (d.section))
             for (const char* t : g.typeIds)
                 if (id == t)
                     return g.name;
+        if (id.startsWith ("fx.spec"))
+            return "Spectral";
         const auto lower = id.toLowerCase();
         struct Hint { const char* word; const char* group; };
         static const Hint hints[] = {
             { "env", "Envelopes" }, { "lfo", "LFOs" }, { "midi", "MIDI" }, { "arp", "MIDI" }, { "seq", "Sequencers & Clocks" },
             { "delay", "Delays" }, { "echo", "Delays" }, { "verb", "Reverbs" }, { "hall", "Reverbs" },
-            { "comp", "Dynamics" }, { "eq", "EQ" }, { "piano", "Physical Models" }, { "drum", "Drums" },
+            { "comp", "Dynamics" }, { "eq", "EQ" }, { "piano", "Piano" }, { "drum", "Drums" },
             { "wavetable", "Wavetables" }, { "chorus", "Modulation" }, { "phaser", "Modulation" } };
         for (const auto& h : hints)
             if (lower.contains (h.word))
@@ -139,14 +138,24 @@ namespace
         return "More";
     }
 
-    int groupOrder (ModuleSection section, const juce::String& group)
+    // the GUI type id of the plugin a plugin module comes from
+    // ("plugin.springer.coil" -> "plugin.springer"), by the catalog
+    juce::String pluginOfModule (const ModuleDescriptor& d)
     {
-        const auto& groups = groupsOf (section);
-        for (size_t i = 0; i < groups.size(); ++i)
-            if (group == groups[i].name)
-                return (int) i;
-        return group == "Spectral" ? 900 : 1000;
+        juce::String best;
+        for (const auto& entry : aquanode::plugins::catalog())
+            if (d.typeId.startsWith (entry.guiTypeId + ".") && entry.guiTypeId.length() > best.length())
+                best = entry.guiTypeId;
+        if (best.isEmpty())   // else by its name ("Springer - Coil")
+        {
+            const auto name = d.displayName.upToFirstOccurrenceOf (" - ", false, false).trim();
+            for (const auto& entry : aquanode::plugins::catalog())
+                if (entry.name.equalsIgnoreCase (name))
+                    return entry.guiTypeId;
+        }
+        return best;
     }
+
 
     juce::String sectionTitle (ModuleSection section)
     {
@@ -155,6 +164,27 @@ namespace
              : section == ModuleSection::Utility ? "Utilities"
              : juce::String (sectionName (section));
     }
+}
+
+//==============================================================================
+juce::String sidebar_groups::groupOf (const aquanode::ModuleDescriptor& d) { return ::groupOf (d); }
+
+juce::StringArray sidebar_groups::groupNames (aquanode::ModuleSection section)
+{
+    juce::StringArray names;
+    for (const auto& g : groupsOf (section))
+        names.add (g.name);
+    return names;
+}
+
+bool sidebar_groups::isListedInGroup (const juce::String& typeId)
+{
+    for (auto section : { ModuleSection::InputOutput, ModuleSection::Oscillator, ModuleSection::Filter, ModuleSection::Effect, ModuleSection::Utility })
+        for (const auto& g : groupsOf (section))
+            for (const char* t : g.typeIds)
+                if (typeId == t)
+                    return true;
+    return false;
 }
 
 juce::Colour SidebarComponent::textColour()
@@ -270,7 +300,19 @@ void SidebarHeader::resized()
 
 void SidebarHeader::paint (juce::Graphics& g)
 {
-    g.fillAll (themeColours().get (ThemeColours::Sidebar));
+    if (themeColours().glass)
+    {
+        // Glass: frosted, over the jungle the editor draws behind
+        g.fillAll (themeColours().get (ThemeColours::Sidebar).withAlpha (0.58f));
+        g.fillAll (juce::Colours::white.withAlpha (0.06f));
+        const auto b = getLocalBounds().toFloat();
+        juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.12f), 0.0f, b.getY(),
+                                    juce::Colours::white.withAlpha (0.0f), 0.0f, b.getBottom(), false);
+        g.setGradientFill (sheen);
+        g.fillRect (b);
+    }
+    else
+        g.fillAll (themeColours().get (ThemeColours::Sidebar));
 
     // a small palette mark on the right: the hint that a tap opens the colours
     auto row = logoArea;
@@ -305,6 +347,14 @@ void SidebarHeader::paint (juce::Graphics& g)
         }
         drawWaterRing (g, ringBox);
         row.removeFromLeft (4);
+    }
+
+    // Glass: Soundscape's leaf before the name
+    if (themeColours().glass)
+    {
+        const float lh = juce::jmin ((float) row.getHeight() * 0.7f, 20.0f);
+        auto leaf = row.removeFromLeft ((int) (lh * 1.2f) + 4).toFloat().withSizeKeepingCentre (lh * 1.2f, lh);
+        glass::leafMark (g, leaf, glass::pal (ThemeColours::Oscillator).brighter (0.2f));
     }
 
     // the name, in the colours of the module types it holds, as big as fits on one line
@@ -556,13 +606,15 @@ void SidebarComponent::buildRows()
         return expandedHeaders.contains (key);
     };
 
-    // a list of modules with its groups' names between them (only when there is more than one group)
-    auto emitGrouped = [&] (const std::vector<const RegisteredModule*>& list, juce::Colour labelColour)
+    // a list of modules with its groups' names between them (only when there
+    // is more than one group); each group's name folds its modules away too
+    auto emitGrouped = [&] (const std::vector<const RegisteredModule*>& list, juce::Colour labelColour, const juce::String& keyBase)
     {
         juce::StringArray groups;
         for (const auto* r : list)
             groups.addIfNotAlreadyThere (groupOf (r->descriptor));
         juce::String last;
+        bool open = true;
         for (const auto* r : list)
         {
             const auto g = groupOf (r->descriptor);
@@ -570,23 +622,22 @@ void SidebarComponent::buildRows()
             {
                 Row label { { 16, y + 3, contentWidth - 26, 16 }, g, {}, labelColour };
                 label.isSubLabel = true;
+                label.headerKey = keyBase + "." + g;
+                open = expandedHeaders.contains (label.headerKey);
                 rows.push_back (label);
                 y += 21;
                 last = g;
             }
+            if (! open)
+                continue;
             rows.push_back ({ { 22, y, contentWidth - 32, 18 },
                               r->descriptor.displayName, r->descriptor.typeId, juce::Colours::white });
             y += 20;
         }
     };
 
-    struct PluginGroup
-    {
-        ModuleSection section;
-        juce::String title;
-        std::vector<const RegisteredModule*> rows;
-    };
-    std::vector<PluginGroup> pluginGroups;
+    // every plugin's own modules ("Aquanova - Oscillator"), listed under it
+    std::map<juce::String, std::vector<const RegisteredModule*>> pluginModules;   // by the plugin's GUI type id
 
     for (const auto section : allSections())
     {
@@ -597,48 +648,52 @@ void SidebarComponent::buildRows()
         // thing are grouped ("Envelopes", "Reverbs"), and listed A-Z. The
         // modules the plugins are taken apart into ("Aquanova - Oscillator")
         // get a category of their own further down.
-        std::vector<const RegisteredModule*> plain, fromPlugins;
+        std::vector<const RegisteredModule*> plain;
         for (const auto& r : ModuleFactory::instance().all())
         {
             if (r.descriptor.section != section || ! r.descriptor.listedInSidebar)
                 continue;
             if (r.descriptor.isPluginModule())
-                fromPlugins.push_back (&r);
+                pluginModules[pluginOfModule (r.descriptor)].push_back (&r);   // (in section order: this loop runs I/O, sound generation, filters...)
             else
                 plain.push_back (&r);
         }
 
-        // by name - or, for a module listed after another, right behind that one
-        auto sortName = [] (const ModuleDescriptor& d)
-        {
-            if (d.listedAfter.isNotEmpty())
-                if (auto* after = ModuleFactory::instance().find (d.listedAfter))
-                    return after->descriptor.displayName + " ";
-            return d.displayName;
-        };
+        // by name, A-Z (every list in the sidebar is)
+        auto sortName = [] (const ModuleDescriptor& d) { return d.displayName; };
         auto byName = [sortName] (const RegisteredModule* a, const RegisteredModule* b)
         {
             return sortName (a->descriptor).compareNatural (sortName (b->descriptor)) < 0;
         };
-        auto byGroup = [section, byName] (const RegisteredModule* a, const RegisteredModule* b)
+        // the groups A-Z too (any left over, "More", at the end)
+        auto byGroup = [byName] (const RegisteredModule* a, const RegisteredModule* b)
         {
             const auto ga = groupOf (a->descriptor), gb = groupOf (b->descriptor);
-            const int oa = groupOrder (section, ga), ob = groupOrder (section, gb);
-            if (oa != ob) return oa < ob;
+            const bool ma = ga == "More", mb = gb == "More";
+            if (ma != mb) return mb;
             if (ga != gb) return ga.compareNatural (gb) < 0;
             return byName (a, b);
         };
         std::sort (plain.begin(), plain.end(), byGroup);
-        std::sort (fromPlugins.begin(), fromPlugins.end(), byGroup);
+        for (auto& [gui, list] : pluginModules)   // (each plugin's own: by kind - synth, filter, effect, utility - then name)
+            std::stable_sort (list.begin(), list.end(), [] (const RegisteredModule* a, const RegisteredModule* b)
+            {
+                auto rank = [] (ModuleSection sec)
+                {
+                    return sec == ModuleSection::Oscillator ? 0 : sec == ModuleSection::Filter ? 1
+                         : sec == ModuleSection::Effect ? 2 : sec == ModuleSection::Utility ? 3 : 4;
+                };
+                const int ra = rank (a->descriptor.section), rb = rank (b->descriptor.section);
+                if (ra != rb) return ra < rb;
+                return a->descriptor.displayName.compareNatural (b->descriptor.displayName) < 0;
+            });
 
-        if (header ("section." + juce::String ((int) section), title, sectionColour (section)))
+        const auto key = "section." + juce::String ((int) section);
+        if (header (key, title, sectionColour (section)))
         {
-            emitGrouped (plain, sectionColour (section));
+            emitGrouped (plain, sectionColour (section), key);
             y += 8;
         }
-
-        if (! fromPlugins.empty())
-            pluginGroups.push_back ({ section, title, std::move (fromPlugins) });
     }
 
     // Plugins: the plugins merged into Aquanode Modular, all in one block.
@@ -670,15 +725,28 @@ void SidebarComponent::buildRows()
         y += 8;
     }
 
-    // then, after the Plugins block, the same categories for the modules the
-    // plugins are taken apart into, in the same order
-    for (auto& group : pluginGroups)
+    // Plugin Modules: the modules the plugins are taken apart into, one
+    // folding group per plugin (A-Z), inside each its synth first, then its
+    // filters, effects and utilities
     {
-        const juce::String pluginTitle = group.section == ModuleSection::Oscillator ? "Plugin Generators"
-                                       : "Plugin " + group.title;
-        if (header ("plugins." + juce::String ((int) group.section), pluginTitle, pluginSectionColour()))
+        std::vector<const aquanode::plugins::CatalogEntry*> byName;
+        for (const auto& entry : aquanode::plugins::catalog())
+            byName.push_back (&entry);
+        std::sort (byName.begin(), byName.end(), [] (auto* a, auto* b) { return a->name.compareNatural (b->name) < 0; });
+        std::vector<const RegisteredModule*> all;
+        for (const auto* entry : byName)
+            if (const auto found = pluginModules.find (entry->guiTypeId); found != pluginModules.end())
+            {
+                for (auto* m : found->second)
+                    all.push_back (m);
+                pluginModules.erase (found);
+            }
+        for (auto& [gui, list] : pluginModules)   // (any whose plugin is not in the catalog: at the end)
+            for (auto* m : list)
+                all.push_back (m);
+        if (! all.empty() && header ("plugins.modules", "Plugin Modules", pluginSectionColour()))
         {
-            emitGrouped (group.rows, pluginSectionColour());
+            emitGrouped (all, pluginSectionColour(), "plugins.modules");
             y += 8;
         }
     }
@@ -691,7 +759,12 @@ void SidebarComponent::buildRows()
     {
         // the With Mutation toggle, at the right end of the title row (listed
         // before the header, so a tap on it is the toggle's)
-        Row toggle { { contentWidth - 14 - 72, y + 2, 72, 18 }, "With Mutation", "toggle.withMutation",
+        // (as far right as the row allows, never over the title's words)
+        const float titleW = juce::GlyphArrangement::getStringWidth (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)), "Random Preset");
+        const int textEnd = 10 + 16 + (int) std::ceil (titleW) + 8;
+        const int right = contentWidth - 14;
+        const int w = juce::jlimit (44, 76, right - textEnd);
+        Row toggle { { right - w, y + 2, w, 18 }, w >= 70 ? "With Mutation" : "Mutate", "toggle.withMutation",
                      presetSectionColour() };
         toggle.isToggle = true;
         rows.push_back (toggle);
@@ -708,7 +781,7 @@ void SidebarComponent::buildRows()
             row.hasMenu = gens[i].hasMenu();
             row.centreFullWidth = apart;
             rows.push_back (row);
-            y += apart ? 33 : 29;
+            y += 29;
         };
         if (! gens.empty())
             genRow (gens.size() - 1, true);
@@ -719,10 +792,15 @@ void SidebarComponent::buildRows()
 
     // Add Effect: rows that ADD to the loaded patch instead of replacing it -
     // effects in front of Audio Out, Midi Add and Chord at the start
-    if (header ("addEffect", "Add Effect", presetSectionColour()))
+    if (header ("addEffect", "Quick-Add Effects", presetSectionColour()))
     {
+        std::vector<const aquanode::presets::EffectAdder*> adders;   // A-Z
         for (const auto& adder : aquanode::presets::effectAdders())
+            adders.push_back (&adder);
+        std::sort (adders.begin(), adders.end(), [] (auto* a, auto* b) { return a->label.compareNatural (b->label) < 0; });
+        for (const auto* adderPtr : adders)
         {
+            const auto& adder = *adderPtr;
             Row add { { 14, y, contentWidth - 28, 24 }, adder.label, adder.id, presetSectionColour() };
             add.isGenerator = true;
             add.centreFullWidth = true;
@@ -834,7 +912,12 @@ void SidebarComponent::buildSearchRows (int y)
 
 void SidebarComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (themeColours().get (ThemeColours::Sidebar));
+    if (themeColours().glass)
+    {
+        // Glass: the editor frosts the whole sidebar column behind this
+    }
+    else
+        g.fillAll (themeColours().get (ThemeColours::Sidebar));
     const auto text = textColour();
     if (footerLineY >= 0)
     {
@@ -853,14 +936,16 @@ void SidebarComponent::paint (juce::Graphics& g)
 
     // Skeuomorphic: the section headers on bars of tinted glass and the group
     // names on a lighter shading (drawn first: a header's switch sits on its bar)
-    const bool aero = themeColours().skeuomorphic;
+    const bool aero = themeColours().skeuomorphic || themeColours().glass;   // (Glass: the same glass bars)
     if (aero)
         for (const auto& row : rows)
         {
-            if (row.headerKey.isNotEmpty())
-                skeuo::glassBar (g, row.area.toFloat().expanded (3.0f, 1.0f), row.colour == juce::Colours::white ? text : row.colour, 7.0f);
-            else if (row.isSubLabel)
+            if (row.isSubLabel)
                 skeuo::glassStrip (g, row.area.toFloat().expanded (4.0f, 1.0f), row.colour);
+            else if (row.headerKey.isNotEmpty())
+                // (Skeuomorphic: the section bars a softer glass, nearer the group names'; Glass as it is)
+                skeuo::glassBar (g, row.area.toFloat().expanded (3.0f, 1.0f), row.colour == juce::Colours::white ? text : row.colour, 7.0f,
+                                 themeColours().glass ? 1.0f : 0.5f);
         }
 
     for (const auto& row : rows)
@@ -970,7 +1055,19 @@ void SidebarComponent::paint (juce::Graphics& g)
         if (row.isSubLabel)
         {
             auto colour = aero ? row.colour.interpolatedWith (juce::Colours::white, 0.4f) : row.colour.withAlpha (0.8f);
-            const auto area = aero ? row.area.withTrimmedLeft (2) : row.area;
+            auto area = aero ? row.area.withTrimmedLeft (2) : row.area;
+            if (row.headerKey.isNotEmpty())
+            {
+                // it folds its modules: a small arrow before the name
+                const bool open = expandedHeaders.contains (row.headerKey);
+                const auto c = juce::Point<float> ((float) area.getX() + 4.0f, (float) area.getCentreY());
+                juce::Path tri;
+                if (open) tri.addTriangle (c.x - 3.5f, c.y - 2.0f, c.x + 3.5f, c.y - 2.0f, c.x, c.y + 2.8f);
+                else      tri.addTriangle (c.x - 2.0f, c.y - 3.5f, c.x - 2.0f, c.y + 3.5f, c.x + 2.8f, c.y);
+                g.setColour (text.withAlpha (0.8f));
+                g.fillPath (tri);
+                area = area.withTrimmedLeft (12);
+            }
             const auto ground = themeColours().get (ThemeColours::Sidebar);
             g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
             if (skeuo::contrast (ground.overlaidWith (colour), ground) < 3.0f)
@@ -1059,9 +1156,10 @@ void SidebarComponent::mouseUp (const juce::MouseEvent& e)
     {
         if (row.typeId.isNotEmpty() && row.area.contains (e.getPosition()))
         {
-            // Touch screens add on tapping twice: a single tap while scrolling
-            // the list is too easy to make by accident.
-            if (e.source.isTouch() && ! row.isToggle)
+            // A module is added on tapping or clicking twice - on a touch screen
+            // and with a mouse alike (6.2): a single tap while scrolling the
+            // list, or a stray click, is too easy to make by accident.
+            if (! row.isToggle)
             {
                 const juce::String part = row.isPlugin ? (pluginPatchPillArea (row).contains (e.getPosition()) ? "patch" : "gui")
                                         : (row.isGenerator && row.hasMenu && generatorMenuArea (row).contains (e.getPosition()) ? "menu" : "row");

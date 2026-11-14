@@ -30,10 +30,13 @@ public:
 
     void blockStart() override;
     void processSample (const aquanode::StereoFrame* inputs, aquanode::StereoFrame* outputs) override;
+    bool magnitudeResponseDb (const float* hz, float* db, int n) const override;   // the static curve
 
 private:
     // RBJ peaking-EQ biquads, coefficients rebuilt in blockStart when knobs move
     struct Coeffs { float b0, b1, b2, a1, a2; bool active; };
+    static int computeFilters (float freq, float gainDb, int count, float spread, float q, float damp,
+                               double sr, Coeffs* out);   // how many bands are in play
     Coeffs coeffs[maxFilters] {};
     int activeFilters { 0 };
 

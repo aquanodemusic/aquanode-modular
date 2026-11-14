@@ -308,7 +308,7 @@ void AquanodeModularAudioProcessorEditor::finishRender (const juce::File& destin
     {
        #if JUCE_ANDROID
         juce::ignoreUnused (destination);
-        problem = aqp::android::replaceDocument (document, renderTemp);
+        problem = aqp::files::writeDocument (document, renderTemp);
        #else
         juce::ignoreUnused (document);
         destination.deleteFile();
