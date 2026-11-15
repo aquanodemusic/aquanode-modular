@@ -1,7 +1,7 @@
 # AM-20: how it was measured
 
-AM-20 is modelled on the KORG Collection MS-20 plugin (Windows, VST2), measured only from the outside, the
-same way as the other remakes in Aquanode Modular. Nothing in the original was disassembled or decompiled.
+AM-20 is modelled on the MS-20 plugin (Windows, VST2), measured only from the outside, the
+same way as other remakes in Aquanode Modular. Nothing in the original was disassembled or decompiled.
 None of its data ships with AM-20: the factory sounds in `Factory.h` were made for AM-20, and the original's
 programs only load from the user's own `.fxp` / `.fxb` files.
 
@@ -10,9 +10,6 @@ programs only load from the user's own `.fxp` / `.fxb` files.
 - The original ran under Wine (64-bit) in a small VST2 host written for this job. The host only uses the
   public VST2 interface: setParameter / getParameter, the parameter names and display strings, getChunk
   (the saved state), MIDI in, and audio out at 48 kHz.
-- Most of the work was done in the demo version, which plays normally for a session but cannot save.
-  Saved states were read with getChunk. The demo's own preset browser loads the factory programs; each one
-  was recorded with the same phrase (C3 alone, then a C4-E4-G4 chord) as a reference.
 - The patch-panel cables cannot be set through parameters. They were drawn in the original's own window
   (an automated mouse drag from one jack to another) and the saved state read back after every cable.
 
