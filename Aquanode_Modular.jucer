@@ -2,7 +2,7 @@
 
 <JUCERPROJECT id="GZWYPf" name="Aquanode Modular" projectType="audioplug" useAppConfig="0"
               pluginName="Aquanode Modular" pluginManufacturerCode="Aqnd" pluginCode="Aqmo"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="6.2.1"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="6.3.0"
               companyName="aquanodemusic" companyCopyright="none" companyEmail="node.aqua@gmail.com"
               pluginFormats="buildStandalone,buildVST3" pluginCharacteristicsValue="pluginIsSynth,pluginProducesMidiOut,pluginWantsMidiIn">
   <MAINGROUP id="m2RO6u" name="Aquanode Modular">
@@ -473,6 +473,10 @@
         <FILE id="rfx01c" name="PluginReflex.cpp" compile="1" resource="0" file="Source/Plugins/Reflex/PluginReflex.cpp"/>
         <FILE id="rfx02h" name="PluginReflexConfig.h" compile="0" resource="0" file="Source/Plugins/Reflex/PluginReflexConfig.h"/>
       </GROUP>
+      <GROUP id="{4D2B9A61-8C3E-4F7A-B15D-6E0A93C2F4D8}" name="AM20">
+        <FILE id="am2001" name="PluginAM20.cpp" compile="1" resource="0" file="Source/Plugins/AM20/PluginAM20.cpp"/>
+        <FILE id="am2002" name="PluginAM20Config.h" compile="0" resource="0" file="Source/Plugins/AM20/PluginAM20Config.h"/>
+      </GROUP>
       <GROUP id="{7C1BE1FC-CFEA-7D6A-1FD0-617FE42E2F7E}" name="AquaVibrio">
         <FILE id="490324" name="AquaVibrioPatch.cpp" compile="1" resource="0" file="Source/Plugins/AquaVibrio/AquaVibrioPatch.cpp"/>
         <FILE id="35bcb5" name="PluginAquaVibrio.cpp" compile="1" resource="0" file="Source/Plugins/AquaVibrio/PluginAquaVibrio.cpp"/>
@@ -761,7 +765,7 @@
         <MODULEPATH id="juce_video" path="../../../../Program Files/JUCE/modules"/>
       </MODULEPATHS>
     </VS2026>
-    <ANDROIDSTUDIO targetFolder="Builds/Android" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidPushNotifications="0" androidVersionCode="60201" bigIcon="aqIcn1" smallIcon="aqIcn1" androidScreenOrientation="landscape"
+    <ANDROIDSTUDIO targetFolder="Builds/Android" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidPushNotifications="0" androidVersionCode="630" bigIcon="aqIcn1" smallIcon="aqIcn1" androidScreenOrientation="landscape"
                    androidMinimumSDK="23" androidTargetSDK="35" androidMicNeeded="1"
                    androidInternetNeeded="0" androidVibratePermission="0" androidBluetoothScanNeeded="0"
                    androidBluetoothConnectNeeded="0">

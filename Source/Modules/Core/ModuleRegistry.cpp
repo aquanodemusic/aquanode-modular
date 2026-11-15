@@ -190,6 +190,7 @@
     X (AquaVibrioGuiModule) \
     X (AquaMassifGuiModule) \
     X (ReflexGuiModule) \
+    X (AM20GuiModule) \
     X (AlphaBetaGuiModule) \
     X (PhizmoGuiModule) \
     X (PhizmOscGuiModule) \

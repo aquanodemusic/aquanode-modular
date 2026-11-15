@@ -462,6 +462,10 @@ struct ModuleDescriptor
     // "PluginName - Kind"). Empty for everything else.
     juce::String listedWithPlugin;
 
+    // Extra words the sidebar's search finds the module by, as if they were
+    // part of its group ("chord" for Midi Add). Empty for most modules.
+    juce::String searchKeywords;
+
     bool isPluginModule() const { return typeId.startsWith ("plugin.") || listedWithPlugin.isNotEmpty(); }
 
     // card colour: the plugin accent, else the family accent, else the section's

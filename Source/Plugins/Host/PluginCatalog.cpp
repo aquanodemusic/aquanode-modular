@@ -58,6 +58,14 @@ namespace
               "banks and .fxp programs and its own .xml presets.",
               0xff6fd36a, ModuleSection::Oscillator, true, false, false, false, 1112, 850, "*.fxb;*.fxp;*.xml" },
 
+            { "am20", "AM-20",
+              "An MS-20-style synth, polyphonic, modelled from measurements of the original: both VCOs with the ring "
+              "modulator, the screaming 12 dB high- and low-pass filters, EG1 (delay / attack / release), EG2 (hold / ADSR), "
+              "the MG, and the whole 35-jack patch panel with the modulation VCA, sample & hold, noise and the external "
+              "signal processor - every voice with a patch panel of its own. Poly, unison and mono with portamento. Its own "
+              ".am20 presets, and the original's .fxp programs and .fxb banks in and out.",
+              0xffff8a3d, ModuleSection::Oscillator, true, false, false, false, 1100, 720, "*.am20;*.fxp;*.fxb" },
+
             { "alphabeta", "AlphaBeta",
               "The Alpha 3-style synth with its liquid filter and chorus, both engines (Native and "
               "Original), the CRT matrix and its randomizer. Loads .abpreset and the original's .fxp / .fxb.",

@@ -6,6 +6,7 @@ static aquanode::ModuleDescriptor midiAddDescriptor()
     ModuleDescriptor d;
     d.typeId = "util.midiadd";
     d.displayName = "Midi Add";
+    d.searchKeywords = "chord chords";
     d.description =
         "For every note it hears it emits four extra notes at the chosen semitone offsets - "
         "instant chords of any scale from single keys. Its Midi Out goes into a generator's "

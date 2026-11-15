@@ -4,7 +4,7 @@
 
 ## Downloads
 
-See the builds in the [Releases](https://github.com/aquanodemusic/aquanode-modular/releases) page. The current version is 6.2.1.
+See the builds in the [Releases](https://github.com/aquanodemusic/aquanode-modular/releases) page. The current version is 6.3.0.
 
 ---
 
@@ -47,7 +47,7 @@ Patches can be saved as `.aqua` files that contain the full setup you wired and 
 ### Changelog
 
 Aquanode Modular contains almost all plugins from my earlier [aquanode-plugins](https://github.com/aquanodemusic/aquanode-plugins) repository shipped right in the plugin, so you do not need to download them individually. Aquanode Modular thus is intended as a replacement of all the individual plugins available in that repository, now inside a single, clean modular environment. Besides that, the updated version of Aquanode Modular also includes:
-- Completely new plugins like Tidebreeze, a ROMpler-inspired synthesizer, a 303-style bass line synth fitted to recordings of the original hardware, and Massif, a classic 2000s wavetable synthesizer,
+- Completely new plugins like Tidebreeze, a ROMpler-inspired synthesizer, a 303-style bass line synth fitted to recordings of the original hardware, Massif, a classic 2000s wavetable synthesizer, and AM-20, a now polyphonic semi-modular synthesizer from the late 1970s,
 - the Vita plugin, a port of Vital, updated, cleaned, and even available in the Android version,
 - **Import of external VST3 plugins**, both synths and effects, using the VST3 module (not in the Android version, as VSTs are not compatible with Android),
 - the **Fruit DAW** plugin to have a complete DAW as a plugin or four-module patch (channel rack, piano roll, playlist and mixer) inside Aquanode Modular,
@@ -60,7 +60,7 @@ Aquanode Modular contains almost all plugins from my earlier [aquanode-plugins](
 
 ## The full list of the codebase structure, modules and plugins
 
-Click on a heading to open it. All in all there are 160 modules and 42 plugins, whose patch versions add 145 plugin modules (each named *Plugin - Part* in the sidebar).
+Click on a heading to open it. All in all there are 160 modules and 43 plugins, whose patch versions add 145 plugin modules (each named *Plugin - Part* in the sidebar).
 <details>
 <summary><strong>Codebase</strong></summary>
 
@@ -115,16 +115,17 @@ Click on a heading to open it. All in all there are 160 modules and 42 plugins, 
 </details>
 
 <details>
-<summary><strong>Plugins (42)</strong></summary>
+<summary><strong>Plugins (43)</strong></summary>
 
 | Plugin | Kind | Description | Patch version |
 | :--- | :--- | :--- | :--- |
 | **Additive Keys** | Synth | An additive synth with 63 harmonics per source drawn as bars, four envelope groups, a formant filter with vowel presets, 20 factory sounds and a preset roller in 12 kinds (Bell, Organ, Pad, Strings, Brass, Choir, Bass, Pluck, E-Piano, Lead, Glass, Sweep), every roll matched in loudness. | *GUI only* |
 | **AliasSynth** | Synth | A synth without any anti-alias, frequencies folded around a Nyquist limit of your choosing (or held at that rate, S&H), with a sine FM modulator, a wavefolder, bit reduction, glide and an ADSR. | Oscillator |
+| **AM-20** | Synth | A polyphonic remake of a classic 1978 semi-modular monosynth, modelled from measurements of its software version. Two VCOs, resonant filters and a patch panel. *Save* / *Load* its own `.am20` presets or the original's `.fxb` or `.fxp` banks and patches (without the effects section of newer versions of the original). | *GUI only* |
 | **AlphaBeta** | Synth | A tribute to LinPlug's **Alpha 3**: its liquid filter and chorus, the CRT matrix and its randomizer, and an Original engine modelled on FreeAlpha 3.3. Loads `.abpreset` and the original's `.fxp` / `.fxb`. LinPlug as a company is no longer around, thank you for a wonderful synth. | Oscillator, Balance & Drive, Filter, Envelope, LFO, Mod Matrix, Amp, Chorus, Output |
 | **Aqua Vibrio** | Synth | A close Virus/Viper-style synth. Aqua Vibrio's *Original* engine loads `.mid` / `.syx` and `.fxb` banks and can use a folder of the hardware's sampled waves. | Voice, Effects |
 | **Aquanova** | Synth | A loose Supernova-style synth: three oscillators, the oscillator and filter matrices, the 42-band vocoder and the effects. | Oscillator, Noise, Ring Mod, Mixer, Filter, Amp, Envelope, LFO, Vocoder, EQ, Distortion, Comb, Chorus, Delay, Reverb, Effects Mix, Panner, Output, Arpeggiator |
-| **AudioStretcher** | Synth | Streches a loaded audio file in time and pitch independently using the Rubberband Library. | *GUI only* |
+| **AudioStretcher** | Synth | Stretches a loaded audio file in time and pitch independently using the Rubberband Library. | *GUI only* |
 | **CombWeave** | Synth | Two banks of up to 128 sine partials on every note - spread linearly, exponentially or as harmonics, folded back or note-locked - each with its own envelope and high-pass. | Comb Osc, Output |
 | **Cove Groove** | Synth | Generates noisy hardgroove loops: eight drum lanes with ten fitted sounds each, three drum-machine voices (808, 909, 707 recipes fitted to the machines' measured envelopes and spectra) and your own samples, five groove styles, GENERATE / RND, 35 presets, kits, and a phaser, moving band-pass, delay and drive. It follows the DAW's transport or runs on its own tempo. | Sequencer, Kick, Bass, Clap, Closed Hat, Open Hat, Cymbal, Perc, FX Hits, Bus |
 | **FM12** | Synth | A 12-operator PM/FM synth with a modulation matrix, user waves (saved with the patch and its presets) and a stereo chorus. | *GUI only* |
@@ -343,6 +344,7 @@ For example, this should be allowed in the EU by the Software Directive 2009/24/
 Product names mentioned in this README belong to their owners and only say what a plugin is modelled after.
 
 - **Additive Keys** is loosely inspired by the Kawai K5,
+- **AM-20** is modelled after the MS-20, measured from the outside only, one control and one patch cable at a time.
 - **AlphaBeta** is a tribute to LinPlug's Alpha 3.
 - **AudioStretcher** and Fruit DAW (stretching a sample to the song's tempo) use the **Rubber Band Library** by Breakfast Quay (https://breakfastquay.com/rubberband/), under the GNU GPL v2 or (at your option) any later version (`Source/PluginSources/audiostretcher/Rubberband/COPYING`).
 - **Circulator** is inspired by Circulate by GullDSP (Anis Dadou), an open-source allpass smearing effect.

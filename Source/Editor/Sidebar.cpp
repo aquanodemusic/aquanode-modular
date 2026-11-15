@@ -829,7 +829,8 @@ void SidebarComponent::buildRows()
 }
 
 // Every module and plugin that matches the search: all its words found in the
-// name first, then in the group, category or type, then in the description.
+// name first, then in the group, category, type or search keywords, then in
+// the description.
 void SidebarComponent::buildSearchRows (int y)
 {
     const int contentWidth = layoutWidth();
@@ -874,7 +875,7 @@ void SidebarComponent::buildSearchRows (int y)
         if (! d.listedInSidebar)
             continue;
         const auto group = groupOf (d);
-        const int sc = score (d.displayName, group + " " + sectionTitle (d.section) + " " + d.typeId, d.description);
+        const int sc = score (d.displayName, group + " " + sectionTitle (d.section) + " " + d.typeId + " " + d.searchKeywords, d.description);
         if (sc < 0)
             continue;
         Row row { {}, d.displayName, d.typeId, juce::Colours::white };

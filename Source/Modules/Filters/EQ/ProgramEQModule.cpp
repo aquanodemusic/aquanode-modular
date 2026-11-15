@@ -106,9 +106,9 @@ public:
         d.description =
             "A passive tube program EQ with its famous low-end trick: Boost and Atten at the same "
             "low frequency (20, 30, 60, 100 Hz) do not cancel - the very lows rise with a bump around it and a dip "
-            "opens just above (deep bass, the mud taken out). Up top a boost bell (3 to 16 kHz, Bandwidth sharp to "
+            "opens right above (deep bass, the mud taken out). Up top a boost bell (3 to 16 kHz, Bandwidth sharp to "
             "broad) and an attenuation shelf (5, 10, 20 kHz). Then a tube make-up stage and Output. Its curve "
-            "(Graph) is worked out from the very filters it runs.";
+            "(Graph) is worked out from the filters it runs.";
         d.section = ModuleSection::Filter;
         d.sidebarOrder = 24;
         d.sockets = { audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out") };

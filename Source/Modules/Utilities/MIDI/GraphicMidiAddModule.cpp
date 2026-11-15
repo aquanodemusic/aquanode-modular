@@ -64,6 +64,7 @@ public:
         ModuleDescriptor d;
         d.typeId = "util.graphicmidiadd";
         d.displayName = "Graphic Midi Add";
+        d.searchKeywords = "chord chords";
         d.description = "For every note it hears it plays that note plus up to seven more, -48..+48 semitones "
                         "away (0 = off); notes that would fall off the keyboard (outside C-1..G9) are left out. "
                         "The keyboard shows the chord built on the Visual (Reference Only) note, which changes "
