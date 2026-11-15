@@ -344,7 +344,7 @@ For example, this should be allowed in the EU by the Software Directive 2009/24/
 Product names mentioned in this README belong to their owners and only say what a plugin is modelled after.
 
 - **Additive Keys** is loosely inspired by the Kawai K5,
-- **AM-20** is modelled after the MS-20, measured from the outside only, one control and one patch cable at a time.
+- **AM-20** (AM simply as acronym for "Aquanode Modular") is modelled after the MS-20, measured from the outside only, one control and one patch cable at a time.
 - **AlphaBeta** is a tribute to LinPlug's Alpha 3.
 - **AudioStretcher** and Fruit DAW (stretching a sample to the song's tempo) use the **Rubber Band Library** by Breakfast Quay (https://breakfastquay.com/rubberband/), under the GNU GPL v2 or (at your option) any later version (`Source/PluginSources/audiostretcher/Rubberband/COPYING`).
 - **Circulator** is inspired by Circulate by GullDSP (Anis Dadou), an open-source allpass smearing effect.
