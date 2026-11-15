@@ -47,7 +47,7 @@ Patches can be saved as `.aqua` files that contain the full setup you wired and 
 ### Changelog
 
 Aquanode Modular contains almost all plugins from my earlier [aquanode-plugins](https://github.com/aquanodemusic/aquanode-plugins) repository shipped right in the plugin, so you do not need to download them individually. Aquanode Modular thus is intended as a replacement of all the individual plugins available in that repository, now inside a single, clean modular environment. Besides that, the updated version of Aquanode Modular also includes:
-- Completely new plugins like Tidebreeze, a ROMpler-inspired synthesizer, a 303-style bass line synth fitted to recordings of the original hardware, Massif, a classic 2000s wavetable synthesizer, and AM-20, a now polyphonic semi-modular synthesizer from the late 1970s,
+- Completely new plugins like Tidebreeze, a ROMpler-inspired synthesizer, a 303-style bass line synth fitted to recordings of the original hardware, Massif, a classic 2000s wavetable synthesizer, and AM-20, a now polyphonic semi-modular synthesizer modelled after a monophonic one from the late 1970s,
 - the Vita plugin, a port of Vital, updated, cleaned, and even available in the Android version,
 - **Import of external VST3 plugins**, both synths and effects, using the VST3 module (not in the Android version, as VSTs are not compatible with Android),
 - the **Fruit DAW** plugin to have a complete DAW as a plugin or four-module patch (channel rack, piano roll, playlist and mixer) inside Aquanode Modular,
