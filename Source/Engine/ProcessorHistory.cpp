@@ -31,7 +31,7 @@ juce::String AquanodeModularAudioProcessor::patchFingerprint() const
             if (p.type == ParamType::Button)
                 continue;
             // transport, not an edit
-            if ((d.typeId == "util.pianoroll" && p.id == "playing") || (d.typeId == "osc.acid303" && p.id == "running"))
+            if (((d.typeId == "util.pianoroll" || d.typeId == "util.mperoll") && p.id == "playing") || (d.typeId == "osc.acid303" && p.id == "running"))
                 continue;
             // playing a controller, not an edit (what it learned is one)
             if (d.typeId == "io.midilearn" && (p.id == "value" || p.id == "active"))

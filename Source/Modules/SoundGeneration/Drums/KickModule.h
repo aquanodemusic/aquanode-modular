@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/SnapDrums.h"
 
 // Kick - classic analog kick voice: sine with an exponential pitch-drop envelope,
 // a click transient, and tanh drive. Fires on rising edges at Trig In
@@ -17,6 +18,8 @@ public:
     void prepare (double sr) override
     {
         SynthModule::prepare (sr);
+        pModel = paramIndex ("model");
+        for (auto& k : snapKick) k.prepare ((float) sr);
         reset();
     }
 
@@ -33,11 +36,16 @@ public:
         phase[v] = 0.0;
         clickSamples[v] = 0;
         lastTrig[v] = 0.0f;
+        snapKick[v].reset();
     }
 
     void voiceNoteOn (int v, int, bool) override { pool.noteOn (v, voiceLimit()); trigger (v); }
 
-    double voiceTailSeconds() const override { return aquanode::decayTailSeconds (juce::jmax (5.0f, param (pDecay))) + 0.05; }
+    double voiceTailSeconds() const override
+    {
+        if (snapModel()) return 0.405 * param (pDecay) / 400.0 + 0.05;   // held 75 ms, then 0.29 dB / ms (at the default Decay)
+        return aquanode::decayTailSeconds (juce::jmax (5.0f, param (pDecay))) + 0.05;
+    }
 
     void processVoiceSample (int v, const aquanode::StereoFrame* inputs,
                              aquanode::StereoFrame* outputs) override;
@@ -56,8 +64,22 @@ public:
 private:
     aquanode::ModuleVoicePool pool;
 
+    bool snapModel() const { return pModel >= 0 && param (pModel) > 0.5f; }
+
     void trigger (int v)
     {
+        if (snapModel())
+        {
+            // the Snap Kick: the knobs scale the measured kick-clap (the defaults play it as measured)
+            aquanode::snapdrums::SnapKick::Shape sh;
+            sh.tuneHz = param (pTune) * 0.9f;
+            sh.drop = param (pDrop) / 24.0f;
+            sh.sweepTime = juce::jmax (0.05f, param (pPitchDecay) / 40.0f);
+            sh.length = juce::jmax (0.05f, param (pDecay) / 400.0f);
+            sh.snap = param (pClick) / 30.0f;
+            sh.drive = param (pDrive) * 0.007f;
+            snapKick[v].trigger (sh);
+        }
         ampEnv[v] = 1.0f;
         pitchEnv[v] = 1.0f;
         phase[v] = 0.0;
@@ -70,4 +92,6 @@ private:
     int clickSamples [aquanode::kMaxVoices] {};
     float lastTrig [aquanode::kMaxVoices] {};
     juce::Random random;
+    int pModel { -1 };
+    aquanode::snapdrums::SnapKick snapKick [aquanode::kMaxVoices];
 };

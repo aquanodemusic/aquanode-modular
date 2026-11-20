@@ -27,7 +27,7 @@ static aquanode::ModuleDescriptor cepstralMorphDescriptor()
         makeRotary ("morph",    "Morph",     0.0f, 150.0f, 100.0f, 0, "%"),
         makeRotary ("clarity",  "Clarity",   0.0f, 200.0f, 100.0f, 0, "%"),
         makeRotary ("smooth",   "Smooth",    0.0f,  95.0f,   0.0f, 0, "%"),
-        makeRotary ("maxBoost", "Max Boost", 3.0f,  72.0f,  72.0f, 1, "dB"),
+        makeRotary ("maxBoost", "Peak Boost", 3.0f,  72.0f,  72.0f, 1, "dB"),
         makeRotary ("dynamics", "Dynamics",  0.0f, 100.0f, 100.0f, 1, "%"),
         makeRotary ("mix",      "Mix",       0.0f, 100.0f, 100.0f, 1, "%"),
         makeCombo  ("flip",     "Flip",      { "Off", "On" }, 0, 2),

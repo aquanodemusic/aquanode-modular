@@ -23,11 +23,15 @@
 
 class ValueBridge;
 
-class SynthPlugin : public SynthBase, public AudioProcessor, public ValueBridge::Listener {
+class SynthPlugin : public SynthBase, public AudioProcessor, public ValueBridge::Listener,
+                    public aquanode::MpeReceiver {   // (Aquanode: MPE once a member channel plays)
   public:
     static constexpr int kSetProgramWaitMilliseconds = 500;
 
-    SynthPlugin();
+    // effectOnly: Vita FX - an audio input into the effects chain (the voices still play from MIDI)
+    explicit SynthPlugin(bool effectOnly = false);
+    bool isEffectOnly() const { return effect_only_; }
+    void enableMpe(bool on) override { setMpeEnabled(on); }
     virtual ~SynthPlugin();
 
     SynthGuiInterface* getGuiInterface() override;
@@ -70,6 +74,7 @@ class SynthPlugin : public SynthBase, public AudioProcessor, public ValueBridge:
     void parameterChanged(std::string name, vital::mono_float value) override;
 
   private:
+    bool effect_only_ = false;
     ValueBridge* bypass_parameter_;
     double last_seconds_time_;
 

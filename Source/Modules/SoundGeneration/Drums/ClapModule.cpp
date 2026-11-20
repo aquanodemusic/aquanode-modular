@@ -2,6 +2,8 @@
 
 using namespace aquanode;
 
+static constexpr float kSnappyGain = 4.5f, kClackGain = 6.0f;   // into a soft clip (as a mastered drum track): next to Classic
+
 void ClapModule::processVoiceSample (int v, const StereoFrame* inputs, StereoFrame* outputs)
 {
     const float voiceGain = pool.nextGain (v, sampleRate);
@@ -24,6 +26,14 @@ void ClapModule::renderVoice (int v, const StereoFrame* inputs, StereoFrame* out
     if (trigIn > 0.5f && lastTrig[v] <= 0.5f)
         trigger (v);
     lastTrig[v] = trigIn;
+
+    if (const int m = model(); m > 0)
+    {
+        const float y = std::tanh (m == 1 ? snappy[v].process() * kSnappyGain : clack[v].process() * kClackGain);
+        outputs[0][0] = y;
+        outputs[0][1] = y;
+        return;
+    }
 
     if (burstEnv[v] < 1.0e-5f && tailEnv[v] < 1.0e-5f && ! running[v])
     {
@@ -76,7 +86,10 @@ static ModuleDescriptor clapDescriptor()
     d.description =
         "The classic analog clap trick: three short noise bursts a few milliseconds apart (that stutter is "
         "what the ear reads as many hands), then a diffuse tail. Trig In takes a Clock, Euclid or "
-        "Step Seq gate. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a clap, alongside Trig In.";
+        "Step Seq gate. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a clap, alongside Trig In. "
+        "Model Snappy and Clack were measured from a drum track: Snappy is a tight clap (three cracks, two resonances, a short room), "
+        "Clack a bright crack with a thin hiss behind it. Their knobs scale the measured sound: Tone moves the colour, Spread the cracks, "
+        "Burst Dec and Tail Dec the lengths, Tail Mix the room.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 9;
     d.sockets = {
@@ -90,7 +103,8 @@ static ModuleDescriptor clapDescriptor()
         makeRotary ("burstDecay", "Burst Dec", 1.0f, 60.0f, 8.0f, 0, "ms", true),
         makeRotary ("tailDecay",  "Tail Dec",  20.0f, 1200.0f, 220.0f, 1, "ms", true),
         makeRotary ("tailMix",    "Tail Mix",  0.0f, 100.0f, 60.0f, 1, "%"),
-        makeRotary ("voices",     "Voices",    1.0f, (float) kMaxVoices, (float) kMaxVoices, 1, {}, false, 1.0f).noMod()
+        makeRotary ("voices",     "Voices",    1.0f, (float) kMaxVoices, (float) kMaxVoices, 1, {}, false, 1.0f).noMod(),
+        makeCombo ("model", "Model", { "Classic", "Snappy", "Clack" }, 0, 1, 2).noMod()
     };
     d.params.push_back (makeOutputTrim (-6.0f));   // brought down to sit with the other sources
     return d;

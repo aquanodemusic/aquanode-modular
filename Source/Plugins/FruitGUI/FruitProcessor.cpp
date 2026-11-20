@@ -47,6 +47,7 @@ FruitProcessor::FruitProcessor()
     engine = std::make_unique<AquanodeModularAudioProcessor>();
     engine->nestingLevel = juce::jmin (AquanodeModularAudioProcessor::kMaxNestingLevel,
                                        AquanodeModularAudioProcessor::creatingLevel() + 1);
+    engine->setAlwaysCompensate (true);   // (6.7.12: its tracks lined up, whatever their effects' latency)
     ensureInsert (0);
     songChanged();
 }

@@ -113,7 +113,7 @@ public:
             makeCombo ("timeRe", "Time Fix", { "Off", "On" }, 1, 2, 1).noMod(),
             makeRotary ("threshold", "Floor", -100.0f, -5.0f, -60.0f, 2, "dB"),
             // (5.19.3: Accuracy below took its place; kept for older patches)
-            makeRotary ("maxShift", "Max Shift", 0.1f, 4.0f, 1.0f, 2, "bins").hide(),
+            makeRotary ("maxShift", "Peak Shift", 0.1f, 4.0f, 1.0f, 2, "bins").hide(),
             makeCombo ("freeze", "Freeze", { "Run", "Freeze" }, 0, 3, 1).noMod(),
             // (after the old ones: saved patches keep their places)
             makeCombo ("reassign", "Reassign", { "Off", "On" }, 1, 3, 1).noMod().whenMissing (1.0f),

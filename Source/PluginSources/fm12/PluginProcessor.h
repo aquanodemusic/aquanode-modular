@@ -19,6 +19,7 @@ public:
     void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*, int) override;
     void stopNote(float velocity, bool allowTailOff) override;
     void pitchWheelMoved(int newPitchWheelValue) override;
+    void channelPressureChanged(int newValue) override;
     void controllerMoved(int, int) override {}
     void setCurrentPlaybackSampleRate(double newRate) override;
 
@@ -125,6 +126,11 @@ private:
     float dxFbHist[numOperators][2] = {};   // DX7 Mode feedback: the operator's last two outputs (enveloped)
 
     float pitchBendSemis = 0.0f;
+    // MPE (Aquanode): the member channel this note plays on (0: none), its bend
+    // range (+-48 there) and its pressure (-1: none), which sets the modulators' depth
+    int memberChannel = 0;
+    float bendRange = 2.0f;
+    float pressure = -1.0f;
 
     // the LFO (pitch and amplitude) and the pitch envelope, per voice, timed from the note-on
     double lfoPhase = 0.0;
@@ -194,9 +200,13 @@ private:
 //==============================================================================
 // FM12SynthAudioProcessor
 //==============================================================================
-class FM12SynthAudioProcessor : public juce::AudioProcessor
+class FM12SynthAudioProcessor : public juce::AudioProcessor,
+                                public aquanode::MpeReceiver    // (Aquanode: MPE once a member channel plays)
 {
 public:
+    void enableMpe (bool on) override { mpeOn = on; }
+    bool mpeOn = false;
+    std::array<float, 17> mpePress = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
     static constexpr int sineTableSize = 2048;
     static constexpr int sineTableMask = sineTableSize - 1;
     static constexpr int maxVoices = 12;

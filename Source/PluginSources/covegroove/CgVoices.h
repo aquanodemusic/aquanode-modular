@@ -49,6 +49,7 @@
 //==============================================================================
 #include "CgDsp.h"
 #include "CgMachines.h"
+#include "CgPhys.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -61,8 +62,11 @@ namespace covegroove
     constexpr int kShapedModels = 2;       // two more per lane, from one shaped engine fitted to recorded hits
     constexpr int kSampleModel = kClassicModels + kShapedModels;   // the lane's own loaded sample
     constexpr int kFirstMachineModel = kSampleModel + 1;           // then the drum machines' (CgMachines.h)
-    constexpr int kNumModels = kFirstMachineModel + kMachineModels;
-    inline bool isMachineModel (int model) { return model >= kFirstMachineModel && model < kNumModels; }
+    constexpr int kFirstPhysModel = kFirstMachineModel + kMachineModels;   // then the modelled kits (CgPhys.h)
+    constexpr int kNumModels = kFirstPhysModel + kPhysModels;
+    inline bool isMachineModel (int model) { return model >= kFirstMachineModel && model < kFirstPhysModel; }
+    inline bool isPhysModel (int model) { return model >= kFirstPhysModel && model < kNumModels; }
+    inline int physKitOf (int model) { return model - kFirstPhysModel; }
     enum LaneType { Kick = 0, Bass, Clap, ClosedHat, OpenHat, Cymbal, Perc, Fx };
 
     inline const char* laneName (int lane)
@@ -75,6 +79,8 @@ namespace covegroove
     {
         if (isMachineModel (model))
             return machineName (lane, model - kFirstMachineModel);
+        if (isPhysModel (model))
+            return phys::kit (physKitOf (model)).name;
         static const char* n[kNumLanes][kSampleModel + 1] = {
             { "Hard", "Long", "Tight", "Round", "Analog", "Hybrid", "Kit", "Crunch", "Gated", "Drop", "Sample" },
             { "Sub", "Saw", "Pulse", "Rumble", "Analog", "Acid", "Reese", "Fingered", "Gate Rumble", "Verb Rumble", "Sample" },
@@ -93,15 +99,18 @@ namespace covegroove
 
     inline Role cymbalRole (int model)
     {
+        // (the modelled kits: 808 cymbal, 909 ride, classic, electro, large, metal, orchestral crash, world)
         static const Role r[kNumModels] = { RoleRide, RoleCrash, RoleShaker, RoleSwell, RoleRide, RoleRide, RoleRide, RoleCrash, RoleCrash, RoleSwell, RoleRide,
-                                            RoleRide, RoleRide, RoleCrash };
+                                            RoleRide, RoleRide, RoleCrash,
+                                            RoleCrash, RoleRide, RoleRide, RoleRide, RoleCrash, RoleCrash, RoleCrash, RoleCrash };
         return r[std::clamp (model, 0, kNumModels - 1)];
     }
 
     inline Role fxRole (int model)
     {
         static const Role r[kNumModels] = { RoleSweep, RoleStab, RoleSweep, RoleBlip, RoleJingle, RoleShaker, RoleSwell, RoleStab, RoleStab, RoleCrash, RoleStab,
-                                            RoleBlip, RoleShaker, RoleJingle };
+                                            RoleBlip, RoleShaker, RoleJingle,
+                                            RoleBlip, RoleBlip, RoleStab, RoleStab, RoleCrash, RoleStab, RoleBlip, RoleShaker };
         return r[std::clamp (model, 0, kNumModels - 1)];
     }
 
@@ -183,6 +192,41 @@ namespace covegroove
     };
 
     // one lane's sound settings
+    // The lane's ADSR (the Sound Up Close view's handles), applied after the
+    // voice - a second pass over a sample's own volume curve. Times from the
+    // hit, in seconds: Attack rises to full, Decay falls to Sustain, the
+    // Release starts at releaseAt and fades to silence. Flat (no change) until
+    // a handle is moved: releaseAt at kOff means the release never starts.
+    struct LaneEnv
+    {
+        static constexpr float kOff = 4.0f;
+        float attack { 0.0f }, decay { 0.0f }, sustain { 1.0f }, releaseAt { kOff }, release { 0.0f };
+
+        bool releases() const { return releaseAt < kOff - 1.0e-4f; }
+        bool flat() const { return attack <= 0.0f && sustain >= 0.9999f && ! releases(); }
+
+        // before any release
+        float held (float t) const
+        {
+            if (attack > 0.0f && t < attack) return t / attack;
+            const float td = t - std::max (0.0f, attack);
+            if (decay > 0.0f && td < decay)
+            {
+                const float u = 1.0f - td / decay;
+                return sustain + (1.0f - sustain) * u * u;   // (a curved fall, quick at first)
+            }
+            return sustain;
+        }
+        float at (float t) const
+        {
+            if (! releases() || t < releaseAt) return held (t);
+            if (release <= 0.0f) return 0.0f;
+            const float u = 1.0f - (t - releaseAt) / release;
+            return u <= 0.0f ? 0.0f : held (releaseAt) * u * u;
+        }
+        bool over (float t) const { return releases() && t >= releaseAt + release; }
+    };
+
     struct Sound
     {
         int model { 0 };
@@ -191,6 +235,11 @@ namespace covegroove
         float tone { 0.5f };        // 0..1
         std::shared_ptr<const SampleData> sample;   // for the Sample sound
         Curve curve;                                // its volume curve
+        // a modelled kit's sound, rendered (CgPhys.h): three round-robin variations,
+        // and the ratio to play them at (a Tune modulated away from the render's)
+        std::array<std::shared_ptr<const SampleData>, 3> phys;
+        float physPitch { 1.0f };
+        LaneEnv env;                                // the lane's ADSR, after the voice
     };
 
     // the analog and hybrid boxes' sounds: what one of them is made of (see DrumVoice's Box)
@@ -251,6 +300,8 @@ namespace covegroove
         {
             lane = std::clamp (laneType, 0, kNumLanes - 1);
             model = std::clamp (s.model, 0, kNumModels - 1);
+            laneEnv = s.env;
+            envOn = ! laneEnv.flat();
             n = 0;
             active = true;
             fade = 1.0f; fadeStep = 0.0f;
@@ -274,6 +325,7 @@ namespace covegroove
                 maxLength = machine.length();
                 return;
             }
+            if (isPhysModel (model)) { kind = Kind::Phys; startPhys (s, alt, seed); return; }
             kind = model == kSampleModel ? Kind::Sampled : (model >= kClassicModels ? Kind::Shaped : Kind::Classic);
             if (kind == Kind::Classic && boxIndex (lane, model) >= 0) kind = Kind::Box;
             if (kind == Kind::Shaped) { startShaped (model - kClassicModels); return; }
@@ -304,7 +356,7 @@ namespace covegroove
             if (kind == Kind::Machine) machine.render (l, r);
             else if (kind == Kind::Shaped) renderShaped (t, l, r);
             else if (kind == Kind::Box) renderBox (t, l, r);
-            else if (kind == Kind::Sampled) renderSample (l, r);
+            else if (kind == Kind::Sampled || kind == Kind::Phys) renderSample (l, r);
             else switch (lane)
             {
                 case Kick:      renderKick (t, l, r); break;
@@ -322,8 +374,14 @@ namespace covegroove
                 fade -= fadeStep;
                 if (fade <= 0.0f) { active = false; return; }
             }
-            outL = l * gain * fade;
-            outR = r * gain * fade;
+            float g = gain * fade;
+            if (envOn)
+            {
+                g *= laneEnv.at (t);
+                if (laneEnv.over (t)) active = false;
+            }
+            outL = l * g;
+            outR = r * g;
             if (t > maxLength) active = false;
         }
 
@@ -1426,6 +1484,22 @@ namespace covegroove
             maxLength = (float) (sspan / sr) + 0.01f;
         }
 
+        // a modelled kit's render, played whole (its Tune, Decay and Tone are in it)
+        void startPhys (const Sound& s, bool alt, uint32_t seed)
+        {
+            smp = s.phys[(size_t) (seed % 3u)];
+            for (size_t i = 0; smp == nullptr && i < s.phys.size(); ++i) smp = s.phys[i];
+            if (smp == nullptr || smp->frames() < 2) { active = false; return; }
+            curve = Curve();
+            sratio = smp->rate / sr * clampf (s.physPitch, 0.125f, 8.0f);
+            sspan = (double) (smp->frames() - 1) / sratio;
+            spos = 0.0;
+            accent = alt ? 1.25f : 1.0f;
+            tiltL1 = tiltL2 = tiltR1 = tiltR2 = 0.0f;
+            tiltMode = 0;
+            maxLength = (float) (sspan / sr) + 0.01f;
+        }
+
         void renderSample (float& l, float& r)
         {
             const auto& d = *smp;
@@ -1453,7 +1527,9 @@ namespace covegroove
         //=== state ===========================================================
         float sr { 48000.0f };
         int lane { 0 }, model { 0 };
-        enum class Kind { Classic, Shaped, Sampled, Box, Machine };
+        LaneEnv laneEnv;
+        bool envOn { false };
+        enum class Kind { Classic, Shaped, Sampled, Box, Machine, Phys };
         MachineVoice machine;
         Kind kind { Kind::Classic };
         int64_t n { 0 };

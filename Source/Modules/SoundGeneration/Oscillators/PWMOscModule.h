@@ -46,6 +46,8 @@ public:
 
     void voiceNoteOff (int v) override { pool.noteOff (v, voiceLimit()); }
 
+    static constexpr int kEnvIn = 2;   // inputs: Pitch In, Add Midi In, Env In
+
     void processVoiceSample (int v, const aquanode::StereoFrame* inputs,
                              aquanode::StereoFrame* outputs) override
     {
@@ -64,7 +66,10 @@ public:
                                         param (pPw) * 0.1f, param (pPwmSpeed), (int) param (pSub),
                                         param (pSubLevel), param (pAnalog) * 0.01f)
                       * param (pLevel);
-        outputs[0] = { y * gain, y * gain };
+        // Env In (6.7.10): an envelope there shapes this voice; with nothing patched it
+        // runs freely as it always did (a VCA after it does the shaping)
+        const float env = isInputConnected (kEnvIn) ? inputs[kEnvIn][0] : 1.0f;
+        outputs[0] = { y * gain * env, y * gain * env };
     }
 
 private:

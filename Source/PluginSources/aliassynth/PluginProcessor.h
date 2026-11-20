@@ -2,9 +2,14 @@
 
 #include <JuceHeader.h>
 
-class AliasSynthAudioProcessor : public juce::AudioProcessor
+class AliasSynthAudioProcessor : public juce::AudioProcessor,
+                                 public aquanode::MpeReceiver     // (Aquanode: MPE once a member channel plays)
 {
 public:
+    void enableMpe (bool on) override { mpeOn = on; }
+    // MPE (Aquanode): each member channel's last pressure (-1: none yet)
+    bool mpeOn = false;
+    std::array<float, 17> mpePress = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
     // --- 1. Construction & Destruction ---
     AliasSynthAudioProcessor();
     ~AliasSynthAudioProcessor() override;

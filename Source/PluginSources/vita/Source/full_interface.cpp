@@ -401,6 +401,21 @@ void FullInterface::resized() {
     full_screen_section_->setBounds(-total_width * relative.getX(), 0, total_width, getHeight());
   }
 
+  // Vita FX: the effects take the whole card under the header
+  if (effect_only_) {
+    for (Component* c : { (Component*)synthesis_interface_.get(), (Component*)modulation_matrix_.get(),
+                          (Component*)master_controls_interface_.get(), (Component*)modulation_interface_.get(),
+                          (Component*)portamento_section_.get(), (Component*)voice_section_.get(),
+                          (Component*)bend_section_.get(), (Component*)extra_mod_section_.get(),
+                          (Component*)keyboard_interface_.get() })
+      if (c)
+        c->setVisible(false);
+    header_->setTabsVisible(false);
+    effects_interface_->setVisible(true);
+    effects_interface_->setBounds(left + voice_padding, top + top_height,
+                                  width - 2 * voice_padding, height - top_height - voice_padding);
+  }
+
   if (getWidth() && getHeight())
     redoBackground();
 }
@@ -582,6 +597,8 @@ void FullInterface::mouseWheelMove(const MouseEvent& e, const MouseWheelDetails&
 void FullInterface::tabSelected(int index) {
   ScopedLock lock(open_gl_critical_section_);
   bool make_visible = true;
+  if (effect_only_)
+    index = 1;
 
   if (synthesis_interface_)
     synthesis_interface_->setVisible(index == 0 && make_visible);
@@ -598,6 +615,11 @@ void FullInterface::tabSelected(int index) {
 
 void FullInterface::clearTemporaryTab(int current_tab) {
   ScopedLock lock(open_gl_critical_section_);
+  if (effect_only_) {
+    tabSelected(1);
+    resized();
+    return;
+  }
   modulation_interface_->setVisible(true);
   portamento_section_->setVisible(true);
   voice_section_->setVisible(true);

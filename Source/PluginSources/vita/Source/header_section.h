@@ -79,6 +79,7 @@ class HeaderSection : public SynthSection, public SaveSection::Listener,
 
     void addListener(Listener* listener) { listeners_.push_back(listener); }
     void setTabOffset(int offset) { tab_offset_ = offset; repaint(); }
+    void setTabsVisible(bool visible);
 
   private:
     std::vector<Listener*> listeners_;

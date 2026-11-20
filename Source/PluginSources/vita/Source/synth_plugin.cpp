@@ -21,8 +21,13 @@
 
 // Vita: a stereo output, enabled - JUCE 9's default processor buses start disabled (older JUCE
 // enabled them from the plugin's channel configuration)
-SynthPlugin::SynthPlugin() :
-    AudioProcessor(BusesProperties().withOutput("Output", AudioChannelSet::stereo(), true)) {
+SynthPlugin::SynthPlugin(bool effectOnly) :
+    AudioProcessor(effectOnly ? BusesProperties().withInput("Input", AudioChannelSet::stereo(), true)
+                                                 .withOutput("Output", AudioChannelSet::stereo(), true)
+                              : BusesProperties().withOutput("Output", AudioChannelSet::stereo(), true)),
+    effect_only_(effectOnly) {
+  if (effect_only_)
+    engine_->setEffectOnly(true);
   last_seconds_time_ = 0.0;
 
   int num_params = vital::Parameters::getNumParameters();
@@ -78,6 +83,8 @@ void SynthPlugin::pauseProcessing(bool pause) {
 }
 
 const String SynthPlugin::getName() const {
+  if (effect_only_)
+    return "Vita FX";
   return JucePlugin_Name;
 }
 
@@ -118,6 +125,8 @@ bool SynthPlugin::silenceInProducesSilenceOut() const {
 }
 
 double SynthPlugin::getTailLengthSeconds() const {
+  if (effect_only_)
+    return 10.0;     // the reverb and delay ring on
   return 0.0;
 }
 
@@ -169,6 +178,12 @@ void SynthPlugin::processBlock(AudioSampleBuffer& buffer, MidiBuffer& midi_messa
     int num_samples = std::min<int>(total_samples - sample_offset, vital::kMaxBufferSize);
 
     engine_->correctToTime(last_seconds_time_);
+    if (effect_only_) {
+      // Vita FX: the block's input into the effects chain (read before the output overwrites it)
+      const int ins = getTotalNumInputChannels();
+      engine_->setExternalInput(ins > 0 ? buffer.getReadPointer(0, sample_offset) : nullptr,
+                                ins > 1 ? buffer.getReadPointer(1, sample_offset) : nullptr, num_samples);
+    }
     processMidi(midi_messages, sample_offset, sample_offset + num_samples);
     processAudio(&buffer, num_channels, num_samples, sample_offset);
 
@@ -233,4 +248,9 @@ void SynthPlugin::setStateInformation(const void* data, int size_in_bytes) {
 
 AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
   return new SynthPlugin();
+}
+
+// Vita FX: the same synth, its effects fed from its audio input
+AudioProcessor* JUCE_CALLTYPE createPluginFilterFx() {
+  return new SynthPlugin(true);
 }

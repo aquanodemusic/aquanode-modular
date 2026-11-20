@@ -9,9 +9,10 @@ static ModuleDescriptor dualVcoDescriptor()
     d.displayName = "Dual VCO";
     d.description =
         "Two analog-style VCOs and their mixer: VCO 1 Triangle/Saw/Pulse/Noise, VCO 2 Saw/Pulse/Ring "
-        "Mod with its own Pitch, in feet (8' plays the key). It never gates - the VCOs "
-        "run while the voice lives - so put the VCA after the filter: Volume with an Analog EG "
-        "in Vol Mod. Pitch In takes an MG or envelope; Pitch Mod sets semitones per unit.";
+        "Mod with its own Pitch, in feet (8' plays the key). Env In takes an ADSR (or any envelope) "
+        "that shapes each voice directly; with nothing there it never gates - the VCOs run while "
+        "the voice lives - so put the VCA after the filter: Volume with an Analog EG in Vol Mod. "
+        "Pitch In takes an MG or envelope; Pitch Mod sets semitones per unit.";
     d.section = ModuleSection::Oscillator;
     d.family = ModuleFamily::Vintage;
     d.sidebarOrder = 40;
@@ -21,6 +22,7 @@ static ModuleDescriptor dualVcoDescriptor()
     d.sockets = {
         modIn    ("pitchIn",   "Pitch In"),
         midiIn   ("addMidiIn", "Add Midi In"),
+        modIn    ("envIn",     "Env In"),      // (6.7.10; after the others, so old patches keep their indices)
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

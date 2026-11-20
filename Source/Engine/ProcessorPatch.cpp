@@ -65,6 +65,7 @@ int AquanodeModularAudioProcessor::addModule (const juce::String& typeId, juce::
     auto inst = std::make_shared<ModuleInstance>();
     inst->id = nextInstanceId++;
     inst->reg = reg;
+    const auto ramBefore = aquanode::processResidentBytes();   // (for the CPU / RAM module: what it takes, approx.)
     {
         const int before = creatingLevel();
         creatingLevel() = nestingLevel;
@@ -78,6 +79,8 @@ int AquanodeModularAudioProcessor::addModule (const juce::String& typeId, juce::
 
     if (isPrepared)
         inst->dsp->prepare (currentSampleRate);
+    if (ramBefore > 0)
+        inst->dsp->ramBytes.store (juce::jmax ((juce::int64) 0, aquanode::processResidentBytes() - ramBefore), std::memory_order_relaxed);
 
     instances.push_back (inst);
     rebuildGraph();
@@ -187,6 +190,10 @@ bool AquanodeModularAudioProcessor::addCable (int fromModule, const juce::String
     const bool srcMidi = src->descriptor().outputs()[(size_t) srcIdx]->kind == aquanode::SocketKind::Midi;
     const bool dstMidi = dst->descriptor().inputs()[(size_t) dstIdx]->kind == aquanode::SocketKind::Midi;
     if (srcMidi != dstMidi)
+        return false;
+
+    // MPE notes (the MPE Piano Roll) only into what plays each note's own expression
+    if (srcMidi && src->dsp->emitsMpeMidi() && ! aquanode::typeAcceptsMpe (dst->descriptor().typeId))
         return false;
 
     // Several MIDI sources may feed one socket: a generator can follow an
@@ -375,5 +382,6 @@ void AquanodeModularAudioProcessor::clearPatch()
         graveyard.emplace_back (graphSerial + 1, std::static_pointer_cast<void> (inst));
     instances.clear();
     nextInstanceId = 1;
+    latencyCompensation.store (false, std::memory_order_relaxed);   // (6.7.12: a new patch starts without)
     moduleRandomUndo.clear();   // the ids start over
 }

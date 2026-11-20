@@ -549,12 +549,13 @@ private:
 // ---------------------------------------------------------------------------
 //  Voice
 // ---------------------------------------------------------------------------
-struct MidiState { double pitchWheel = 0, modWheel = 0, aftertouch = 0; };
+struct MidiState { double pitchWheel = 0, modWheel = 0, aftertouch = 0; double extraSemis = 0; };   // extraSemis: an MPE note's own bend
 
 class Voice {
 public:
     bool isActive() const { return amp.active(); }
     int key = -1; bool held = false; uint64_t age = 0;
+    int channel = 0;   // MPE (Aquanode): the member channel (2..16) it plays, 0 otherwise
 
     void prepare(double sr) { fs = sr; tables = &Tables::get(sr); amp.setSampleRate(sr); fil.setSampleRate(sr); }
 
@@ -652,7 +653,7 @@ public:
         lfoHz *= std::exp2(4.0 * speed);
         // ---- oscillator frequencies ----
         double det = 4.015 * std::floor(p.detune * 10.0 + 1e-6) / 10.0 / 100.0;   // semitones each way (display resolution 0.1 ct)
-        double base = curSemis + p.bendRange * midi.pitchWheel; (void)g0;
+        double base = curSemis + p.bendRange * midi.pitchWheel + midi.extraSemis; (void)g0;
         for (int o = 0; o < 2; ++o) {                            // ranges may change while a note sounds
             const int r0 = p.range[o][0], r1 = p.range[o][1], rmin = std::min(r0, r1);
             masterRange[o] = rmin; mult[o][0] = 1 << (r0 - rmin); mult[o][1] = 1 << (r1 - rmin);
@@ -777,6 +778,7 @@ public:
             bool legato = v.isActive() && anyHeld();
             heldKeys.erase(std::remove(heldKeys.begin(), heldKeys.end(), key), heldKeys.end());
             heldKeys.push_back(key);
+            v.channel = noteChannel;
             if (legato) { v.legatoTo(key, patch, glideAllowed); v.held = true; }
             else v.start(key, vel, patch, lastSemis, glideAllowed && lastSemis > 0, false, ++seed);
             if (!legato) { v.kill(); v.start(key, vel, patch, lastSemis, glideAllowed && lastSemis > 0, false, seed); }
@@ -797,6 +799,7 @@ public:
         }
         if (!v) return;
         v->age = ++ageCounter;
+        v->channel = noteChannel;
         v->start(key, vel, patch, lastSemis, glideAllowed && lastSemis > 0, false, ++seed);
         lastSemis = key;
     }
@@ -810,12 +813,26 @@ public:
             else v.release(patch);
             return;
         }
-        for (auto& v : voices) if (v.isActive() && v.key == key && v.held) v.release(patch);
+        for (auto& v : voices) if (v.isActive() && v.key == key && v.held && (noteChannel == 0 || v.channel == noteChannel)) v.release(patch);
     }
+
+    // MPE (Aquanode), switched on by the host at the first note on a member
+    // channel: channels 2..16 then carry one note each, with its own bend (+-48
+    // semitones, on top of the global bend) and its own pressure (the Aftertouch
+    // source). Channel 1 stays the global channel. setChannel() comes before each
+    // message with the channel it arrived on.
+    bool mpe = false;
+    void setChannel(int ch) { noteChannel = mpe && ch >= 2 && ch <= 16 ? ch : 0; }
     void allNotesOff() { heldKeys.clear(); for (auto& v : voices) if (v.isActive()) v.release(patch); }
-    void pitchWheel(int value14) { midi.pitchWheel = std::max(-1.0, std::min(1.0, (value14 - 8192) / 8192.0)); }
+    void pitchWheel(int value14) {
+        if (noteChannel != 0) { chanBend[noteChannel] = (value14 - 8192) / 8192.0 * 48.0; return; }
+        midi.pitchWheel = std::max(-1.0, std::min(1.0, (value14 - 8192) / 8192.0));
+    }
     void controller(int cc, int value) { if (cc == 1) midi.modWheel = value / 127.0; if (cc == 123 || cc == 120) allNotesOff(); }
-    void channelPressure(int value) { midi.aftertouch = value / 127.0; }
+    void channelPressure(int value) {
+        if (noteChannel != 0) { chanPress[noteChannel] = value / 127.0; return; }
+        midi.aftertouch = value / 127.0;
+    }
 
     // ---- audio ----
     void process(float* L, float* R, int n) {
@@ -823,7 +840,13 @@ public:
         std::fill(L, L + n, 0.0f);
         for (int off = 0; off < n; off += kBlock) {
             int m = std::min(kBlock, n - off);
-            for (auto& v : voices) if (v.isActive()) v.render(L + off, m, patch, midi, drive);
+            for (auto& v : voices) if (v.isActive()) {
+                if (v.channel == 0) { v.render(L + off, m, patch, midi, drive); continue; }
+                MidiState own = midi;                            // MPE: the note's own bend and pressure
+                own.extraSemis = chanBend[v.channel];
+                if (chanPress[v.channel] >= 0.0) own.aftertouch = chanPress[v.channel];
+                v.render(L + off, m, patch, own, drive);
+            }
         }
         // volume
         const double vg = patch.volume <= 0.0 ? 0.0 : std::pow(10.0, Law::volumeDb(patch.volume) / 20.0);
@@ -844,6 +867,9 @@ private:
     double fs = 44100.0;
     std::array<Voice, kMaxVoices> voices;
     MidiState midi;
+    int noteChannel = 0;
+    double chanBend[17] = {};
+    double chanPress[17] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
     Drive drive; Chorus chorus; Limiter limiter;
     std::vector<float> mono;
     std::vector<int> heldKeys;

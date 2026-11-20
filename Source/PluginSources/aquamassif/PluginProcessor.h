@@ -14,9 +14,12 @@
 #include "massif/GeneratorLevel.h"
 
 class AquaMassifProcessor : public juce::AudioProcessor,
+                            public aquanode::MpeReceiver,      // (Aquanode: MPE once a member channel plays)
                             private juce::Timer
 {
 public:
+    void enableMpe (bool on) override { mpeOn = on; }
+    bool mpeOn { false };
     AquaMassifProcessor();
     ~AquaMassifProcessor() override;
 

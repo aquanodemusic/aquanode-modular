@@ -10,7 +10,7 @@
 class BitcrushModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pBits = 0, pDryWet };
+    enum ParamIndex { pBits = 0, pDryWet, pLevel };
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Flexible; }
 
@@ -25,7 +25,7 @@ public:
         {
             const float x = inputs[0][(size_t) c];
             const float crushed = std::round (x * levels) / levels;
-            outputs[0][(size_t) c] = x + wet01 * (crushed - x);
+            outputs[0][(size_t) c] = (x + wet01 * (crushed - x)) * param (pLevel);   // (6.7.11: Level)
         }
     }
 

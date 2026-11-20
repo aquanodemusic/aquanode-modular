@@ -192,19 +192,88 @@ void AquanodeModularAudioProcessor::emitMidi (const ProcessGraph& graph, int sou
     if (stream == nullptr)
         return;
 
+    // an MPE note's expression: onto the voices playing it (its own bend, Pressure, Slide)
+    auto expressVoices = [&]
+    {
+        for (int v = 0; v < kMaxVoices; ++v)
+            if (voiceStates[v].active && voiceStates[v].held && voiceStates[v].note == e.note
+                && voiceStates[v].midiSource == sourceId)
+            {
+                midiState.voiceBend[v] = e.bend;
+                if (e.pressure >= 0.0f) midiState.voicePressure[v] = e.pressure;
+                if (e.slide >= 0.0f) midiState.voiceSlide[v] = e.slide;
+            }
+    };
+
     if (stream->hasConsumers)
     {
-        if (e.isOn) startVoice (graph, e.note, sourceId, e.velocity);
-        else        releaseVoices (graph.nodes, sourceId, e.note);
+        if (e.isExpression) expressVoices();
+        else if (e.isOn)    { startVoice (graph, e.note, sourceId, e.velocity); if (e.mpe) expressVoices(); }
+        else                releaseVoices (graph.nodes, sourceId, e.note);
     }
 
     if (! stream->rawListeners.empty())
     {
-        const auto msg = e.isOn ? juce::MidiMessage::noteOn (1, e.note, juce::jlimit (0.0f, 1.0f, e.velocity))
-                                : juce::MidiMessage::noteOff (1, e.note);
-        for (int ni : stream->rawListeners)
-            graph.nodes[(size_t) ni]->dsp->rawMidiMessage (msg);
+        if (e.mpe || e.isExpression)
+        {
+            // as MPE: every note on a member channel of its own (2..16), its bend
+            // (+-48 semitones), pressure and Slide (CC 74) on that channel
+            // (slot i is member channel i + 2)
+            int ch = 0;
+            for (size_t i = 0; i < mpeOutChannels.size(); ++i)
+                if (mpeOutChannels[i].source == sourceId && mpeOutChannels[i].note == e.note) { ch = (int) i + 2; break; }
+            if (e.isOn && ! e.isExpression && ch == 0)
+            {
+                int pick = -1;
+                for (size_t k = 0; k < mpeOutChannels.size() && pick < 0; ++k)
+                {
+                    const size_t i = (mpeOutNext + k) % mpeOutChannels.size();   // round the channels (a release tail keeps its own)
+                    if (mpeOutChannels[i].source < 0) pick = (int) i;
+                }
+                if (pick < 0)   // all taken: the oldest note's channel
+                {
+                    pick = 0;
+                    for (size_t i = 1; i < mpeOutChannels.size(); ++i)
+                        if (mpeOutChannels[i].age < mpeOutChannels[(size_t) pick].age) pick = (int) i;
+                }
+                ++mpeOutNext;
+                mpeOutChannels[(size_t) pick] = { sourceId, e.note, pick + 2, mpeOutNext };
+                ch = pick + 2;
+            }
+            if (ch == 0)
+                return;
+            auto send = [&] (const juce::MidiMessage& msg)
+            {
+                for (int ni : stream->rawListeners)
+                    graph.nodes[(size_t) ni]->dsp->deliverRawMidi (msg);
+            };
+            if (e.isOn || e.isExpression)
+            {
+                const int wheel = juce::jlimit (0, 16383, 8192 + (int) std::lround (e.bend / 48.0f * 8192.0f));
+                send (juce::MidiMessage::pitchWheel (ch, wheel));
+                if (e.pressure >= 0.0f) send (juce::MidiMessage::channelPressureChange (ch, juce::jlimit (0, 127, (int) std::lround (e.pressure * 127.0f))));
+                if (e.slide >= 0.0f) send (juce::MidiMessage::controllerEvent (ch, 74, juce::jlimit (0, 127, (int) std::lround (e.slide * 127.0f))));
+            }
+            if (e.isOn && ! e.isExpression)
+                send (juce::MidiMessage::noteOn (ch, e.note, juce::jlimit (0.0f, 1.0f, e.velocity)));
+            else if (! e.isOn && ! e.isExpression)
+            {
+                send (juce::MidiMessage::noteOff (ch, e.note));
+                for (auto& m : mpeOutChannels)
+                    if (m.source == sourceId && m.note == e.note) m.source = -1;
+            }
+        }
+        else
+        {
+            const auto msg = e.isOn ? juce::MidiMessage::noteOn (1, e.note, juce::jlimit (0.0f, 1.0f, e.velocity))
+                                    : juce::MidiMessage::noteOff (1, e.note);
+            for (int ni : stream->rawListeners)
+                graph.nodes[(size_t) ni]->dsp->deliverRawMidi (msg);
+        }
     }
+
+    if (e.isExpression)
+        return;     // (expression goes no further: MIDI processors take notes only)
 
     if (depth < kMaxMidiChainDepth)
         for (int nodeIndex : stream->processors)

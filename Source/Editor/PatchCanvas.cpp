@@ -111,6 +111,18 @@ void PatchCanvas::openPresetInPlugin (int instanceId)
     });
 }
 
+void PatchCanvas::editPatchFromCard (int instanceId, std::function<void (AquanodeModularAudioProcessor&, int)> edit)
+{
+    juce::Component::SafePointer<PatchCanvas> safe (this);
+    juce::MessageManager::callAsync ([safe, instanceId, edit = std::move (edit)]
+    {
+        if (safe == nullptr || edit == nullptr || safe->processor.getInstance (instanceId) == nullptr)
+            return;
+        edit (safe->processor, instanceId);
+        safe->rebuild();
+    });
+}
+
 void PatchCanvas::rebuild()
 {
     moduleComponents.clear();
@@ -136,6 +148,8 @@ void PatchCanvas::rebuild()
 
     applyViewToChildren();   // new components need the current pan/zoom
     repaint();
+    if (onRebuilt)
+        onRebuilt();         // (a card in full screen: its new self goes there)
 }
 
 void PatchCanvas::refreshAllModuleValues()
@@ -1105,6 +1119,14 @@ void PatchCanvas::mouseUp (const juce::MouseEvent& e)
     setMouseCursor (juce::MouseCursor::NormalCursor);
 }
 
+void PatchCanvas::takeCardBack (ModuleComponent& card)
+{
+    card.setInFullView (false);
+    addAndMakeVisible (card);
+    applyViewToChildren();
+    repaint();
+}
+
 void PatchCanvas::applyViewToChildren()
 {
     const auto t = worldToScreen();
@@ -1112,6 +1134,7 @@ void PatchCanvas::applyViewToChildren()
     for (auto& m : moduleComponents)
         if (auto* inst = processor.getInstance (m->getInstanceId()))
         {
+            if (m->isInFullView()) continue;          // (borrowed by the editor's full view)
             m->setTopLeftPosition (inst->position);   // world coordinates
             m->setTransform (t);                      // pan + zoom, view only
         }

@@ -88,11 +88,16 @@ namespace
               0xff35a8c9, ModuleSection::Oscillator, true, false, false, false, 1100, 620, "*.tidebreeze" },
 
             { "covegroove", "Cove Groove",
-              "The hardgroove loop generator: eight synthesized drum lanes (kick, offbeat bass, clap, hats, cymbal, "
-              "conga / tom, FX) in patterns of up to four bars that GENERATE writes in a style - or you by hand - with "
-              "swing, a top bus with a subtle phaser and a moving band-pass, a dotted delay and a master drive. Plays with "
-              "the DAW's transport, or on RUN at its own tempo; keys from C2 play the lanes.",
-              0xff1ad6ec, ModuleSection::Oscillator, true, false, false, false, 1100, 620, "*.covegroove" },
+              "The hardgroove loop generator: eight drum lanes (kick, offbeat bass, clap, hats, cymbal, conga / tom, FX) "
+              "in patterns of up to four bars that GENERATE writes in a style - or you by hand - with swing, a dotted "
+              "delay and a master drive. TOP on a lane sends it through the top bus - a subtle phaser and a band-pass "
+              "moving with the bars - before the drive; lanes without TOP go to the drive dry. Every lane has synthesized "
+              "sounds, the classic boxes, physically modelled kits (808, 909, Classic, Electro, Large Drums, Metal, "
+              "Orchestral, World) and your own samples (+ beside the lane's name loads one). The row above the steps "
+              "shows a lane's sound up close with its loudness over time; on a modelled kit it picks any of the kit's "
+              "sounds and moves the model's own knobs. Plays with the DAW's transport, or on RUN at its own tempo; keys "
+              "from C2 play the lanes.",
+              0xff1ad6ec, ModuleSection::Oscillator, true, false, false, false, 1100, 700, "*.covegroove" },
 
             { "virtualdx7", "VirtualDX7",
               "The six-operator FM synth with both of its engines: the native engine, and the bit-accurate "
@@ -274,6 +279,20 @@ namespace
               "draw across the spectrum, with offsets, ratio and knee per direction, attack, release, FFT size "
               "and overlap. Side In can drive the bins instead of the input.",
               0xff4fc3a1, ModuleSection::Effect, false, false, true, true, 1240, 780, "", false, "Side In" },
+
+            { "vitafx", "Vita FX",
+              "Vita's effects rack on its own, for any sound: Audio In runs through the chorus, compressor, delay, "
+              "distortion, equalizer, filter, flanger, phaser and reverb in the order you drag them to, with Vita's own "
+              "panel for them (only the effects page). Loads .vital presets (their effects); Midi In still plays "
+              "Vita's voices into the same chain.",
+              0xff7b8cde, ModuleSection::Effect, true, false, true, false, 1260, 738, "*.vital", true },
+
+            { "spectralfilter", "SpectralFilter",
+              "A spectral processor you draw: the input's spectrum shown live, and per FFT bin (20 Hz - 20 kHz) a gain "
+              "curve (+-24 dB), a phase curve, a frequency shift and a pan, each with its own Strength, Shift and Auto "
+              "scrolling (bins per second), a global shift with Wrap, a Frequency Window that limits where it all acts, "
+              "Wet Only to hear the change alone, FFT Size 1024-8192, and Export IR to save the curves as an impulse response.",
+              0xff5fd0a8, ModuleSection::Effect, false, false, true, false, 860, 700, "", false },
 
             { "spectralstereoize", "SpectralStereoize",
               "Mid/side width per FFT bin: draw how wide each frequency should be, from mono to extra wide, on a "
@@ -727,6 +746,56 @@ int openHeldPresetInPlugin (AquanodeModularAudioProcessor& patch, int instanceId
             patch.addCable (card, c.fromSocket, c.toModule, c.toSocket);
     }
     return card;
+}
+
+std::vector<int> openPluginsBeside (AquanodeModularAudioProcessor& patch, int besideInstance,
+                                    const std::vector<std::pair<juce::String, juce::MemoryBlock>>& pluginsAndStates)
+{
+    std::vector<int> made;
+    auto* src = patch.getInstance (besideInstance);
+    if (src == nullptr)
+        return made;
+    auto where = src->position + juce::Point<int> (src->dsp->preferredModuleWidth() + 40, 0);
+    std::vector<CableInfo> touching;
+    for (const auto& c : patch.getCables())
+        if (c.fromModule == besideInstance || c.toModule == besideInstance)
+            touching.push_back (c);
+
+    for (const auto& [id, state] : pluginsAndStates)
+    {
+        auto* e = findEntry (id);
+        if (e == nullptr)
+            continue;
+        const int card = patch.addModule (e->guiTypeId, where);
+        if (card < 0)
+            continue;
+        auto* inst = patch.getInstance (card);
+        if (auto* h = dynamic_cast<HostedPluginModule*> (inst->dsp.get()))
+            if (auto* p = h->getPlugin(); p != nullptr && state.getSize() > 0)
+                p->setStateInformation (state.getData(), (int) state.getSize());
+        bool plays = false;
+        for (const auto& c : touching)
+        {
+            if (c.fromModule == besideInstance && c.fromSocket == "audioOut")
+            {
+                patch.addCable (card, "audioOut", c.toModule, c.toSocket);
+                plays = true;
+            }
+            else if (c.toModule == besideInstance && c.toSocket == "midiIn" && inst->descriptor().inputIndexOf ("midiIn") >= 0)
+                patch.addCable (c.fromModule, c.fromSocket, card, "midiIn");
+        }
+        if (! plays)
+        {
+            int out = findFirst (patch, "io.audioOut");
+            if (out < 0)
+                out = patch.addModule ("io.audioOut", where + juce::Point<int> (inst->dsp->preferredModuleWidth() + 60, 0));
+            if (out >= 0)
+                patch.addCable (card, "audioOut", out, "audioIn");
+        }
+        made.push_back (card);
+        where += juce::Point<int> (inst->dsp->preferredModuleWidth() + 40, 0);   // (a second one beside the first)
+    }
+    return made;
 }
 
 } // namespace aquanode::plugins

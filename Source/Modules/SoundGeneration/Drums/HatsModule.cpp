@@ -2,6 +2,8 @@
 
 using namespace aquanode;
 
+static constexpr float kSnipGain = 0.22f;   // next to Classic
+
 void HatsModule::processVoiceSample (int v, const StereoFrame* inputs, StereoFrame* outputs)
 {
     // voice-steal de-click: a muted voice ramps out over a few ms instead of
@@ -24,8 +26,16 @@ void HatsModule::renderVoice (int v, const StereoFrame* inputs, StereoFrame* out
 {
     const float trigIn = inputs[0][0];
     if (trigIn > 0.5f && lastTrig[v] <= 0.5f)
-        env[v] = 1.0f;
+        hit (v);
     lastTrig[v] = trigIn;
+
+    if (snipModel())
+    {
+        const float y = snip[v].process() * kSnipGain;
+        outputs[0][0] = y;
+        outputs[0][1] = y;
+        return;
+    }
 
     if (env[v] < 1.0e-5f)
     {
@@ -84,7 +94,9 @@ static ModuleDescriptor hatsDescriptor()
     d.description =
         "Classic analog metallic percussion: six detuned squares summed, band-passed and shaped by "
         "a snappy decay - short Decay is a closed hat, long an open one. Trig In takes a Clock, "
-        "Euclid or Step Seq gate; it also fires on MIDI note-on. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a hit, alongside Trig In.";
+        "Euclid or Step Seq gate; it also fires on MIDI note-on. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a hit, alongside Trig In. "
+        "Model Snip plays a short bright snip measured from a drum track (airy noise with two faint rings): Decay scales its length, "
+        "Tone its brightness, Tune its rings.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 7;
     d.sockets = {
@@ -98,7 +110,8 @@ static ModuleDescriptor hatsDescriptor()
         makeRotary ("tone",  "Tone",  0.0f, 100.0f, 60.0f, 0, "%"),
         makeRotary ("metal", "Metal", 0.0f, 100.0f, 20.0f, 0, "%")
     ,
-        makeRotary ("voices", "Voices", 1.0f, (float) kMaxVoices, (float) kMaxVoices, 1, {}, false, 1.0f).noMod()
+        makeRotary ("voices", "Voices", 1.0f, (float) kMaxVoices, (float) kMaxVoices, 1, {}, false, 1.0f).noMod(),
+        makeCombo ("model", "Model", { "Classic", "Snip" }, 0, 1, 2).noMod()
     };
     return d;
 }

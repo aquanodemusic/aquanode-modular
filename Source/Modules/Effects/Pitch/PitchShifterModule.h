@@ -33,7 +33,7 @@
 class PitchShifterModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pPitch = 0, pFine, pGrain, pJitter, pMix, pAlgorithm, pFeedback, pStereo, pDryDelay, pCrossfade };
+    enum ParamIndex { pPitch = 0, pFine, pGrain, pJitter, pMix, pAlgorithm, pFeedback, pStereo, pDryDelay, pCrossfade, pLevel };
 
     static constexpr int kMaxHeads = 8;
     static constexpr int kTaps = 16;

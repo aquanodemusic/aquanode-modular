@@ -1082,6 +1082,9 @@ public:
     bool  released() const { return released_; }
     int   note()     const { return note_; }
     uint32_t age()   const { return age_; }
+    // MPE (Aquanode): the member channel (2..16) this note plays on, 0 otherwise
+    int   channel()  const { return channel_; }
+    void  setChannel (int ch) { channel_ = ch; }
 
     void start (const PatchCache& p, int midiNote, int velocity, uint32_t stamp,
                 float glideFromNote)
@@ -1347,6 +1350,7 @@ public:
     }
 
 private:
+    int channel_ { 0 };
     float    phase_[kNumOps]     { 0, 0, 0, 0, 0, 0 };
     float    gain_[kNumOps]      { 0, 0, 0, 0, 0, 0 };
     OperatorEnv env_[kNumOps];
@@ -1397,6 +1401,13 @@ public:
     // untouched). Audio thread.
     void setDcBlockHz (float hz) { dcHz_ = std::clamp (hz, 0.0f, 20.0f); }
 
+    // MPE (Aquanode), switched on by the host at the first note on a member
+    // channel: channels 2..16 then carry one note each, with its own pitch bend
+    // (+-48 semitones, on top of the global bend) and its own channel pressure
+    // (in place of the global aftertouch, wherever the patch assigns it).
+    // Channel 1 stays the global channel.
+    void setMpe (bool on) { mpe_ = on; }
+
     // ---- tuning -----------------------------------------------------------
     Tuning&       tuning()       { return tuning_; }
     const Tuning& tuning() const { return tuning_; }
@@ -1428,6 +1439,9 @@ public:
         if (status <  0x80)  return;
 
         const uint8_t type = status & 0xF0;
+        const int  ch     = mpe_ ? (int) (status & 0x0F) + 1 : 1;
+        const bool member = ch >= 2 && ch <= 16;
+        noteChannel_ = member ? ch : 0;
 
         switch (type)
         {
@@ -1448,12 +1462,19 @@ public:
                 if (len >= 3)
                 {
                     const int raw = ((int) (d[2] & 0x7F) << 7) | (int) (d[1] & 0x7F);
-                    bend_ = ((float) raw - 8192.0f) / 8192.0f;
+                    const float b = ((float) raw - 8192.0f) / 8192.0f;
+                    if (member) chanBend_[(size_t) ch] = b;
+                    else        bend_ = b;
                 }
                 break;
 
             case 0xD0:
-                if (len >= 2) aftertouch_ = (float) (d[1] & 0x7F) / 127.0f;
+                if (len >= 2)
+                {
+                    const float a = (float) (d[1] & 0x7F) / 127.0f;
+                    if (member) chanPress_[(size_t) ch] = a;
+                    else        aftertouch_ = a;
+                }
                 break;
 
             case 0xA0:
@@ -1611,6 +1632,7 @@ private:
                 if (v.active() && ! v.released())
                 {
                     v.retrigger (patch_, note, velocity, stamp_);
+                    v.setChannel (noteChannel_);
                     lastNote_ = (float) note;
                     return;
                 }
@@ -1620,6 +1642,7 @@ private:
             auto& v = notes_[0];
             v.start (patch_, note, velocity, stamp_,
                      (glide && fn_.portaFollow) ? lastNote_ : -1.0f);
+            v.setChannel (noteChannel_);
             lastNote_ = (float) note;
             return;
         }
@@ -1634,6 +1657,7 @@ private:
         if (slot == nullptr) return;
         slot->start (patch_, note, velocity, stamp_,
                      glide ? lastNote_ : -1.0f);
+        slot->setChannel (noteChannel_);
         lastNote_ = (float) note;
     }
 
@@ -1649,7 +1673,8 @@ private:
 
         if (heldCount_ > 0) --heldCount_;
         for (auto& v : notes_)
-            if (v.active() && ! v.released() && v.note() == note)
+            if (v.active() && ! v.released() && v.note() == note
+                 && (noteChannel_ == 0 || v.channel() == noteChannel_))
                 v.keyOff (sustain_);
     }
 
@@ -1668,6 +1693,12 @@ private:
                 break;
             case 120: allNotesOff (true);  break;
             case 121:
+                if (noteChannel_ != 0)   // MPE: a member channel resets only its own
+                {
+                    chanBend_[(size_t) noteChannel_] = 0.0f;
+                    chanPress_[(size_t) noteChannel_] = -1.0f;
+                    break;
+                }
                 modWheel_ = breath_ = foot_ = aftertouch_ = 0.0f;
                 bend_ = 0.0f;
                 sustain_ = false;
@@ -1821,9 +1852,32 @@ private:
         mc.lfoPitch      = lfoValue() * lfoFadeGain_;
         mc.pitchDepthAdd = std::clamp (pitchCtl, 0.0f, 1.0f);
 
+        // MPE: a note on a member channel hears its own bend on top, and its
+        // own pressure wherever the patch assigns aftertouch (pitch and amp
+        // modulation depth, EG bias) in place of the global one
+        auto withPressure = [&] (ModContext c, float at)
+        {
+            const float dAt = at - aftertouch_;
+            const auto& a = fn_.aftertouch;
+            if (a.pitch) c.pitchDepthAdd = std::clamp (pitchCtl + dAt * a.range, 0.0f, 1.0f);
+            if (a.amp)   c.ampBias       = std::clamp (ampCtl   + dAt * a.range, 0.0f, 1.0f);
+            if (a.egBias) c.egHold       = std::clamp (holdCtl  - dAt * a.range, 0.0f, 1.0f);
+            return c;
+        };
+
         for (auto& v : notes_)
             if (v.active())
-                v.renderBlock (out, numSamples, patch_, fn_, mc);
+            {
+                const int ch = v.channel();
+                if (ch >= 2 && ch <= 16)
+                {
+                    ModContext own = chanPress_[(size_t) ch] >= 0.0f ? withPressure (mc, chanPress_[(size_t) ch]) : mc;
+                    own.bendSemis += chanBend_[(size_t) ch] * 48.0f;
+                    v.renderBlock (out, numSamples, patch_, fn_, own);
+                }
+                else
+                    v.renderBlock (out, numSamples, patch_, fn_, mc);
+            }
     }
 
     // The leaky integrator behind setDcBlockHz(). dc_ tracks the offset with a
@@ -1889,6 +1943,14 @@ private:
     float bend_ { 0.0f }, modWheel_ { 0.0f }, breath_ { 0.0f };
     float foot_ { 0.0f }, aftertouch_ { 0.0f };
     bool  sustain_ { false };
+
+    // MPE (see setMpe): the channel of the message being handled (0: not a
+    // member channel), and each member channel's bend (-1..1 of +-48
+    // semitones) and pressure (-1: none yet, the global aftertouch applies)
+    bool  mpe_ { false };
+    int   noteChannel_ { 0 };
+    std::array<float, 17> chanBend_ {};
+    std::array<float, 17> chanPress_ = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
 
     bool  memoryProtect_ { false };
     float dcHz_ { 0.0f };   // DC blocker corner, 0 = off

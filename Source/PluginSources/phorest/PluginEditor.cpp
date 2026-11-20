@@ -563,8 +563,8 @@ void CustomRotarySlider::resized()
 PhorestAudioProcessorEditor::PhorestAudioProcessorEditor(PhorestAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p),
     sweepFreqSlider("SPEED", "sweepFreq", p.getValueTreeState()),
-    minDepthSlider("MIN", "minDepth", p.getValueTreeState()),
-    maxDepthSlider("MAX", "maxDepth", p.getValueTreeState()),
+    minDepthSlider("LOW", "minDepth", p.getValueTreeState()),
+    maxDepthSlider("HIGH", "maxDepth", p.getValueTreeState()),
     freqRangeSlider("RANGE", "freqRange", p.getValueTreeState()),
     stereoSlider("STEREO", "stereo", p.getValueTreeState()),
     stagesSlider("STAGES", "stages", p.getValueTreeState()),

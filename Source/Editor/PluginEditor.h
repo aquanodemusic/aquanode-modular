@@ -172,6 +172,21 @@ private:
     juce::TextButton exportButton  { "Export Patch" };
     juce::TextButton importButton  { "Import Patch" };
     juce::TextButton renderButton  { "Render" };
+    juce::TextButton pluginBlockButton { "CPU" };   // the CPU menu: the plugins' block, CPU Sleep, the Android hint (app-wide)
+    juce::TextButton cpuSleepButton { "CPU Sleep" };      // sleep on silence for effects and filters (app-wide)
+    void showPluginBlockMenu();
+
+    // 6.7.1: the top bar's menus. The buttons they replace stay as the ones
+    // doing the work (never shown): a menu item presses its button.
+    juce::TextButton patchMenuButton { "Patch" };   // Initialize, Import, Export, Render
+    juce::TextButton editMenuButton  { "Edit" };    // Clone, Delete, Region Select, Move Only
+    juce::TextButton viewMenuButton  { "View" };    // Keys, Sidebar, Mutator
+    void showPatchMenu();
+    void showEditMenu();
+    void showViewMenu();
+    void pressHidden (juce::TextButton& b);          // as if it had been clicked (a toggle flips first)
+    void refreshEditMenuButton();                    // "Edit (Region)" / "Edit (Move Only)" while one is on
+    void parentHierarchyChanged() override;          // the standalone window: its maximise button
 
     // the patch's tempo: drag up / down on it, or tap to type one; shows the
     // host's tempo (and leaves it alone) where a DAW gives one
@@ -183,6 +198,9 @@ private:
         void mouseUp (const juce::MouseEvent&) override;
         void timerCallback() override { refresh(); }
         void refresh();
+        int tempoModule (bool& modulated) const;   // (6.7.9: a Tempo module turns with the box, or locks it)
+        bool locked() const;
+        void setTempo (double bpm);
         AquanodeModularAudioProcessor& proc;
         double dragStart = 120.0;
         bool dragged = false;
@@ -192,7 +210,6 @@ private:
     juce::TextButton mutatorButton { "Mutator" };
 
     // the standalone app on a desktop: the window over the whole screen (F11 too)
-    juce::TextButton fullScreenButton { "Full Screen" };
     bool hasFullScreenButton() const;
     void toggleFullScreen();
 
@@ -209,6 +226,15 @@ private:
     int fullViewGripHeight() const;
     void closePluginFullSize();
 
+    // full screen for any card (6.7.2): the card itself borrowed into a view
+    // over the patch, as large as fits - black borders around it on Android, the
+    // window taking its shape on a desktop. A plugin card goes to Full Size.
+    class ModuleFullView;
+    std::unique_ptr<ModuleFullView> moduleFullView;
+    void toggleModuleFullScreen (int instanceId);
+    void closeModuleFullScreen();
+    juce::Component* currentFullView() const;
+
     // Panel toggles. Hiding the sidebar and the keyboard gives the patch area
     // the whole screen, which is the difference between usable and unusable on
     // a phone. Both are pure layout changes - resized() re-runs and the canvas
@@ -217,6 +243,95 @@ private:
     juce::TextButton keysButton    { "Keys" };
     bool sidebarVisible { true };
     bool keyboardVisible { true };
+
+    // The sidebar's right edge (6.7.4): dragged to the left it slides the
+    // sidebar out of view - its contents move along at their own size - and
+    // back up to its full width, no further. Let go nearly out of view, the
+    // sidebar is hidden; then a small tab at the left edge brings it back (a
+    // tap: all of it, a drag: as far as it is pulled).
+    class SidebarEdge final : public juce::Component
+    {
+    public:
+        std::function<void()> onDragStart, onDragEnd, onTap;
+        std::function<void (int screenDx)> onDrag;
+        bool tab { false };   // the sidebar hidden: the tab at the left edge
+
+        juce::Rectangle<float> grip() const
+        {
+            const float h = juce::jmin ((float) getHeight(), tab ? 64.0f : 56.0f);
+            return juce::Rectangle<float> ((float) getWidth(), h).withCentre (getLocalBounds().toFloat().getCentre());
+        }
+        bool hitTest (int x, int y) override
+        {
+            if (grip().contains ((float) x, (float) y)) return true;
+            // the edge itself along its whole height, on the patch side (the
+            // sidebar's scroll bar stays its own)
+            return ! tab && x >= getWidth() / 2 && x <= getWidth() / 2 + 5;
+        }
+        void paint (juce::Graphics& g) override
+        {
+            const auto gr = grip();
+            if (tab)
+            {
+                juce::Path p;
+                p.addRoundedRectangle (gr.getX() - 8.0f, gr.getY(), gr.getWidth() + 8.0f, gr.getHeight(), 7.0f);
+                g.setColour (juce::Colours::black.withAlpha (0.45f));
+                g.fillPath (p);
+                g.setColour (juce::Colours::white.withAlpha (0.35f));
+                g.strokePath (p, juce::PathStrokeType (1.0f));
+                juce::Path chev;   // >
+                const auto c = gr.getCentre();
+                chev.startNewSubPath (c.x - 2.5f, c.y - 6.0f);
+                chev.lineTo (c.x + 3.0f, c.y);
+                chev.lineTo (c.x - 2.5f, c.y + 6.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.8f));
+                g.strokePath (chev, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                return;
+            }
+            // a pill on the edge with two little lines
+            const auto pill = gr.withSizeKeepingCentre (juce::jmin (gr.getWidth(), 10.0f), gr.getHeight());
+            g.setColour (juce::Colours::black.withAlpha (dragging ? 0.6f : 0.4f));
+            g.fillRoundedRectangle (pill, pill.getWidth() * 0.5f);
+            g.setColour (juce::Colours::white.withAlpha (dragging ? 0.75f : 0.45f));
+            g.drawRoundedRectangle (pill, pill.getWidth() * 0.5f, 1.0f);
+            for (float dx : { -1.6f, 1.6f })
+                g.drawLine (pill.getCentreX() + dx, pill.getCentreY() - 9.0f, pill.getCentreX() + dx, pill.getCentreY() + 9.0f, 1.0f);
+        }
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            downX = e.getScreenX();
+            dragging = false;
+        }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            const int dx = e.getScreenX() - downX;
+            if (! dragging && std::abs (dx) < 4)
+                return;
+            if (! dragging)
+            {
+                dragging = true;
+                if (onDragStart) onDragStart();
+            }
+            if (onDrag) onDrag (dx);
+            repaint();
+        }
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            if (dragging) { dragging = false; if (onDragEnd) onDragEnd(); repaint(); }
+            else if (onTap) onTap();
+        }
+        juce::MouseCursor getMouseCursor() override { return juce::MouseCursor::LeftRightResizeCursor; }
+
+    private:
+        int downX { 0 };
+        bool dragging { false };
+    };
+    SidebarEdge sidebarEdge;
+    int sidebarShift { 0 };          // how far it is slid out to the left (layout pixels, 0 .. its width)
+    int sidebarShiftAtDrag { 0 };
+    int sidebarFullWidth { 200 };    // its width, as the last layout made it
+    void showSidebar (bool show);
+    void wireNewSynthToOutput (int newId);   // (a sound generator into Audio Out, where the patch has none)
 
     // Zoom controls: the [-][+] buttons live in the top toolbar, right next
     // to Mutator. The percentage is shown in the sidebar under its title

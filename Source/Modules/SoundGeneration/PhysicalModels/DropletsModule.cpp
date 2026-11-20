@@ -215,7 +215,8 @@ static ModuleDescriptor dropletsDescriptor()
         makeRotary ("density", "Density",  1.0f, (float) DropletsModule::kMaxDroplets, 16.0f, 2, {}, false, 1.0f),
         makeRotary ("voices",  "Voices",   1.0f, (float) kMaxVoices, (float) kMaxVoices, 2, {}, false, 1.0f).noMod(),
         // By Key: every drip at the pitch of the key played (a melodic rain); By Size: the drop's own pitch
-        makeCombo  ("tune",    "Tune",     { "By Size", "By Key" }, 1, 3, 2).whenMissing (0.0f)
+        makeCombo  ("tune",    "Tune",     { "By Size", "By Key" }, 1, 3, 2).whenMissing (0.0f),
+        makeOutputTrim (6.0f)   // 6.7.0: a drop is short; lifted to meet the other generators (applied on its cables by the engine)
     };
     return d;
 }

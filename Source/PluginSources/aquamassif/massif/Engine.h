@@ -44,6 +44,7 @@ struct Voice
 {
     bool active { false };
     int note { 60 }, uniIndex { 0 }, uniCount { 1 };
+    int channel { 0 };                        // MPE: the member channel (2..16) it plays on, 0 otherwise
     float vel { 0.8f };
     float trigRand { 0.0f };
     uint64_t age { 0 };
@@ -78,6 +79,17 @@ struct Engine
     MasterEq eq;
     uint64_t ageCounter { 0 };
     float bend { 0 }, aftertouch { 0 };
+    // MPE (Aquanode): the channel of the next noteOn/noteOff (0: not MPE), and each member channel's own bend
+    // (-1..1 of +-48 semitones) and pressure (-1: none yet, the voice reads the global aftertouch)
+    int noteChannel { 0 };
+    std::array<float, 17> chanBend {};
+    std::array<float, 17> chanPress = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
+    float voiceBendSemis (const Voice& v) const { return v.channel >= 2 && v.channel <= 16 ? chanBend[(size_t) v.channel] * 48.0f : 0.0f; }
+    float voicePressure (const Voice& v) const
+    {
+        if (v.channel >= 2 && v.channel <= 16 && chanPress[(size_t) v.channel] >= 0.0f) return chanPress[(size_t) v.channel];
+        return aftertouch;
+    }
     std::array<float, 8> macro {};
     std::vector<int> held;                 // held notes (mono)
     std::mt19937 rng { 1 };
@@ -169,6 +181,7 @@ struct Engine
         const Patch& p = patch;
         v.active = true; v.gate = true; v.note = note; v.vel = vel; v.age = ++ageCounter;
         v.uniIndex = uniIdx; v.uniCount = uniCount; v.fadeOut = 1.0f; v.stealing = false;
+        v.channel = noteChannel;
         // unison spreads
         const float c = uniCount > 1 ? (float) uniIdx - 0.5f * (float) (uniCount - 1) : 0.0f;
         v.uniPitch = 0; v.uniWt = 0; v.uniPan = 0;
@@ -279,7 +292,7 @@ struct Engine
             }
         }
         for (auto& v : voices)
-            if (v.active && v.gate && v.note == note)
+            if (v.active && v.gate && v.note == note && (noteChannel == 0 || v.channel == noteChannel))
             {
                 v.gate = false;
                 for (int e = 0; e < 4; ++e) v.env[(size_t) e].noteOff (p, e);
@@ -287,7 +300,7 @@ struct Engine
     }
 
     void allNotesOff() { for (auto& v : voices) if (v.active) { v.gate = false; for (int e = 0; e < 4; ++e) v.env[(size_t) e].release(); } held.clear(); }
-    void allSoundOff() { for (auto& v : voices) v.active = false; held.clear(); }
+    void allSoundOff() { for (auto& v : voices) v.active = false; held.clear(); chanBend.fill (0.0f); chanPress.fill (-1.0f); }
 
     // ---- modulation ----
     float sourceValue (const Voice& v, int s) const
@@ -300,7 +313,7 @@ struct Engine
                 return macro[(size_t) (s - msMacro1)];
             case msKeyTrack: return (float) v.note / 127.0f;
             case msVelocity: return v.vel;
-            case msAftertouch: return aftertouch;
+            case msAftertouch: return voicePressure (v);
             case msTrigRandom: return v.trigRand;
             case msIntEnv5: case msIntEnv6: case msIntEnv7: case msIntEnv8: return v.page[(size_t) (s - msIntEnv5)].ie.v;
             case msOscEnv: return v.oscEnv.v;
@@ -530,7 +543,7 @@ struct Engine
             float& vph = p.vibMono ? globalVibPh : v.vibPh;
             vph += vibHz * (float) m / sr; vph -= std::floor (vph);
             const float vib = k[kVibDepth] * 2.0f * std::sin (2.0f * kPi * vph);
-            const float basePitch = v.pitchNow + bend * (bend >= 0 ? p.bendUp : -p.bendDown) + p.globalTune + v.uniPitch + vib;
+            const float basePitch = v.pitchNow + bend * (bend >= 0 ? p.bendUp : -p.bendDown) + voiceBendSemis (v) + p.globalTune + v.uniPitch + vib;
             // frequencies
             float freq[3], modF;
             for (int o = 0; o < 3; ++o)

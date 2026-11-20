@@ -105,6 +105,7 @@
     X (DiscardMidiModule) \
     X (KeyboardMidiModule) \
     X (PianoRollModule) \
+    X (MpePianoRollModule) \
     X (LowpassModule) \
     X (HighpassModule) \
     X (NotchModule) \
@@ -141,6 +142,14 @@
     X (HardPianoModule) \
     X (PianoModule) \
     X (GrandPianoModule) \
+    X (TR808Module) \
+    X (TR909Module) \
+    X (DrumPadsModule) \
+    X (StringsModule) \
+    X (CelloModule) \
+    X (ClarinetModule) \
+    X (ElectricGuitarModule) \
+    X (AcousticGuitarModule) \
     X (WarpOscModule) \
     X (RandomPresetModule) \
     X (CurveEnvModule) \
@@ -164,6 +173,7 @@
     X (Acid303Module) \
     X (MacroModule) \
     X (TunerModule) \
+    X (CpuRamModule) \
     X (ClipPreserveModule) \
     X (SidechainCompModule) \
     X (RerouteSendModule) \
@@ -182,10 +192,33 @@
     X (RotaryModule) \
     X (CirculatorModule) \
     X (DualVcoAnalogModule) \
-    X (InspectorModule)
+    X (InspectorModule) \
+    X (MultibandDelayModule) \
+    X (FilterTableModule) \
+    X (ModalBodyModule) \
+    X (BloomReverbModule) \
+    X (BeatRepeatModule) \
+    X (DrumMorphModule) \
+    X (PresetCloudModule) \
+    X (ElectricPianoModule) \
+    X (TempoModule) \
+    X (MidiRainModule) \
+    X (MidiBloomModule) \
+    X (MidiStampModule) \
+    X (SoftPadModule) \
+    X (SummerWindsModule) \
+    X (ShimmerReverbModule) \
+    X (AutomationLanesModule) \
+    X (StutterModule) \
+    X (ReverserModule) \
+    X (TapeStopModule) \
+    X (NoiseExciterModule) \
+    X (FruitArrangerModule) \
+    X (DrawbarOrganModule)
 
 // The GUI versions of the plugins merged into Aquanode Modular (src/Plugins)
 #define AQUANODE_PLUGIN_GUI_MODULES(X) \
+    X (VitaFxGuiModule) \
     X (AquanovaGuiModule) \
     X (AquaVibrioGuiModule) \
     X (AquaMassifGuiModule) \
@@ -224,6 +257,7 @@
     X (FrequencyDrawerGuiModule) \
     X (SpectralCompressGuiModule) \
     X (SpectralStereoizeGuiModule) \
+    X (SpectralFilterGuiModule) \
     X (SpectralCompareGuiModule) \
     X (EcoSeeGuiModule) \
     X (BandpassModulatorGuiModule) \
@@ -233,6 +267,13 @@
 
 // The patch versions' modules ("PluginName - Kind", src/Plugins/<Name>)
 #define AQUANODE_PLUGIN_PATCH_MODULES(X) \
+    X (AM20WholeModule) \
+    X (AdditiveKeysWholeModule) \
+    X (FM12WholeModule) \
+    X (BandpassModulatorWholeModule) \
+    X (AudioStretcherWholeModule) \
+    X (SpectralStereoizeWholeModule) \
+    X (SpectralFilterWholeModule) \
     X (ChorusVerbChorusModule) \
     X (ChorusVerbDelayModule) \
     X (ChorusVerbPhaserModule) \

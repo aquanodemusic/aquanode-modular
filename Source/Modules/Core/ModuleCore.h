@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <mutex>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -309,7 +310,8 @@ inline ParamSpec makeRotary (juce::String id, juce::String label,
 // defaults). Patches saved before it open at 1 - their level as it was.
 inline ParamSpec makeOutputTrim (float decibels)
 {
-    auto p = makeRotary ("outTrim", "Output Trim", 0.0f, 1.0f, juce::Decibels::decibelsToGain (decibels));
+    // (up to +12 dB: the physical models need a lift to meet the rest - 6.7.0)
+    auto p = makeRotary ("outTrim", "Output Trim", 0.0f, 4.0f, juce::Decibels::decibelsToGain (decibels));
     p.hidden = true;
     p.modulatable = false;
     p.calibration = true;
@@ -942,7 +944,40 @@ struct MidiDriverEvent
     int note { -1 };
     float velocity { 0.85f };   // note-ons only
     bool isOn { false };
+
+    // MPE notes (the MPE Piano Roll): a note-on, or an expression event
+    // (isExpression: neither on nor off), carries the note's own bend on top
+    // of its key, and its Pressure and Slide. Only sockets of modules that
+    // accept MPE (acceptsMpeMidi) are ever fed such a source.
+    bool mpe { false };
+    bool isExpression { false };
+    float bend { 0.0f };        // semitones
+    float pressure { -1.0f };   // 0..1; < 0: unchanged
+    float slide { -1.0f };      // 0..1; < 0: unchanged
 };
+
+// the modules an MPE note source (the MPE Piano Roll's MPE Out) may feed: those
+// whose voices read their own bend (MidiControls::bendSemitones) and the raw-MIDI
+// ones that tell their notes apart by channel
+// the CPU / RAM module: is one in the patch (the engine then times the modules)
+inline std::atomic<int>& cpuMeterCount() { static std::atomic<int> n { 0 }; return n; }
+inline bool cpuMeterActive() { return cpuMeterCount().load (std::memory_order_relaxed) > 0; }
+// the process's resident memory in bytes (0 where it cannot be read); Engine/MemoryUsage.cpp
+juce::int64 processResidentBytes();
+
+inline bool typeAcceptsMpe (const juce::String& typeId)
+{
+    static const juce::StringArray ids { "osc.basic", "osc.drift", "osc.complex", "osc.formant", "osc.pd", "osc.additive",
+                                         "osc.unison", "osc.warp", "osc.dualvco", "osc.dualvcoanalog", "osc.pwmosc",
+                                         "osc.chordwavetable", "osc.wavetable", "osc.transwave", "osc.sampler", "osc.multisample",
+                                         "osc.granulate", "osc.spectralresynth", "osc.resynthpiano", "osc.piano", "osc.feltpiano",
+                                         "osc.midpiano", "osc.hardpiano", "osc.grand", "osc.bowed", "osc.wind", "osc.dxop",
+                                         "osc.strings", "osc.cello", "osc.clarinet", "osc.guitaracoustic", "osc.guitarelectric",
+                                         "plugin.vita", "plugin.aquamassif", "plugin.virtualdx7", "plugin.additivekeys",
+                                         "plugin.fm12", "plugin.aquanova", "plugin.reflex", "plugin.tidebreeze", "plugin.phizmo",
+                                         "plugin.alphabeta", "plugin.am20", "plugin.aliassynth", "plugin.aquavibrio" };
+    return ids.contains (typeId);
+}
 
 // The most events a driver may report in one sample (a Piano Roll chord
 // ending as the next one starts, plus previews, fits comfortably)
@@ -953,6 +988,14 @@ static constexpr int kMaxDriverEventsPerSample = 160;
 // offering "lock to host tempo" must fall back to its own tempo then.
 // A plugin that can ask for the tempo of the patch it sits in to change (Fruit DAW; an Aquanode
 // Modular nested in one hands the request on). See SynthModule::takeTempoRequest.
+// A plugin that plays MPE once asked to (Vita): its card switches MPE on at the
+// first note on a member channel (an MPE Piano Roll, or the MPE keys)
+struct MpeReceiver
+{
+    virtual ~MpeReceiver() = default;
+    virtual void enableMpe (bool on) = 0;    // audio thread
+};
+
 struct TempoRequester
 {
     virtual ~TempoRequester() = default;
@@ -986,6 +1029,67 @@ enum class VoiceMode
     Flexible    // per-voice when fed by a per-voice source, global otherwise (filters, volume...)
 };
 
+
+//==============================================================================
+// CPU Sleep (sleep on silence; the top bar's CPU Sleep switch, app-wide). An
+// effect or filter whose audio inputs have been silent long enough - longer
+// than anything it can still bring back out (a delay's longest time, an FFT
+// frame) - and whose outputs have been silent for a second stops being run
+// until sound arrives again, MIDI reaches it or one of its knobs is moved.
+//==============================================================================
+static constexpr float kSleepSilence = 1.0e-5f;   // -100 dBFS
+
+// the top bar's switch (on by default; the editor loads the remembered choice)
+inline std::atomic<bool>& cpuSleepEnabled()
+{
+    static std::atomic<bool> on { true };
+    return on;
+}
+
+inline bool canSleepOnSilence (const ModuleDescriptor& d)
+{
+    if (d.section != ModuleSection::Effect && d.section != ModuleSection::Filter)
+        return false;
+    // the parts of a plugin's patch version work together with their siblings
+    if (d.listedWithPlugin.isNotEmpty()
+        || (d.typeId.startsWith ("plugin.") && d.typeId.fromFirstOccurrenceOf ("plugin.", false, false).containsChar ('.')))
+        return false;
+    bool in = false, out = false;
+    for (const auto& s : d.sockets)
+    {
+        if (! s.hidden && s.kind == SocketKind::Midi && s.direction == SocketDirection::Output)
+            return false;   // (it may send notes on its own clock)
+        if (s.hidden || s.kind != SocketKind::Audio) continue;
+        (s.direction == SocketDirection::Input ? in : out) = true;
+    }
+    return in && out;
+}
+
+// How long silence going in may still come out later, read off the knobs:
+// the largest time a "Time" / "Delay" knob reaches (in ms or s); a delay
+// knob counted in beats is taken as up to 8 s.
+inline double sleepMemoryFromKnobs (const ModuleDescriptor& d)
+{
+    double most = 0.0;
+    for (const auto& p : d.params)
+    {
+        const auto key = (p.id + " " + p.label).toLowerCase();
+        if (! (key.contains ("time") || key.contains ("delay") || key.contains ("echo")))
+            continue;
+        if (p.unitSuffix == "ms")      most = juce::jmax (most, (double) p.maxValue * 0.001);
+        else if (p.unitSuffix == "s")  most = juce::jmax (most, (double) p.maxValue);
+        else if (p.type == ParamType::Combo || p.type == ParamType::RotarySteppedList)
+        {
+            // a list of note lengths ("1/8", "1/4D" ...): up to 8 s
+            for (const auto& c : p.choices)
+                if (c.containsChar ('/')) { most = juce::jmax (most, 8.0); break; }
+        }
+        else if (p.unitSuffix.isEmpty())
+            most = juce::jmax (most, 8.0);   // (a time in beats or steps)
+    }
+    return juce::jmin (most, 30.0);
+}
+
 //==============================================================================
 // SynthModule - per-instance DSP object base class
 //==============================================================================
@@ -1009,6 +1113,19 @@ public:
         voicesParamIndex = paramIndexById.count ("voices") ? paramIndexById["voices"] : -1;
         glideParamIndex  = paramIndexById.count ("glide")  ? paramIndexById["glide"]  : -1;
         outTrimParamIndex = paramIndexById.count ("outTrim") ? paramIndexById["outTrim"] : -1;
+        sleepEligible = canSleepOnSilence (d);
+        audioInMask = audioOutMask = 0;
+        {
+            int ii = 0, oi = 0;
+            for (const auto& s : d.sockets)
+            {
+                const bool isIn = s.direction == SocketDirection::Input;
+                if (s.kind == SocketKind::Audio && ii < 32 && oi < 32)
+                    (isIn ? audioInMask : audioOutMask) |= (isIn ? 1u << ii : 1u << oi);
+                (isIn ? ii : oi)++;
+            }
+        }
+        sleepKnobMemory = sleepMemoryFromKnobs (d);
         paramMod.assign (n, 0.0f);
         paramMin.resize (n);
         paramMax.resize (n);
@@ -1075,6 +1192,29 @@ public:
     // key is pressed (Arp, Always Midi). The engine ticks these once per
     // sample and turns what they report into real voices.
     virtual bool isMidiNoteDriver() const { return false; }
+    // its Midi Out sends MPE notes (their own bend, Pressure, Slide): it only
+    // connects to modules that accept them (typeAcceptsMpe)
+    virtual bool emitsMpeMidi() const { return false; }
+
+    // CPU / RAM module (Aquanode). While one is in the patch the engine times
+    // the modules (a random sample in 16, scaled up; a hosted plugin times its
+    // own blocks exactly) and keeps each one's share of real time here; the
+    // memory a module took when it was made (and prepared) is noted once.
+    std::atomic<float> cpuShare { 0.0f };          // 0..1 of real time, smoothed
+    std::atomic<juce::int64> ramBytes { 0 };       // approx., from the process's resident memory
+    double cpuNs { 0.0 };                          // (audio thread) this block's time so far
+    virtual bool timesItself() const { return false; }
+    struct CpuReading
+    {
+        float chainShare { 0.0f }, globalShare { 0.0f };
+        juce::int64 chainRam { 0 };
+        bool connected { false };
+        int numTop { 0 };
+        const juce::String* topName[3] { nullptr, nullptr, nullptr };   // (the registry's names: they live as long as the app)
+        float topShare[3] { 0.0f, 0.0f, 0.0f };
+    };
+    virtual bool isCpuMeter() const { return false; }
+    virtual void setCpuReading (const CpuReading&) {}
 
     // A driver whose own clock should keep running even while nothing it
     // feeds is audible (Piano Roll: pressing Play on an unpatched roll still
@@ -1143,6 +1283,8 @@ public:
     // It never takes part in the engine's voices. Audio thread.
     virtual bool wantsRawMidi() const { return false; }
     virtual void rawMidiMessage (const juce::MidiMessage& message) { juce::ignoreUnused (message); }
+    // what the engine calls: MIDI wakes a sleeping module before it arrives
+    void deliverRawMidi (const juce::MidiMessage& message) { wakeFromSleep(); rawMidiMessage (message); }
 
     // The host's play head for this block (nullptr in the standalone app and
     // on Android), and how many samples of the block have been processed so
@@ -1261,6 +1403,7 @@ public:
             hits.slotOfVoice[engineVoice] = slot;
         }
 
+        wakeFromSleep();
         if (! hits.active[slot])
             ++hits.numActive;
         hits.active[slot] = true;
@@ -1298,6 +1441,38 @@ public:
             hits.tailLeft[s] = 0.0;
         }
         hits.numActive = 0;
+    }
+
+    //=== sleep on silence (see canSleepOnSilence) =============================
+    bool sleepSwitchedOn() const { return sleepEligible && cpuSleepEnabled().load (std::memory_order_relaxed); }
+    bool hasSleepSwitch() const { return sleepEligible; }
+    // how long input silence may still come out of this module (s): the knobs'
+    // longest delay by default; a module that knows better says so
+    virtual double silenceMemorySeconds() const { return sleepKnobMemory; }
+    struct SleepState
+    {
+        int quietIn { 0 }, quietOut { 0 };
+        bool asleep { false };
+        double paramSum { 0.0 };
+        int sampleCounter { 0 };
+    };
+    SleepState sleepState;                         // audio thread
+    std::atomic<bool> sleepingNow { false };       // (for tests and the CPU meter)
+    uint32_t audioInMask { 0 }, audioOutMask { 0 };   // which inputs / outputs carry audio
+    void wakeFromSleep() noexcept                  // audio thread
+    {
+        sleepState.asleep = false;
+        sleepState.quietIn = sleepState.quietOut = 0;
+        sleepingNow.store (false, std::memory_order_relaxed);
+    }
+    // the knobs as set, summed: moving one wakes a sleeping module
+    double baseParamSum() const
+    {
+        double s = 0.0;
+        if (descriptor != nullptr)
+            for (size_t i = 0; i < descriptor->params.size(); ++i)
+                s += (double) paramValues[i].load (std::memory_order_relaxed) * (double) (i + 1);
+        return s;
     }
 
     //=== parameters ===========================================================
@@ -1422,6 +1597,10 @@ public:
         }
         sampleChangeCounter.fetch_add (1, std::memory_order_release);
     }
+
+    // a module keeping its own sounds (not the loaded sample) says they changed:
+    // the card redraws, a sleeping module wakes
+    void markSampleChanged() { sampleChangeCounter.fetch_add (1, std::memory_order_release); }
 
     std::shared_ptr<const juce::AudioBuffer<float>> getLoadedSample (double* sourceRate = nullptr) const
     {
@@ -1632,6 +1811,8 @@ private:
     std::map<juce::String, float> legacyValues;          // removed depth knobs (message thread)
     int voicesParamIndex { -1 };
     int outTrimParamIndex { -1 };
+    bool sleepEligible { false };
+    double sleepKnobMemory { 0.0 };
     int glideParamIndex { -1 };
     std::unordered_map<std::string, int> paramIndexById;
     std::array<std::atomic<bool>, 8> inputConnectedFlags;
@@ -1692,6 +1873,11 @@ struct RegisteredModule
 {
     ModuleDescriptor descriptor;
     std::function<std::unique_ptr<SynthModule>()> create;
+    // Filled in once, right before the first instance is made (a module whose
+    // knobs are a merged plugin's own parameters, read from a live instance -
+    // which only exists once the app runs). Empty for nearly every module.
+    std::function<void (ModuleDescriptor&)> complete;
+    bool completed { false };
 };
 
 class ModuleFactory
@@ -1699,9 +1885,10 @@ class ModuleFactory
 public:
     static ModuleFactory& instance();   // Meyer's singleton (defined in ModuleCore.cpp)
 
-    bool registerModule (ModuleDescriptor descriptor, std::function<std::unique_ptr<SynthModule>()> create)
+    bool registerModule (ModuleDescriptor descriptor, std::function<std::unique_ptr<SynthModule>()> create,
+                         std::function<void (ModuleDescriptor&)> complete = {})
     {
-        registered.push_back ({ std::move (descriptor), std::move (create) });
+        registered.push_back ({ std::move (descriptor), std::move (create), std::move (complete), false });
         return true;
     }
 
@@ -1719,6 +1906,13 @@ public:
     {
         if (auto* r = find (typeId))
         {
+            if (r->complete != nullptr && ! r->completed)
+            {
+                static std::mutex completing;
+                const std::lock_guard<std::mutex> lk (completing);
+                auto& rr = const_cast<RegisteredModule&> (*r);
+                if (! rr.completed) { rr.complete (rr.descriptor); rr.completed = true; }
+            }
             auto m = r->create();
             m->initialiseFromDescriptor (r->descriptor);
             return m;

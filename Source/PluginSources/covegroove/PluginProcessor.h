@@ -14,11 +14,13 @@
 #include <JuceHeader.h>
 #include "CgEngine.h"
 #include "CgSampleIO.h"
+#include "CgPhysRender.h"
 
 namespace covegroove
 {
     class CoveGrooveProcessor : public juce::AudioProcessor,
-                                private juce::AudioProcessorValueTreeState::Listener
+                                private juce::AudioProcessorValueTreeState::Listener,
+                                private juce::Timer
     {
     public:
         CoveGrooveProcessor();
@@ -98,6 +100,17 @@ namespace covegroove
         void audition (int lane) { auditionMask.fetch_or (1u << juce::jlimit (0, kNumLanes - 1, lane)); }
         std::atomic<int> sampleVersion { 0 };          // bumped when a sample or a curve changes
 
+        //=== the modelled kits (CgPhys.h; message thread) ======================
+        // the lane's rendered sound (empty until rendered, or when the lane
+        // plays another kind of sound)
+        phys::Variants getPhysSound (int lane) const;
+        std::atomic<int> physVersion { 0 };            // bumped when a render arrives
+        // the lane's sound as it is now, for showing it (any kind: rendered on this thread)
+        std::shared_ptr<SampleData> previewLane (int lane) const;
+        // a lane's ADSR as its parameters set it, and back to flat
+        LaneEnv laneEnv (int lane) const;
+        void resetLaneEnv (int lane);
+
         //=== for the editor ==================================================
         std::atomic<int> playStep { -1 };            // -1: not playing
         std::atomic<int> laneHits[kNumLanes] {};      // bumped on every hit (the lane lights)
@@ -106,6 +119,8 @@ namespace covegroove
         static juce::String laneParam (int lane, const char* what) { return "l" + juce::String (lane) + what; }
 
     private:
+        void timerCallback() override;          // the modelled kits' renders
+        phys::Spec physSpec (int lane) const;
         void parameterChanged (const juce::String& id, float value) override;
         void applySettings();
         void loadFactory (int index);
@@ -138,6 +153,8 @@ namespace covegroove
         juce::SpinLock handoffLock;
         std::array<std::shared_ptr<const SampleData>, kNumLanes> handoffData;
         std::array<Curve, kNumLanes> handoffCurve;
+        std::array<phys::Renderer, kNumLanes> physRenderers;
+        std::array<phys::Variants, kNumLanes> physSounds, handoffPhys;      // (sampleMutex / handoffLock)
         std::atomic<int> sampleSerial { 0 };
         int audioSampleSerial { -1 };
         std::vector<std::shared_ptr<const SampleData>> retired;

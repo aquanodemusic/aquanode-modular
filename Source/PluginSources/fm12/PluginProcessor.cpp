@@ -134,14 +134,28 @@ float FM12Voice::lfoWaveValue (int wave, double phase, juce::int64 cycle) noexce
 
 void FM12Voice::pitchWheelMoved(int newPitchWheelValue)
 {
-    // +-2 semitones, the usual default
-    pitchBendSemis = 2.0f * (float)(newPitchWheelValue - 8192) / 8192.0f;
+    // +-2 semitones, the usual default (+-48 for an MPE note)
+    pitchBendSemis = bendRange * (float)(newPitchWheelValue - 8192) / 8192.0f;
+}
+
+void FM12Voice::channelPressureChanged(int newValue)
+{
+    if (memberChannel != 0)
+        pressure = (float) newValue / 127.0f;
 }
 
 void FM12Voice::startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition)
 {
     noteMidi = midiNoteNumber;
     level = velocity;
+    // MPE: a note on a member channel bends +-48 semitones and its pressure sets
+    // how deep the modulators go (the Synthesiser hands each voice its own channel's)
+    memberChannel = 0;
+    if (processor.mpeOn)
+        for (int ch = 2; ch <= 16; ++ch)
+            if (isPlayingChannel(ch)) { memberChannel = ch; break; }
+    bendRange = memberChannel != 0 ? 48.0f : 2.0f;
+    pressure = memberChannel != 0 ? processor.mpePress[(size_t) memberChannel] : -1.0f;
     pitchWheelMoved(currentPitchWheelPosition);
     dx7Mode = *pDx7Mode > 0.5f;
 
@@ -261,6 +275,9 @@ void FM12Voice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer,
     //   3 = Exponential FM
     //   4 = Exponential FM Through Zero (sinh-based)
     const int  fmMode = (int)(*pFmEngineMode + 0.5f);
+    // MPE pressure: 0.7 (the MPE Piano Roll's resting pressure) keeps the patch's
+    // modulation depth, less thins the sound towards sines, more brightens it
+    const float pressDepth = pressure < 0.0f ? 1.0f : juce::jlimit (0.0f, 1.35f, 0.2f + 0.8f * pressure / 0.7f);
     const bool expFeedbackMode = *pExpFbMode > 0.5f;
     const bool nyquistActive = (nyquist < 24000.0f);
 
@@ -430,7 +447,7 @@ void FM12Voice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer,
         for (const auto& c : activeConnections)
         {
             const float modBoost = (fmMode <= 2) ? 21.0f : 4.0f;
-            const float modScale = (!isCarrier[c.source]) ? modBoost : 1.0f;
+            const float modScale = ((!isCarrier[c.source]) ? modBoost : 1.0f) * pressDepth;
             const float modSig = currentRawSamples[c.source]
                 * env[c.source]
                 * currentOpLevel[c.source]   // smoothed level
@@ -712,6 +729,8 @@ void FM12SynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             modWheel.store ((float) msg.getControllerValue() / 127.0f, std::memory_order_relaxed);
         else if (msg.isResetAllControllers())
             modWheel.store (0.0f, std::memory_order_relaxed);
+        else if (mpeOn && msg.isChannelPressure() && msg.getChannel() >= 2)
+            mpePress[(size_t) msg.getChannel()] = (float) msg.getChannelPressureValue() / 127.0f;
     }
 
     synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());

@@ -20,6 +20,13 @@ namespace aqp_vita
 
 AQP_DEFINE_PLUGIN (VitaGuiModule, "vita", aqp_vita)
 
+// Vita FX: the same synth with an audio input into its effects, showing only its effects page
+namespace aqp_vitafx
+{
+    juce::AudioProcessor* createPluginFilter() { return aqp_vita::createPluginFilterFx(); }
+}
+AQP_DEFINE_PLUGIN (VitaFxGuiModule, "vitafx", aqp_vitafx)
+
 // the patch version: Vita's voice as modules (after the sources above, whose parameter tables its
 // descriptors read while the program starts)
 #include "PluginVitaPatch.h"

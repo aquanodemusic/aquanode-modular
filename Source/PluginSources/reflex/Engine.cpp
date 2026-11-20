@@ -166,6 +166,7 @@ void Engine::startVoice(int note, int vel) {
   bool wasActive = v->active;
   const bool legato = mono && wasActive && v->gate;   // mono legato: no envelope retrigger (measured)
   v->active = true; v->gate = true; v->note = note; v->vel = vel; v->age = ++ageCounter; v->offDelay = 0;
+  v->channel = noteChannel;
   // glide
   static const double glideMs[8] = { 0, 31.25, 62.5, 125, 250, 500, 1000, 2000 };
   int gi = std::clamp((int)(p[GLDspd] * 24.f), 0, 23) % 8;
@@ -192,7 +193,7 @@ void Engine::startVoice(int note, int vel) {
 }
 
 void Engine::releaseVoice(int note) {
-  for (auto& v : voices) if (v.active && v.gate && v.note == note) { v.gate = false; v.offDelay = 1; }
+  for (auto& v : voices) if (v.active && v.gate && v.note == note && (noteChannel == 0 || v.channel == noteChannel)) { v.gate = false; v.offDelay = 1; }
 }
 
 void Engine::noteOn(int note, int vel) {
@@ -233,6 +234,16 @@ void Engine::noteOff(int note) {
 void Engine::handleEvent(const MidiEv& e) {
   int st = e.b0 & 0xF0;
   eventPpq = ppqAtFrame(e.frame);
+  const int ch = mpe ? (e.b0 & 0x0F) + 1 : 1;
+  const bool member = ch >= 2 && ch <= 16;
+  if (member && st == 0xE0) { int v = (e.b2 << 7) | e.b1; chanBend[ch] = (v - 8192) / 8192.0 * 48.0; return; }
+  if (member && st == 0xD0) { chanPress[ch] = e.b1 / 127.0; return; }
+  noteChannel = member && ! arpOn() ? ch : 0;   // the arpeggiator's notes are not MPE notes
+  handleNoteEvent(e, st);
+  noteChannel = 0;
+}
+
+void Engine::handleNoteEvent(const MidiEv& e, int st) {
   if (st == 0x90 && e.b2 > 0) noteOn(e.b1, e.b2);
   else if (st == 0x80 || (st == 0x90 && e.b2 == 0)) noteOff(e.b1);
   else if (st == 0xB0) {
@@ -324,7 +335,10 @@ void Engine::updateVoiceControl(Voice& v) {
   } else v.pitch = v.note;
   double semis = amt(p[EG2Ptc]) * 48.0 * l2;
   semis += pitchBend * Map::pbRange(p[PBrng]);
-  semis += aftertouch * p[VIBdpt] * tri(v.vibPh);
+  const bool member = v.channel >= 2 && v.channel <= 16;
+  if (member) semis += chanBend[v.channel];
+  const double at = member && chanPress[v.channel] >= 0 ? chanPress[v.channel] : aftertouch;
+  semis += at * p[VIBdpt] * tri(v.vibPh);
   double detune = 1.0 + 0.0225 * amt(p[EGDet]) * l1;
 
   // ----- unison -----

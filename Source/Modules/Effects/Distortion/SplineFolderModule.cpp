@@ -25,6 +25,7 @@
 // Flexible: per voice when fed per voice. Inputs: 0 = Audio In, 1 = Bias In
 // (+-1 at full). Output: 0 = Audio Out.
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/LookPalette.h"
 
 using namespace aquanode;
 
@@ -433,26 +434,28 @@ namespace
 
         void paint (juce::Graphics& g) override
         {
-            g.fillAll (juce::Colour (0xff0b0d10));
+            // (6.7.10: the colours follow the look - Glass, Skeuomorphic or the default)
+            const auto look = aquanode::LookPalette::current (juce::Colour (0xffffb04f), aquanode::ThemeColours::Effect);
+            look.fillBackground (g, getLocalBounds().toFloat());
             const auto p = plot();
             // the grid: the centre lines, full scale, the straight line faint
-            g.setColour (juce::Colours::white.withAlpha (0.07f));
+            g.setColour (look.grid.withAlpha (0.07f));
             for (float v : { -0.5f, 0.5f })
             {
                 g.fillRect (xOf (v), p.getY(), 1.0f, p.getHeight());
                 g.fillRect (p.getX(), yOf (v), p.getWidth(), 1.0f);
             }
-            g.setColour (juce::Colours::white.withAlpha (0.16f));
+            g.setColour (look.grid.withAlpha (0.16f));
             g.fillRect (xOf (0.0f), p.getY(), 1.0f, p.getHeight());
             g.fillRect (p.getX(), yOf (0.0f), p.getWidth(), 1.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.12f));
+            g.setColour (look.grid.withAlpha (0.12f));
             g.drawRect (juce::Rectangle<float> (xOf (-1.0f), yOf (1.0f), xOf (1.0f) - xOf (-1.0f), yOf (-1.0f) - yOf (1.0f)), 1.0f);
             const float dashes[] = { 3.0f, 4.0f };
             g.drawDashedLine (juce::Line<float> (xOf (-1.0f), yOf (-1.0f), xOf (1.0f), yOf (1.0f)), dashes, 2, 1.0f);
 
             // the curve, broken at its jumps (a dotted line shows each leap)
             const auto& c = module->edit;
-            const auto accent = juce::Colour (0xffffb04f);
+            const auto accent = look.accent;
             juce::Path path;
             for (int j = 0; j + 1 < c.n; ++j)
             {
@@ -473,16 +476,15 @@ namespace
                     g.drawDashedLine (juce::Line<float> (xOf (x1), yOf (c.k[(size_t) j + 1].y), xOf (x1), yOf (c.k[(size_t) j + 1].yR)), jd, 2, 1.0f);
                 }
             }
-            g.setColour (accent.withAlpha (0.95f));
-            g.strokePath (path, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            look.strokeGlowing (g, path, 2.0f);
 
             // the points: filled; a jump's right-hand value a ring
             for (int i = 0; i < c.n; ++i)
             {
                 const auto& k = c.k[(size_t) i];
                 const bool sel = i == dragKnot;
+                look.fillHandle (g, { xOf (k.x), yOf (k.y) }, 10.0f, sel);
                 g.setColour (sel ? juce::Colours::white : accent);
-                g.fillEllipse (juce::Rectangle<float> (10.0f, 10.0f).withCentre ({ xOf (k.x), yOf (k.y) }));
                 if (k.jump)
                     g.drawEllipse (juce::Rectangle<float> (11.0f, 11.0f).withCentre ({ xOf (k.x), yOf (k.yR) }), 2.0f);
             }

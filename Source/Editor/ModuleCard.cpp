@@ -34,6 +34,50 @@ ModuleComponent::ModuleComponent (AquanodeModularAudioProcessor& proc, PatchCanv
     layoutEverything (true);
 }
 
+//==============================================================================
+bool ModuleComponent::showsFullScreenIcon() const
+{
+    return inFullView || ! isCollapsed();   // (a closed card has nothing to show)
+}
+
+juce::Rectangle<int> ModuleComponent::fullScreenIconArea() const
+{
+    const int right = getWidth() - layout::pad - (showsGraphPill() ? 58 : 0);
+    return { right - 26, 0, 26, layout::topRow };
+}
+
+// the icon: four corners pointing out (in full view: pointing in)
+static void paintFullScreenIcon (juce::Graphics& g, juce::Rectangle<float> area, juce::Colour col, bool inFull)
+{
+    const float s = juce::jmin (area.getHeight() - 4.0f, 12.0f);
+    const auto r = juce::Rectangle<float> (s, s).withCentre (area.getCentre());
+    const float a = s * (inFull ? 0.3f : 0.38f);
+    juce::Path p;
+    auto corner = [&p, a, inFull] (juce::Point<float> c, float dx, float dy)
+    {
+        // a corner at c, its arms along dx / dy (towards the inside of the box)
+        if (! inFull)
+        {
+            p.startNewSubPath (c.x + dx * a, c.y);
+            p.lineTo (c);
+            p.lineTo (c.x, c.y + dy * a);
+        }
+        else
+        {
+            const juce::Point<float> in (c.x + dx * a, c.y + dy * a);
+            p.startNewSubPath (c.x + dx * a, c.y);
+            p.lineTo (in);
+            p.lineTo (c.x, c.y + dy * a);
+        }
+    };
+    corner (r.getTopLeft(), 1.0f, 1.0f);
+    corner (r.getTopRight(), -1.0f, 1.0f);
+    corner (r.getBottomLeft(), 1.0f, -1.0f);
+    corner (r.getBottomRight(), -1.0f, -1.0f);
+    g.setColour (col);
+    g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::mitered, juce::PathStrokeType::square));
+}
+
 // the widest row of controls, in knob units (a module with rows of more than
 // five knobs grows to fit them rather than letting them spill over its edge)
 int ModuleComponent::maxRowUnits() const
@@ -319,6 +363,12 @@ void ModuleComponent::buildControls()
             lender->requestFullSize = [this] { if (canvas.onPluginFullSize) canvas.onPluginFullSize (instanceId); };
             lender->requestOpenInPlugin = [this] { canvas.openPresetInPlugin (instanceId); };
         }
+        // a card's component that adds to the patch (the Preset Cloud's Open Preset)
+        if (auto* req = dynamic_cast<aquanode::plugins::PatchEditRequester*> (extraContent.get()))
+            req->requestPatchEdit = [this] (std::function<void (AquanodeModularAudioProcessor&, int)> edit)
+            {
+                canvas.editPatchFromCard (instanceId, std::move (edit));
+            };
     }
 }
 
@@ -620,6 +670,47 @@ juce::Rectangle<int> ModuleComponent::fullSizePillArea() const
 {
     // left of the centred title, clear of the input socket column
     return { layout::socketColW + 12, layout::topRow + 4, 84, 22 };
+}
+
+bool ModuleComponent::showsBlockPill() const
+{
+    auto* inst = processor.getInstance (instanceId);
+    return inst != nullptr && ! isCollapsed() && dynamic_cast<aquanode::plugins::HostedPluginModule*> (inst->dsp.get()) != nullptr;
+}
+
+juce::Rectangle<int> ModuleComponent::blockPillArea() const
+{
+    // beside Full Size (or where it would be)
+    return { layout::socketColW + 12 + (showsFullSizePill() ? 90 : 0), layout::topRow + 4, 78, 22 };
+}
+
+void ModuleComponent::showBlockMenu()
+{
+    auto* inst = processor.getInstance (instanceId);
+    if (inst == nullptr) return;
+    using HP = aquanode::plugins::HostedPluginModule;
+    const int current = (int) std::lround (inst->dsp->getParameter ("blockSize"));
+    juce::PopupMenu m;
+    m.addSectionHeader ("Block the plugin runs in");
+    const auto& choices = HP::blockChoices();
+    for (int i = 0; i < choices.size(); ++i)
+    {
+        juce::String text = i == 0 ? "Global (Plugin Block: " + juce::String (HP::globalBlockSize().load()) + ")"
+                                   : choices[i] + " samples";
+        m.addItem (i + 1, text, true, i == current);
+    }
+    juce::Component::SafePointer<ModuleComponent> safe (this);
+    const int id = instanceId;
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (blockPillArea())),
+                     [safe, id] (int r)
+                     {
+                         if (safe == nullptr || r <= 0) return;
+                         if (auto* in = safe->processor.getInstance (id))
+                         {
+                             in->dsp->setParameter ("blockSize", (float) (r - 1));
+                             safe->repaint();
+                         }
+                     });
 }
 
 juce::Rectangle<int> ModuleComponent::convertPillArea() const
@@ -945,6 +1036,29 @@ void ModuleComponent::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r, r.getHeight() * 0.5f, 1.0f);
         g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
         g.drawText ("Full Size", fullSizePillArea(), juce::Justification::centred);
+    }
+
+    if (showsBlockPill())
+    {
+        using HP = aquanode::plugins::HostedPluginModule;
+        const int c = (int) std::lround (inst->dsp->getParameter ("blockSize"));
+        const auto& choices = HP::blockChoices();
+        const juce::String text = "Block " + (c >= 1 && c < choices.size() ? choices[c] : juce::String (HP::globalBlockSize().load()) + "*");
+        const auto r = blockPillArea().toFloat().reduced (0.5f);
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        g.setColour (juce::Colours::white.withAlpha (0.9f));
+        g.drawRoundedRectangle (r, r.getHeight() * 0.5f, 1.0f);
+        g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
+        g.drawText (text, blockPillArea(), juce::Justification::centred);
+    }
+
+    if (showsFullScreenIcon())
+    {
+        const auto r = fullScreenIconArea().toFloat().reduced (1.5f, 2.0f);
+        g.setColour (juce::Colours::black.withAlpha (inFullView ? 0.45f : 0.18f));
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        paintFullScreenIcon (g, r, inFullView ? juce::Colours::white : text.withAlpha (0.85f), inFullView);
     }
 
     if (showsGraphPill())
@@ -1442,12 +1556,23 @@ void ModuleComponent::showColourPicker()
 
 void ModuleComponent::mouseDown (const juce::MouseEvent& e)
 {
-    canvas.moduleClicked (instanceId);   // (keeps a Region Select box that holds this card)
+    // full screen: in and out
+    if (e.eventComponent == this && ! e.mods.isPopupMenu() && showsFullScreenIcon()
+        && fullScreenIconArea().contains (e.getPosition()))
+    {
+        rapidClickCount = 0;
+        if (canvas.onModuleFullScreen)
+            canvas.onModuleFullScreen (instanceId);
+        return;
+    }
+
+    if (! inFullView)
+        canvas.moduleClicked (instanceId);   // (keeps a Region Select box that holds this card)
 
     // The collapse tab is checked first, before the rapid-click and drag
     // gestures: tapping it repeatedly must open and close the module rather
     // than read as a triple-click that deletes its self-modulation cables.
-    if (e.eventComponent == this && ! e.mods.isPopupMenu()
+    if (e.eventComponent == this && ! e.mods.isPopupMenu() && ! inFullView
         && collapseHitArea().contains (e.getPosition()))
     {
         rapidClickCount = 0;
@@ -1483,7 +1608,8 @@ void ModuleComponent::mouseDown (const juce::MouseEvent& e)
     ++titlePressId;
     if (e.eventComponent == this && titleArea().contains (e.getPosition())
         && ! (showsConvertPill() && convertPillArea().contains (e.getPosition()))
-        && ! (showsFullSizePill() && fullSizePillArea().contains (e.getPosition())))
+        && ! (showsFullSizePill() && fullSizePillArea().contains (e.getPosition()))
+        && ! (showsBlockPill() && blockPillArea().contains (e.getPosition())))
     {
         if (e.mods.isPopupMenu())
         {
@@ -1509,6 +1635,14 @@ void ModuleComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // a plugin card's Block pill: its block size
+    if (e.eventComponent == this && ! e.mods.isPopupMenu() && showsBlockPill()
+        && blockPillArea().contains (e.getPosition()))
+    {
+        showBlockMenu();
+        return;
+    }
+
     // ... and Full Size shows the plugin alone, at its own size
     if (e.eventComponent == this && ! e.mods.isPopupMenu() && showsFullSizePill()
         && fullSizePillArea().contains (e.getPosition()))
@@ -1517,6 +1651,10 @@ void ModuleComponent::mouseDown (const juce::MouseEvent& e)
             canvas.onPluginFullSize (instanceId);
         return;
     }
+
+    // in full view the card is only played: no moving, no cables
+    if (inFullView)
+        return;
 
     // three rapid clicks (same spot, +-4 px) anywhere in the module delete
     // its self-modulation cables - the one cable type the canvas can't select

@@ -86,6 +86,13 @@ namespace aquanode::plugins
     {
     public:
         static constexpr int kBlockSize = 32;
+        // The block the plugin runs in: the card's Block menu, or (Global) the top bar's Plugin
+        // Block, 128 by default. Longer blocks cost a plugin with much per-block work (Vita's
+        // control-rate modulation) far less, for that much more latency. The plugin is prepared
+        // once for the largest, so a change takes effect at the next block, on the audio thread.
+        static constexpr int kMaxBlockSize = 512;
+        static const juce::StringArray& blockChoices();     // "Global", "16" .. "512"
+        static std::atomic<int>& globalBlockSize();         // the top bar's (app-wide)
 
         explicit HostedPluginModule (const HostedSpec& spec);
         ~HostedPluginModule() override;
@@ -119,6 +126,14 @@ namespace aquanode::plugins
 
         bool wantsRawMidi() const override { return spec.midiIn; }
         void rawMidiMessage (const juce::MidiMessage& message) override;
+        bool timesItself() const override { return true; }   // (CPU / RAM module: its blocks, exactly)
+        // sleep on silence: the tail the plugin reports, but never under 8 s -
+        // many plugins report none, and an effect plugin's delay may be long
+        double silenceMemorySeconds() const override
+        {
+            const double tail = plugin != nullptr ? plugin->getTailLengthSeconds() : 0.0;
+            return juce::jlimit (8.0, 29.0, std::isfinite (tail) ? tail : 29.0);
+        }
 
         bool isMidiNoteDriver() const override { return spec.midiOut; }
         bool midiSourceReplacesInput() const override { return spec.midiOut; }
@@ -140,6 +155,18 @@ namespace aquanode::plugins
         // the card's editor reports its size here when it opens or resizes
         void noteEditorSize (int w, int h);
 
+        // Card size normalisation: every plugin's window is shown on its card
+        // scaled (its own shape kept) so that it covers about the same area -
+        // Massif's 1260 x 740 and EcoSee's 250 x 300 open at a similar size
+        // instead of one dwarfing the other. Full Size still shows it 1:1.
+        static float cardScaleFor (int editorWidth, int editorHeight)
+        {
+            constexpr double targetArea = 900.0 * 640.0;
+            const double area = (double) juce::jmax (1, editorWidth) * (double) juce::jmax (1, editorHeight);
+            return (float) juce::jlimit (0.5, 2.0, std::sqrt (targetArea / area));
+        }
+        float cardScale() const { return cardScaleFor (editorW.load(), editorH.load()); }
+
     private:
         struct PlayHead : public juce::AudioPlayHead
         {
@@ -156,7 +183,11 @@ namespace aquanode::plugins
 
         juce::AudioBuffer<float> io;      // the plugin's process buffer
         juce::MidiBuffer midiInBuffer, midiOutScratch;
-        std::array<std::array<float, kBlockSize>, 2> outFifo {};
+        int blockSize { 128 };            // the block running now (audio thread)
+        int pBlock { -1 };
+        bool mpeOn { false };
+        int wantedBlock() const;
+        std::array<std::array<float, kMaxBlockSize>, 2> outFifo {};
         int pos { 0 };                    // sample inside the current block
         int mainIns { 0 }, outs { 0 }, sideChannels { 0 };
         // the side-chain bus is on only while a cable feeds it, as in a DAW

@@ -345,3 +345,9 @@ void HeaderSection::notifyFresh() {
   synth_preset_selector_->resetText();
   synth_preset_selector_->setModified(false);
 }
+
+// Vita FX: no tabs (only the effects page)
+void HeaderSection::setTabsVisible(bool visible) {
+  if (tab_selector_)
+    tab_selector_->setVisible(visible);
+}

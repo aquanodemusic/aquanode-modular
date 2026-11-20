@@ -554,7 +554,7 @@ const std::vector<EffectAdder>& effectAdders()
             [] (Dice&) { return std::vector<Step> { drive(), compressor() }; }));
         v.push_back (chainAdder ("Glue",
             "Adds a Compressor and a Limiter in front of Audio Out: everything sits together and stops "
-            "just under 0 dB.",
+            "a hair under 0 dB.",
             [] (Dice&) { return std::vector<Step> { compressor(), limiter() }; }));
         v.push_back (chainAdder ("Ambient Wash",
             "Adds a cloud of grains (Granulation) into a long reverb in front of Audio Out.",

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/SnapDrums.h"
 
 // Hats - classic analog metallic percussion: six detuned square oscillators
 // summed, band-passed, high-passed and shaped by a snappy exponential decay.
@@ -18,6 +19,8 @@ public:
     void prepare (double sr) override
     {
         SynthModule::prepare (sr);
+        pModel = paramIndex ("model");
+        for (auto& sn : snip) sn.prepare ((float) sr);
         reset();
     }
 
@@ -36,11 +39,28 @@ public:
         hpState[v] = hpPrevIn[v] = 0.0f;
         for (int o = 0; o < kNumOscs; ++o)
             phase[v][o] = o * 0.13;   // decorrelated start phases
+        snip[v].reset();
     }
 
-    void voiceNoteOn (int v, int, bool) override { pool.noteOn (v, voiceLimit()); env[v] = 1.0f; }
+    void voiceNoteOn (int v, int, bool) override { pool.noteOn (v, voiceLimit()); hit (v); }
 
-    double voiceTailSeconds() const override { return aquanode::decayTailSeconds (juce::jmax (5.0f, param (pDecay))) + 0.05; }
+    double voiceTailSeconds() const override
+    {
+        if (snipModel()) return 0.24 * param (pDecay) / 120.0 + 0.02;   // down 20 dB in ~40 ms at the default
+        return aquanode::decayTailSeconds (juce::jmax (5.0f, param (pDecay))) + 0.05;
+    }
+
+    bool snipModel() const { return pModel >= 0 && param (pModel) > 0.5f; }
+    void hit (int v)
+    {
+        env[v] = 1.0f;
+        if (snipModel())
+        {
+            // the Snip: Decay, Tone (brightness) and Tune (its two rings) scale the measured hit
+            snip[v].setTone (std::pow (2.0f, (param (pTone) - 60.0f) / 60.0f), param (pTune) / 205.0f);
+            snip[v].trigger (param (pDecay) / 120.0f);
+        }
+    }
 
     void processVoiceSample (int v, const aquanode::StereoFrame* inputs,
                              aquanode::StereoFrame* outputs) override;
@@ -65,4 +85,6 @@ private:
     float bpBand [aquanode::kMaxVoices] {};
     float hpState [aquanode::kMaxVoices] {};
     float hpPrevIn [aquanode::kMaxVoices] {};
+    int pModel { -1 };
+    aquanode::snapdrums::Snip snip [aquanode::kMaxVoices];
 };

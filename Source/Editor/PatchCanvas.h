@@ -132,6 +132,9 @@ public:
     // replaces a Random Plugin Preset module by a card of the plugin it plays,
     // holding the same preset (async, like convertPluginCard)
     void openPresetInPlugin (int instanceId);
+    // a card's own component changing the patch (PatchEditRequester): later,
+    // on the message thread, then the cards anew
+    void editPatchFromCard (int instanceId, std::function<void (AquanodeModularAudioProcessor&, int)> edit);
 
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
     void mouseMagnify (const juce::MouseEvent& e, float scaleFactor) override;
@@ -145,6 +148,10 @@ public:
     bool keyPressed (const juce::KeyPress& key) override;
     std::function<bool (const juce::KeyPress&)> onShortcut;   // the editor's (Undo / Redo)
     std::function<void (int)> onPluginFullSize;                // a plugin GUI card's Full Size pill (the editor)
+    std::function<void (int)> onModuleFullScreen;              // any card's full screen icon (the editor)
+    std::function<void()> onRebuilt;                           // after rebuild() made new cards
+    // a card the editor borrowed for its full view comes back (to its place, at the view's zoom)
+    void takeCardBack (ModuleComponent& card);
     ModuleComponent* moduleCard (int instanceId) const { return findModuleComponent (instanceId); }
     std::vector<juce::Point<float>> leafPositions() const;   // where the Glass leaves are (for tests)
     void resized() override;

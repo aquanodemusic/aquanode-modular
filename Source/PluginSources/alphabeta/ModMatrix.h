@@ -149,6 +149,13 @@ namespace Mod {
         float pitchWheel = 0.0f;               // -1..1
         float channelPressure = 0.0f;          // 0..1
         std::array<float, 128> cc{};           // 0..1
+        // MPE (Aquanode), switched on by the host at the first note on a member
+        // channel: channels 2..16 then carry one note each, with its own bend
+        // (semitones, +-48, on top of the global bend) and its own pressure
+        // (-1: none yet; the Aftertouch source reads it in place of the channel's)
+        bool mpe = false;
+        std::array<float, 17> chanBend{};
+        std::array<float, 17> chanPress = [] { std::array<float, 17> a{}; a.fill(-1.0f); return a; }();
     };
 
     struct Slot { int src = SRC_OFF; float amt = 0.0f; int dst = DST_OFF; };

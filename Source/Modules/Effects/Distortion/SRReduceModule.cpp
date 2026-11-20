@@ -17,7 +17,8 @@ static aquanode::ModuleDescriptor srReduceDescriptor()
     };
     d.params = {
         makeRotary ("rate",   "Rate",    200.0f, 44100.0f, 8000.0f, 0, "Hz", true),
-        makeRotary ("dryWet", "Dry/Wet", 0.0f, 100.0f, 100.0f, 0, "%")
+        makeRotary ("dryWet", "Dry/Wet", 0.0f, 100.0f, 100.0f, 0, "%"),
+        makeRotary ("level",  "Level",   0.0f, 1.0f, 1.0f, 0).whenMissing (1.0f)   // (6.7.11)
     };
     return d;
 }

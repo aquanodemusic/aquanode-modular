@@ -3,7 +3,7 @@
 #include "SpectralCore.h"
 
 // Spectral Delay - adapted from the SpectralLatency VST: every bin gets its own
-// delay line (in whole FFT frames), set by the drawn curve times Max Time.
+// delay line (in whole FFT frames), set by the drawn curve times Longest Time.
 // Draw a rising line and the highs arrive later than the lows - chords smear
 // into arpeggios of frequency. Feedback (new here) regenerates each bin into
 // its own delay for spectral shimmer trails. The original's negative-delay /

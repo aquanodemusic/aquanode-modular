@@ -80,6 +80,8 @@ public:
     void reset() override
     {
         voiceActive_.fill (false);
+        voiceHeard_.fill (false);
+        quietFor_.fill (0);
         liveVoices_ = 0;
         globalVoices_ = 0;
         smoothedGain_ = 1.0f;
@@ -87,13 +89,20 @@ public:
     }
 
     //=== voice lifecycle ======================================================
+    // (6.7.12) A voice counts while its sound reaches this module: the engine
+    // hands every voice of the whole patch to every per-voice module, so two
+    // synths, each with its own Polyphony Sum, used to pull each other's level
+    // down - now each counts only the notes of what feeds it.
     void voiceNoteOn (int voice, int, bool) override
     {
         if (! inRange (voice)) return;
-        if (! voiceActive_[(size_t) voice])
+        voiceActive_[(size_t) voice] = true;
+        quietFor_[(size_t) voice] = 0;
+        if (voiceHeard_[(size_t) voice])
         {
-            voiceActive_[(size_t) voice] = true;
-            ++liveVoices_;
+            // a new note on the voice (perhaps another synth's): counted again once its sound is here
+            voiceHeard_[(size_t) voice] = false;
+            if (liveVoices_ > 0) --liveVoices_;
         }
     }
 
@@ -101,9 +110,10 @@ public:
     void voiceReset (int voice) override
     {
         if (! inRange (voice)) return;
-        if (voiceActive_[(size_t) voice])
+        voiceActive_[(size_t) voice] = false;
+        if (voiceHeard_[(size_t) voice])
         {
-            voiceActive_[(size_t) voice] = false;
+            voiceHeard_[(size_t) voice] = false;
             if (liveVoices_ > 0) --liveVoices_;
         }
     }
@@ -114,6 +124,19 @@ public:
     {
         if (newSampleStarted (voice))
             advanceGain();
+        if (inRange (voice) && voiceActive_[(size_t) voice])
+        {
+            // counted while its sound comes in; quiet for 50 ms (its tail is over), no more
+            const bool loud = std::abs (inputs[0][0]) > 1.0e-7f || std::abs (inputs[0][1]) > 1.0e-7f;
+            auto& quiet = quietFor_[(size_t) voice];
+            quiet = loud ? 0 : quiet + 1;
+            if (loud && ! voiceHeard_[(size_t) voice]) { voiceHeard_[(size_t) voice] = true; ++liveVoices_; }
+            else if (! loud && voiceHeard_[(size_t) voice] && quiet > (int) (0.05 * sampleRate))
+            {
+                voiceHeard_[(size_t) voice] = false;
+                if (liveVoices_ > 0) --liveVoices_;
+            }
+        }
 
         outputs[0][0] = inputs[0][0] * smoothedGain_;
         outputs[0][1] = inputs[0][1] * smoothedGain_;
@@ -184,6 +207,8 @@ private:
     }
 
     std::array<bool, aquanode::kMaxVoices> voiceActive_ {};
+    std::array<bool, aquanode::kMaxVoices> voiceHeard_ {};   // its sound has come in (6.7.12)
+    std::array<int, aquanode::kMaxVoices> quietFor_ {};      // samples since it last did
     int   liveVoices_ { 0 };
     int   globalVoices_ { 0 };
     float smoothedGain_ { 1.0f };

@@ -463,6 +463,7 @@ void AlphaBetaAudioProcessor::processOriginal(juce::AudioBuffer<float>& buffer, 
         const int t = juce::jlimit(0, n, md.samplePosition);
         run(pos, t);
         pos = t;
+        origEngine.setChannel(m.getChannel());
         if (m.isNoteOn())                origEngine.noteOn(m.getNoteNumber(), m.getVelocity());
         else if (m.isNoteOff())          origEngine.noteOff(m.getNoteNumber());
         else if (m.isPitchWheel())       origEngine.pitchWheel(m.getPitchWheelValue());

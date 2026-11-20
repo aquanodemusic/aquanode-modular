@@ -604,9 +604,416 @@ namespace covegroove
         for (auto& b : shapeButtons) { b.setBounds (bottom.removeFromLeft (w)); bottom.removeFromLeft (4); }
     }
 
+
+    //==========================================================================
+    PhysRow::PhysRow (CoveGrooveProcessor& p) : proc (p)
+    {
+        for (int l = 0; l < kNumLanes; ++l) laneBox.addItem (laneName (l), l + 1);
+        laneBox.setSelectedId (1, juce::dontSendNotification);
+        laneBox.setTooltip ("The lane shown here (tap a lane's name to show it)");
+        laneBox.onChange = [this] { setLane (laneBox.getSelectedId() - 1); };
+        addAndMakeVisible (laneBox);
+        modelBox.setTooltip ("Which of the kit's sounds the lane plays (Lane Default: the kit's own sound for this lane)");
+        modelBox.onChange = [this]
+        {
+            const int id = modelBox.getSelectedId();
+            if (id <= 0) return;
+            if (auto* prm = proc.apvts.getParameter (CoveGrooveProcessor::laneParam (lane, "pm")))
+                prm->setValueNotifyingHost (prm->convertTo0to1 ((float) (id - 1)));
+        };
+        addAndMakeVisible (modelBox);
+        hint.setFont (font (10.0f));
+        hint.setMinimumHorizontalScale (0.9f);
+        hint.setColour (juce::Label::textColourId, colours::dim);
+        hint.setJustificationType (juce::Justification::centredLeft);
+        hint.setInterceptsMouseClicks (false, false);
+        addAndMakeVisible (hint);
+        rebuild();
+        startTimerHz (10);
+    }
+
+    void PhysRow::setLane (int l)
+    {
+        l = juce::jlimit (0, kNumLanes - 1, l);
+        laneBox.setSelectedId (l + 1, juce::dontSendNotification);
+        if (l == lane) return;
+        lane = l;
+        shownKit = -2;
+        lastKey.clear();
+        rebuild();
+    }
+
+    // the controls for the lane's sound: the kit's sounds and its model's knobs
+    void PhysRow::rebuild()
+    {
+        const int model = (int) proc.apvts.getRawParameterValue (CoveGrooveProcessor::laneParam (lane, "model"))->load();
+        const int choice = (int) proc.apvts.getRawParameterValue (CoveGrooveProcessor::laneParam (lane, "pm"))->load();
+        const int kit = isPhysModel (model) ? physKitOf (model) : -1;
+        shownKit = kit;
+        shownChoice = choice;
+        modelBox.clear (juce::dontSendNotification);
+        for (auto& k : knobs) k.reset();
+        if (kit >= 0)
+        {
+            const auto* def = phys::presetFor (kit, lane, 0);
+            modelBox.addItem ("Lane Default" + (def != nullptr ? juce::String (" (") + phys::shortName (*def, kit) + ")" : juce::String()), 1);
+            const auto& list = phys::kitPresets (kit);
+            for (size_t i = 0; i < list.size() && i < 127; ++i) modelBox.addItem (phys::shortName (*list[i], kit), (int) i + 2);
+            modelBox.setSelectedId (juce::jlimit (0, (int) list.size(), choice) + 1, juce::dontSendNotification);
+            modelBox.setEnabled (true);
+            const auto names = phys::knobNames (phys::presetFor (kit, lane, choice));
+            for (int k = 0; k < 3; ++k)
+            {
+                if (names[(size_t) k].empty()) continue;
+                knobs[(size_t) k] = std::make_unique<Knob> (proc.apvts, CoveGrooveProcessor::laneParam (lane, ("x" + std::to_string (k + 1)).c_str()),
+                                                            juce::String (names[(size_t) k]), colours::lane (lane));
+                addAndMakeVisible (*knobs[(size_t) k]);
+            }
+            hint.setText ({}, juce::dontSendNotification);
+        }
+        else
+        {
+            modelBox.setTextWhenNothingSelected ("-");
+            modelBox.setEnabled (false);
+            hint.setText ("Modelled kits (808, 909, Classic, Electro, Large Drums, Metal, Orchestral, World): "
+                          "choose one in a lane's Sound menu or KIT to tweak it here.", juce::dontSendNotification);
+        }
+        resized();
+        repaint();
+    }
+
+    void PhysRow::resized()
+    {
+        auto r = getLocalBounds().reduced (12, 6);
+        auto left = r.removeFromLeft (156);
+        left.removeFromTop (18);
+        laneBox.setBounds (left.removeFromTop (22));
+        r.removeFromLeft (6);
+        auto mid = r.removeFromLeft (214);
+        mid.removeFromTop (18);
+        modelBox.setBounds (mid.removeFromTop (22));
+        r.removeFromLeft (8);
+        auto kn = r.removeFromLeft (3 * 50);
+        for (int k = 0; k < 3; ++k)
+        {
+            auto cell = kn.removeFromLeft (50);
+            if (knobs[(size_t) k] != nullptr) knobs[(size_t) k]->setBounds (cell.withTrimmedTop (2));
+        }
+        r.removeFromLeft (10);
+        viewArea = r;
+        hint.setBounds (juce::Rectangle<int> (modelBox.getRight() + 6, getLocalBounds().getY() + 2, 3 * 50 + 6, getHeight() - 4));
+    }
+
+    void PhysRow::paint (juce::Graphics& g)
+    {
+        g.setFont (font (10.0f, true));
+        g.setColour (colours::dim);
+        g.drawText ("SOUND UP CLOSE", laneBox.getX(), getLocalBounds().getY() + 4, 156, 14, juce::Justification::centredLeft);
+        g.drawText (shownKit >= 0 ? juce::String ("MODEL: ") + phys::kit (shownKit).name : juce::String ("MODEL"),
+                    modelBox.getX(), getLocalBounds().getY() + 4, 214, 14, juce::Justification::centredLeft);
+
+        // the view: the sound's waveform and its loudness over time
+        const auto col = colours::lane (lane);
+        const auto v = viewArea.toFloat();
+        g.setColour (colours::slot);
+        g.fillRoundedRectangle (v, 2.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.5f));
+        g.drawRoundedRectangle (v.reduced (0.5f), 2.0f, 1.0f);
+        if (shown == nullptr || shown->left.empty())
+        {
+            g.setFont (font (10.5f));
+            g.setColour (colours::dim);
+            g.drawText (isPhysModel ((int) proc.apvts.getRawParameterValue (CoveGrooveProcessor::laneParam (lane, "model"))->load()) ? "rendering the model..." : "silent",
+                        viewArea, juce::Justification::centred);
+            return;
+        }
+        const auto& x = shown->left;
+        const auto& y = shown->stereo() ? shown->right : shown->left;
+        const int w = viewArea.getWidth() - 4;
+        const float mid = v.getCentreY(), h = v.getHeight() * 0.44f;
+        float peak = 1.0e-6f;
+        for (size_t i = 0; i < x.size(); ++i) peak = std::max (peak, std::max (std::abs (x[i]), std::abs (y[i])));
+        const double per = (double) x.size() / (double) w;
+        const auto adsr = proc.laneEnv (lane);
+        const bool shaped = ! adsr.flat();
+        juce::Path env;
+        std::vector<float> rmsCol ((size_t) w), top ((size_t) w), rawTop ((size_t) w);
+        for (int px = 0; px < w; ++px)
+        {
+            const size_t a = (size_t) (px * per), b = std::min (x.size(), (size_t) ((px + 1) * per) + 1);
+            float mx = 0.0f; double sq = 0.0;
+            for (size_t i = a; i < b; ++i)
+            {
+                const float s = 0.5f * (x[i] + y[i]);
+                mx = std::max (mx, std::abs (s));
+                sq += (double) s * s;
+            }
+            // the lane's ADSR, as it will shape the sound
+            const float eg = shaped ? adsr.at ((float) (((double) px + 0.5) * per / shown->rate)) : 1.0f;
+            rawTop[(size_t) px] = mx / peak;
+            top[(size_t) px] = mx * eg / peak;
+            rmsCol[(size_t) px] = eg * (float) std::sqrt (sq / (double) std::max<size_t> (1, b - a)) * 1.4142f / peak;
+        }
+        for (int px = 0; px < w; ++px)
+        {
+            const float xx = v.getX() + 2.0f + (float) px, yy = mid - std::min (1.0f, rmsCol[(size_t) px]) * h;
+            if (px == 0) env.startNewSubPath (xx, mid); else env.lineTo (xx, yy);
+        }
+        // the waveform as its outline (6.7.7), above and below the centre, with
+        // only a faint fill; before the ADSR shapes it, fainter still
+        auto outline = [&] (const std::vector<float>& tops)
+        {
+            juce::Path p;
+            for (int px = 0; px < w; ++px)
+            {
+                const juce::Point<float> q (v.getX() + 2.0f + (float) px, mid - tops[(size_t) px] * h);
+                if (px == 0) p.startNewSubPath (q); else p.lineTo (q);
+            }
+            for (int px = w - 1; px >= 0; --px)
+                p.lineTo (v.getX() + 2.0f + (float) px, mid + tops[(size_t) px] * h);
+            p.closeSubPath();
+            return p;
+        };
+        if (shaped)
+        {
+            g.setColour (col.withAlpha (0.3f));
+            g.strokePath (outline (rawTop), juce::PathStrokeType (0.8f));
+        }
+        const auto wave = outline (top);
+        g.setColour (col.withAlpha (0.1f));
+        g.fillPath (wave);
+        g.setColour (col.withAlpha (0.9f));
+        g.strokePath (wave, juce::PathStrokeType (1.0f));
+        g.setColour (colours::cream.withAlpha (0.95f));
+        g.strokePath (env, juce::PathStrokeType (1.5f));
+
+        // the ADSR itself: its line and its four handles
+        {
+            juce::Path line;
+            const int steps = juce::jmax (8, w / 2);
+            for (int i = 0; i <= steps; ++i)
+            {
+                const float tt = viewSeconds() * (float) i / (float) steps;
+                const juce::Point<float> pt (timeToX (tt), levelToY (adsr.at (tt)));
+                if (i == 0) line.startNewSubPath (pt); else line.lineTo (pt);
+            }
+            g.setColour (colours::green.withAlpha (shaped ? 0.95f : 0.45f));
+            g.strokePath (line, juce::PathStrokeType (shaped ? 1.6f : 1.0f));
+            const char* names[4] = { "A", "D/S", "R", "" };
+            for (int hdl = 0; hdl < 4; ++hdl)
+            {
+                if (hdl == 3 && ! adsr.releases()) continue;
+                const auto hp = handlePos (hdl, adsr);
+                const bool active = hdl == dragHandle;
+                g.setColour (juce::Colours::black.withAlpha (0.6f));
+                g.fillEllipse (hp.x - 5.5f, hp.y - 5.5f, 11.0f, 11.0f);
+                g.setColour (active ? colours::cream : colours::green);
+                g.fillEllipse (hp.x - 4.0f, hp.y - 4.0f, 8.0f, 8.0f);
+                if (names[hdl][0] != 0)
+                {
+                    g.setFont (font (9.0f, true));
+                    g.drawText (names[hdl], juce::Rectangle<float> (hp.x - 14.0f, hp.y - 17.0f, 28.0f, 10.0f), juce::Justification::centred, false);
+                }
+            }
+        }
+        // the marks: the attack (to the loudest), where it has fallen 20 dB, where it ends
+        const float total = (float) x.size() / (float) shown->rate;
+        auto mark = [&] (float t, const juce::String& label, juce::Colour c)
+        {
+            if (t <= 0.0f || t > total) return;
+            const float xx = v.getX() + 2.0f + (float) w * t / total;
+            g.setColour (c.withAlpha (0.7f));
+            g.drawVerticalLine ((int) xx, v.getY() + 2.0f, v.getBottom() - 2.0f);
+            g.setFont (font (9.5f, true));
+            g.drawText (label, juce::Rectangle<float> (xx + 2.0f, v.getBottom() - 13.0f, 60.0f, 11.0f), juce::Justification::centredLeft, false);
+        };
+        auto ms = [] (float t) { return t < 1.0f ? juce::String (juce::roundToInt (t * 1000.0f)) + " ms" : juce::String (t, 2) + " s"; };
+        mark (attackS, "A " + ms (attackS), colours::green);
+        mark (decayS, "-20 dB " + ms (decayS), colours::cyan);
+        g.setFont (font (10.0f));
+        g.setColour (colours::text);
+        g.drawText (ms (lengthS) + "  (tap to hear, drag the ADSR handles, double-tap one: flat)", viewArea.reduced (6, 3), juce::Justification::topRight, false);
+    }
+
+    //=== the ADSR over the view ================================================
+    float PhysRow::viewSeconds() const
+    {
+        if (shown == nullptr || shown->left.empty() || shown->rate <= 0.0) return 1.0f;
+        return juce::jmax (0.01f, (float) ((double) shown->left.size() / shown->rate));
+    }
+
+    float PhysRow::timeToX (float t) const
+    {
+        const float w = (float) viewArea.getWidth() - 4.0f;
+        return (float) viewArea.getX() + 2.0f + w * juce::jlimit (0.0f, 1.0f, t / viewSeconds());
+    }
+
+    float PhysRow::xToTime (float x) const
+    {
+        const float w = juce::jmax (1.0f, (float) viewArea.getWidth() - 4.0f);
+        return juce::jlimit (0.0f, 1.0f, (x - (float) viewArea.getX() - 2.0f) / w) * viewSeconds();
+    }
+
+    float PhysRow::levelToY (float g) const
+    {
+        const auto v = viewArea.toFloat();
+        return v.getCentreY() - juce::jlimit (0.0f, 1.0f, g) * v.getHeight() * 0.44f;
+    }
+
+    juce::Point<float> PhysRow::handlePos (int handle, const LaneEnv& e) const
+    {
+        switch (handle)
+        {
+            case 0:  return { timeToX (e.attack), levelToY (1.0f) };
+            case 1:  return { timeToX (e.attack + e.decay), levelToY (e.sustain) };
+            case 2:  return { e.releases() ? timeToX (e.releaseAt) : (float) viewArea.getRight() - 6.0f, levelToY (e.sustain) };
+            default: return { timeToX (e.releaseAt + e.release), levelToY (0.0f) };
+        }
+    }
+
+    int PhysRow::handleAt (juce::Point<float> p) const
+    {
+        if (shown == nullptr || shown->left.empty()) return -1;
+        const auto e = proc.laneEnv (lane);
+        int best = -1;
+        float bestD = 11.0f;   // (a fingertip)
+        for (int hdl = 3; hdl >= 0; --hdl)   // the later handles first: they sit on top
+        {
+            if (hdl == 3 && ! e.releases()) continue;
+            const float d = handlePos (hdl, e).getDistanceFrom (p);
+            if (d < bestD) { bestD = d; best = hdl; }
+        }
+        return best;
+    }
+
+    void PhysRow::setEnvParam (const char* what, float value)
+    {
+        if (auto* prm = proc.apvts.getParameter (CoveGrooveProcessor::laneParam (lane, what)))
+            prm->setValueNotifyingHost (prm->convertTo0to1 (value));
+    }
+
+    void PhysRow::mouseDown (const juce::MouseEvent& e)
+    {
+        if (! viewArea.contains (e.getPosition())) return;
+        dragHandle = handleAt (e.position);
+        if (dragHandle < 0)
+        {
+            proc.audition (lane);
+            return;
+        }
+        for (const char* w : { "eA", "eD", "eS", "eH", "eR" })
+            if (auto* prm = proc.apvts.getParameter (CoveGrooveProcessor::laneParam (lane, w)))
+                prm->beginChangeGesture();
+        repaint();
+    }
+
+    void PhysRow::mouseDrag (const juce::MouseEvent& e)
+    {
+        if (dragHandle < 0) return;
+        const auto env = proc.laneEnv (lane);
+        const float t = xToTime (e.position.x);
+        const auto v = viewArea.toFloat();
+        const float level = juce::jlimit (0.0f, 1.0f, (v.getCentreY() - e.position.y) / (v.getHeight() * 0.44f));
+        switch (dragHandle)
+        {
+            case 0:
+                setEnvParam ("eA", t * 1000.0f);
+                if (env.releases() && env.releaseAt < t + env.decay) setEnvParam ("eH", (t + env.decay) * 1000.0f);
+                break;
+            case 1:
+                setEnvParam ("eD", juce::jmax (0.0f, t - env.attack) * 1000.0f);
+                setEnvParam ("eS", level * 100.0f);
+                if (env.releases() && env.releaseAt < t) setEnvParam ("eH", t * 1000.0f);
+                break;
+            case 2:
+                // to the right edge: no release (the sound plays out as it is)
+                if (e.position.x >= (float) viewArea.getRight() - 5.0f) setEnvParam ("eH", LaneEnv::kOff * 1000.0f);
+                else setEnvParam ("eH", juce::jmax (t, env.attack + env.decay) * 1000.0f);
+                setEnvParam ("eS", level * 100.0f);
+                break;
+            default:
+                setEnvParam ("eR", juce::jmax (0.0f, t - env.releaseAt) * 1000.0f);
+                break;
+        }
+        repaint();
+    }
+
+    void PhysRow::mouseUp (const juce::MouseEvent&)
+    {
+        if (dragHandle < 0) return;
+        for (const char* w : { "eA", "eD", "eS", "eH", "eR" })
+            if (auto* prm = proc.apvts.getParameter (CoveGrooveProcessor::laneParam (lane, w)))
+                prm->endChangeGesture();
+        dragHandle = -1;
+        repaint();
+    }
+
+    void PhysRow::mouseDoubleClick (const juce::MouseEvent& e)
+    {
+        if (handleAt (e.position) >= 0)
+        {
+            proc.resetLaneEnv (lane);
+            repaint();
+        }
+    }
+
+    void PhysRow::timerCallback()
+    {
+        auto v = [this] (const char* what) { return proc.apvts.getRawParameterValue (CoveGrooveProcessor::laneParam (lane, what))->load(); };
+        const int model = (int) v ("model");
+        const int kit = isPhysModel (model) ? physKitOf (model) : -1;
+        const int choice = (int) v ("pm");
+        if (kit != shownKit || (kit >= 0 && choice != shownChoice)) rebuild();
+
+        // the ADSR moved (from here, the host or a preset): just draw it again
+        {
+            juce::String envKey;
+            for (const char* w : { "eA", "eD", "eS", "eH", "eR" }) envKey << v (w) << "|";
+            if (envKey != lastEnvKey) { lastEnvKey = envKey; repaint(); }
+        }
+
+        // the view, when the sound changed
+        juce::String key;
+        key << model << "|" << v ("tune") << "|" << v ("decay") << "|" << v ("tone") << "|" << proc.sampleVersion.load() << "|" << proc.physVersion.load();
+        if (key == lastKey) return;
+        lastKey = key;
+        shown = proc.previewLane (lane);
+        attackS = decayS = lengthS = 0.0f;
+        if (shown != nullptr && ! shown->left.empty())
+        {
+            // a smoothed level (5 ms), its peak, and where it has fallen 20 dB after it
+            const auto& x = shown->left;
+            const int win = juce::jmax (1, (int) (0.005 * shown->rate));
+            std::vector<float> lvl (x.size());
+            double acc = 0.0;
+            for (size_t i = 0; i < x.size(); ++i)
+            {
+                acc += (double) x[i] * x[i];
+                if (i >= (size_t) win) acc -= (double) x[i - (size_t) win] * x[i - (size_t) win];
+                lvl[i] = (float) std::sqrt (std::max (0.0, acc) / win);
+            }
+            const auto pk = std::max_element (lvl.begin(), lvl.end());
+            const size_t ip = (size_t) std::distance (lvl.begin(), pk);
+            size_t id = ip;
+            while (id < lvl.size() && lvl[id] > *pk * 0.1f) ++id;
+            size_t ie = lvl.size();
+            while (ie > ip && lvl[ie - 1] < *pk * 0.001f) --ie;
+            attackS = (float) ((double) ip / shown->rate);
+            decayS = (float) ((double) id / shown->rate);
+            lengthS = (float) ((double) ie / shown->rate);
+            // show the part that is heard
+            if (ie > 16 && ie < x.size())
+            {
+                shown->left.resize (std::min (x.size(), ie + ie / 20));
+                if (! shown->right.empty()) shown->right.resize (shown->left.size());
+            }
+        }
+        repaint();
+    }
+
     //==========================================================================
     CoveGrooveEditor::CoveGrooveEditor (CoveGrooveProcessor& p)
-        : AudioProcessorEditor (p), proc (p), grid (p), samplePanel (p)
+        : AudioProcessorEditor (p), proc (p), grid (p), samplePanel (p), physRow (p)
     {
         setLookAndFeel (&lnf);
         auto& s = proc.apvts;
@@ -675,7 +1082,8 @@ namespace covegroove
             auto& row = lanes[(size_t) l];
             const auto col = colours::lane (l);
             row.name.setText (laneName (l), juce::dontSendNotification);
-            row.name.setFont (font (12.0f, true));
+            row.name.setFont (font (11.5f, true));
+            row.name.setMinimumHorizontalScale (0.8f);
             row.name.setColour (juce::Label::textColourId, col.brighter (0.25f));
             row.name.setInterceptsMouseClicks (false, false);
             addAndMakeVisible (row.name);
@@ -692,6 +1100,10 @@ namespace covegroove
             row.edit.colour = col.brighter (0.3f);
             row.edit.onClick = [this, l] { if (samplePanel.isVisible() && samplePanel.getLane() == l) samplePanel.setVisible (false); else samplePanel.show (l); };
             addChildComponent (row.edit);
+            row.load.setTooltip ("Load a sound file into this lane (it then plays it: Sound Sample)");
+            row.load.setColour (juce::TextButton::textColourOffId, col.brighter (0.3f));
+            row.load.onClick = [this, l] { samplePanel.show (l); samplePanel.chooseFile(); physRow.setLane (l); };
+            addAndMakeVisible (row.load);
             lamp (row.mute, colours::coral, true);
             row.mute.setTooltip ("Mute this lane");
             addAndMakeVisible (row.mute);
@@ -711,6 +1123,7 @@ namespace covegroove
         }
         addAndMakeVisible (grid);
         addChildComponent (samplePanel);
+        addAndMakeVisible (physRow);
 
         // effects ------------------------------------------------------------
         for (int f = 0; f < CoveGrooveProcessor::getNumFxPresets(); ++f) fxPresetBox.addItem (CoveGrooveProcessor::getFxPresetName (f), f + 1);
@@ -891,6 +1304,7 @@ namespace covegroove
         if (woodImage.isValid()) g.drawImageAt (woodImage, 0, 0);
         else g.fillAll (colours::wood);
         drawPlate (g, headerArea);
+        drawPlate (g, physArea);
         drawPlate (g, laneArea);
         drawPlate (g, fxArea);
 
@@ -971,6 +1385,8 @@ namespace covegroove
         auto r = getLocalBounds().reduced (6);
         headerArea = r.removeFromTop (64);
         r.removeFromTop (6);
+        physArea = r.removeFromTop (74);
+        r.removeFromTop (6);
         fxArea = r.removeFromBottom (110);
         r.removeFromBottom (6);
         laneArea = r;
@@ -1021,6 +1437,7 @@ namespace covegroove
             const int gridX = a.getX() + 252, gridR = a.getRight() - 46 - knobsW - 8;
             grid.setBounds (gridX, a.getY(), gridR - gridX, rowH * kNumLanes);
             samplePanel.setBounds (grid.getBounds().expanded (3));
+            physRow.setBounds (physArea);
             for (int l = 0; l < kNumLanes; ++l)
             {
                 auto row = juce::Rectangle<int> (a.getX(), a.getY() + l * rowH, a.getWidth(), rowH);
@@ -1029,10 +1446,11 @@ namespace covegroove
                 auto& lr = lanes[(size_t) l];
                 lamps[(size_t) l] = { row.getX() + 3, cy - 3, 6, 6 };
                 lr.mute.setBounds (row.getX() + 14, cy - 11, 22, 22);
-                lr.name.setBounds (row.getX() + 40, cy - 9, 74, 18);
-                lr.edit.setBounds (row.getX() + 96, cy - 9, 18, 18);
-                lr.model.setBounds (row.getX() + 117, cy - 11, 94, 22);
-                lr.rnd.setBounds (row.getX() + 214, cy - 11, 34, 22);
+                lr.name.setBounds (row.getX() + 40, cy - 9, 58, 18);
+                lr.edit.setBounds (row.getX() + 97, cy - 9, 18, 18);
+                lr.load.setBounds (row.getX() + 117, cy - 9, 18, 18);
+                lr.model.setBounds (row.getX() + 138, cy - 11, 78, 22);
+                lr.rnd.setBounds (row.getX() + 219, cy - 11, 29, 22);
                 int kx = gridR + 8;
                 for (auto* k : { lr.level.get(), lr.tune.get(), lr.decay.get(), lr.tone.get(), lr.pan.get(), lr.send.get() })
                 {
@@ -1082,6 +1500,13 @@ namespace covegroove
             dr.removeFromLeft (8);
             place (dr, *drive); place (dr, *driveTone); place (dr, *driveMix);
         }
+    }
+
+    void CoveGrooveEditor::mouseDown (const juce::MouseEvent& e)
+    {
+        for (int l = 0; l < kNumLanes; ++l)
+            if (lanes[(size_t) l].name.getBounds().expanded (2).contains (e.getPosition()))
+                physRow.setLane (l);
     }
 
     void CoveGrooveEditor::timerCallback()

@@ -12,9 +12,11 @@
 namespace aquanova {
 
 //==============================================================================
-class AquaNovaProcessor : public juce::AudioProcessor
+class AquaNovaProcessor : public juce::AudioProcessor,
+                          public aquanode::MpeReceiver     // (Aquanode: MPE once a member channel plays)
 {
 public:
+    void enableMpe (bool on) override { engine.mpe = on; }
     AquaNovaProcessor();
     ~AquaNovaProcessor() override = default;
 

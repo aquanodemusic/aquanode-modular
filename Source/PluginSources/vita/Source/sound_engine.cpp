@@ -30,6 +30,14 @@
 
 namespace vital {
 
+  // Vita FX: the host's audio, as a processor's output the effects chain can read
+  class ExternalAudioInput : public Processor {
+    public:
+      ExternalAudioInput() : Processor(0, 1) { }
+      Processor* clone() const override { return new ExternalAudioInput(*this); }
+      void process(int num_samples) override { }
+  };
+
   SoundEngine::SoundEngine() : SynthModule(0, 1), voice_handler_(nullptr), effect_chain_(nullptr),
                                output_total_(nullptr), last_oversampling_amount_(-1), last_sample_rate_(-1),
                                oversampling_(nullptr), legato_(nullptr), decimator_(nullptr), peak_meter_(nullptr) {
@@ -77,6 +85,8 @@ namespace vital {
     addSubmodule(effect_chain_);
     addProcessor(effect_chain_);
     effect_chain_->plug(voice_handler_, ReorderableEffectChain::kAudio);
+    external_input_ = new ExternalAudioInput();
+    addIdleProcessor(external_input_);
     effect_chain_->plug(effect_chain_order, ReorderableEffectChain::kOrder);
 
     SynthModule* compressor = effect_chain_->getEffect(constants::kCompressor);
@@ -233,10 +243,37 @@ namespace vital {
       oversample >>= 1;
     }
     voice_handler_->setOversampleAmount(oversample);
+    if (external_input_)
+      external_input_->setOversampleAmount(oversample);
     effect_chain_->setOversampleAmount(oversample);
     output_total_->setOversampleAmount(oversample);
     last_oversampling_amount_ = oversampling_amount;
     last_sample_rate_ = sample_rate;
+  }
+
+  void SoundEngine::setEffectOnly(bool effect_only) {
+    if (effect_only == effect_only_)
+      return;
+    effect_only_ = effect_only;
+    effect_chain_->plug(effect_only ? (Processor*)external_input_ : (Processor*)voice_handler_, ReorderableEffectChain::kAudio);
+  }
+
+  void SoundEngine::setExternalInput(const float* left, const float* right, int num_samples) {
+    if (external_input_ == nullptr)
+      return;
+    poly_float* dest = external_input_->output()->buffer;
+    const int oversample = std::max(1, external_input_->getOversampleAmount());
+    const int capacity = external_input_->output()->buffer_size;
+    for (int i = 0; i < num_samples; ++i) {
+      const float l = left ? left[i] : 0.0f;
+      const float r = right ? right[i] : l;
+      poly_float v(l, r, l, r);
+      for (int s = 0; s < oversample; ++s) {
+        const int index = i * oversample + s;
+        if (index < capacity)
+          dest[index] = v;
+      }
+    }
   }
 
   void SoundEngine::process(int num_samples) {

@@ -52,7 +52,8 @@ void DelayModule::processSample (const StereoFrame* inputs, StereoFrame* outputs
         const float hpOut = delayed - hpState[c];
 
         const float in = inputs[0][(size_t) c];
-        line[c][(size_t) writePos] = juce::jlimit (-4.0f, 4.0f, in + hpOut * feedback);
+        // Send (6.7.11): how much of the input goes into the echoes (the tails ring on without it)
+        line[c][(size_t) writePos] = juce::jlimit (-4.0f, 4.0f, in * param (pSend) + hpOut * feedback);
 
         outputs[0][(size_t) c] = in * (1.0f - wet) + delayed * wet;
     }
@@ -80,7 +81,8 @@ static ModuleDescriptor delayDescriptor()
         makeSteppedList ("timeR", "Time R", times, 2, 0),
         makeRotary ("feedback", "Feedback", 0.0f, 1.2f, 0.3f, 0),
         makeRotary ("highPass", "High-Pass", 20.0f, 2000.0f, 100.0f, 0, "Hz", true),
-        makeRotary ("dryWet", "Dry/Wet", 0.0f, 100.0f, 50.0f, 0, "%")
+        makeRotary ("dryWet", "Dry/Wet", 0.0f, 100.0f, 50.0f, 0, "%"),
+        makeRotary ("send", "Send", 0.0f, 1.0f, 1.0f, 1).whenMissing (1.0f)   // (6.7.11)
     };
     return d;
 }

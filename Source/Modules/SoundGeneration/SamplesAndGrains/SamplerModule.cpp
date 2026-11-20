@@ -1,4 +1,5 @@
 #include "SamplerModule.h"
+#include "../../../Platform/AndroidDocuments.h"
 
 using namespace aquanode;
 
@@ -473,7 +474,7 @@ static ModuleDescriptor samplerDescriptor()
         audioOut ("audioOut", "Audio Out")
     };
     d.params = {
-        makeRotary ("volume", "Volume", 0.0f, 1.0f, 0.8f, 0),
+        makeRotary ("volume", "Volume", 0.0f, 1.0f, 0.8f, 1),
         makeButton ("loadSample", "Load Sample", 0, 2)
     ,
         makeRotary ("voices", "Voices", 1.0f, (float) kMaxVoices, (float) kMaxVoices, 3, {}, false, 1.0f).noMod(),
@@ -484,12 +485,142 @@ static ModuleDescriptor samplerDescriptor()
         makeCombo  ("cycle", "Cycle", { "Off", "On" }, 0, 3, 2),
         // the waveform view (touch screens have no wheel): how far in, and where
         makeRotary ("viewZoom", "Zoom", 1.0f, 1000.0f, 1.0f, 2, "x", true).noMod(),
-        makeRotary ("viewPos", "View Pos", 0.0f, 1.0f, 0.0f, 2).noMod()
+        makeRotary ("viewPos", "View Pos", 0.0f, 1.0f, 0.0f, 2).noMod(),
+        // (6.7.12) Start..End saved as a file, played as a key: Save As semitones from C4
+        makeButton ("saveSample", "Save Sample", 0, 2),
+        makeRotary ("saveAs", "Save As", -36.0f, 36.0f, 0.0f, 0, " st", false, 1.0f).noMod(),
+        makeCombo  ("saveFormat", "Format", { "FLAC", "WAV" }, 0, 1, 2).noMod()
     };
     return d;
 }
 
 AQUANODE_REGISTER_MODULE (SamplerModule, samplerDescriptor)
+
+//==============================================================================
+// Save Sample (6.7.12)
+//==============================================================================
+juce::AudioBuffer<float> SamplerModule::resample (const juce::AudioBuffer<float>& src, int a, int b, double speed)
+{
+    a = juce::jlimit (0, juce::jmax (0, src.getNumSamples() - 1), a);
+    b = juce::jlimit (a, juce::jmax (a, src.getNumSamples() - 1), b);
+    const int chans = juce::jmax (1, src.getNumChannels());
+    const int inLen = b - a + 1;
+    if (std::abs (speed - 1.0) < 1.0e-9)
+    {
+        juce::AudioBuffer<float> out (chans, inLen);
+        for (int c = 0; c < chans; ++c) out.copyFrom (c, 0, src, juce::jmin (c, src.getNumChannels() - 1), a, inLen);
+        return out;
+    }
+    const int outLen = juce::jmax (1, (int) std::floor ((double) (inLen - 1) / speed) + 1);
+    juce::AudioBuffer<float> out (chans, outLen);
+    // the kernel: a sinc at the lower of the two Nyquists, in a Hann window
+    const double cutoff = juce::jmin (1.0, 1.0 / speed) * 0.96;
+    const int half = juce::jmax (8, (int) std::ceil ((speed > 1.0 ? 16.0 : 8.0) / cutoff));
+    const double pi = juce::MathConstants<double>::pi;
+    std::vector<double> taps ((size_t) (2 * half));
+    for (int c = 0; c < chans; ++c)
+    {
+        const float* in = src.getReadPointer (juce::jmin (c, src.getNumChannels() - 1));
+        float* o = out.getWritePointer (c);
+        for (int j = 0; j < outLen; ++j)
+        {
+            const double pos = (double) a + (double) j * speed;
+            const int centre = (int) std::floor (pos);
+            double acc = 0.0;
+            for (int k = centre - half + 1; k <= centre + half; ++k)
+            {
+                if (k < a || k > b) continue;
+                const double x = pos - (double) k;
+                const double sx = x * cutoff * pi;
+                const double sinc = std::abs (sx) < 1.0e-12 ? 1.0 : std::sin (sx) / sx;
+                const double w = 0.5 + 0.5 * std::cos (pi * x / (double) half);
+                acc += (double) in[k] * sinc * w;
+            }
+            o[j] = (float) (acc * cutoff);
+        }
+    }
+    return out;
+}
+
+juce::AudioBuffer<float> SamplerModule::renderInterval (double& rateOut) const
+{
+    double srcRate = 44100.0;
+    auto sample = getLoadedSample (&srcRate);
+    rateOut = srcRate;
+    if (sample == nullptr || sample->getNumSamples() < 2)
+        return {};
+    int a = 0, b = 0;
+    windowFor (a, b, sample->getNumSamples());
+    const double st = juce::jlimit (-36.0, 36.0, (double) std::round (getParameterBase (pSaveAs)));
+    return resample (*sample, a, b, std::pow (2.0, st / 12.0));
+}
+
+juce::MemoryBlock SamplerModule::encode (const juce::AudioBuffer<float>& audio, double rate, bool flac)
+{
+    juce::MemoryBlock data;
+    if (audio.getNumSamples() == 0) return data;
+    std::unique_ptr<juce::AudioFormat> format;
+    if (flac) format = std::make_unique<juce::FlacAudioFormat>();
+    else      format = std::make_unique<juce::WavAudioFormat>();
+    // (FLAC up to 655 kHz and 24 bits: a high-rate file keeps its rate)
+    std::unique_ptr<juce::AudioFormatWriter> w (format->createWriterFor (new juce::MemoryOutputStream (data, false), rate,
+                                                                          (unsigned int) audio.getNumChannels(), 24, {}, flac ? 5 : 0));
+    if (w == nullptr) return {};
+    w->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples());
+    w.reset();   // (flushes into data)
+    return data;
+}
+
+void SamplerModule::saveInterval()
+{
+    auto tell = [] (const juce::String& text)
+    {
+        juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Sampler", text);
+    };
+    if (getLoadedSample() == nullptr) { tell ("Load a sample first."); return; }
+    const bool flac = getParameterBase (pSaveFormat) < 0.5f;
+    const int st = (int) std::lround (getParameterBase (pSaveAs));
+    const auto ext = flac ? juce::String (".flac") : juce::String (".wav");
+    const auto name = "Sample " + juce::MidiMessage::getMidiNoteName (60 + st, true, true, 4)
+                    + (st == 0 ? juce::String() : " (" + juce::String (st > 0 ? "+" : "") + juce::String (st) + " st)");
+    const auto suggested = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getNonexistentChildFile (name, ext, false);
+    saveChooser = std::make_unique<juce::FileChooser> (flac ? "Save the interval as a FLAC file" : "Save the interval as a WAV file",
+                                                       suggested, "*" + ext);
+    juce::WeakReference<SynthModule> weak (this);
+    saveChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::warnAboutOverwriting,
+                              [weak, flac, tell] (const juce::FileChooser& fc)
+    {
+        const auto url = fc.getURLResult();   // (the address: an Android pick is a document, not a path)
+        auto* self = dynamic_cast<SamplerModule*> (weak.get());
+        if (url.isEmpty() || self == nullptr) return;
+        double rate = 44100.0;
+        auto sample = self->getLoadedSample (&rate);
+        if (sample == nullptr || sample->getNumSamples() < 2) { tell ("There is nothing to save."); return; }
+        int a = 0, b = 0;
+        self->windowFor (a, b, sample->getNumSamples());
+        const double speed = std::pow (2.0, juce::jlimit (-36.0, 36.0, (double) std::round (self->getParameterBase (pSaveAs))) / 12.0);
+        // the resampling and encoding off the message thread, the writing back on it
+        juce::Thread::launch ([sample, a, b, speed, rate, flac, url, tell]
+        {
+            const auto audio = resample (*sample, a, b, speed);
+            auto data = std::make_shared<juce::MemoryBlock> (encode (audio, rate, flac));
+            juce::MessageManager::callAsync ([data, url, tell, flac]
+            {
+                if (data->getSize() == 0) { tell (flac ? "The FLAC file could not be made." : "The WAV file could not be made."); return; }
+                const auto problem = aqp::files::writeDocument (url, data->getData(), data->getSize());
+                if (problem.isNotEmpty()) tell ("The file could not be saved: " + problem + ".");
+            });
+        });
+    });
+}
+
+// for tests: the interval as Save Sample would write it
+juce::AudioBuffer<float> samplerRenderForTest (aquanode::SynthModule* m, double& rate)
+{
+    if (auto* s = dynamic_cast<SamplerModule*> (m)) return s->renderInterval (rate);
+    return {};
+}
 
 //==============================================================================
 // Multi Sample

@@ -29,7 +29,7 @@ public:
         d.typeId = "plugin.phorest.phaser";
         d.displayName = kit::moduleName (kPlugin, "Phaser");
         d.description = "Phorest's phaser: up to 48 allpass stages spread up from the sweep position (log "
-                        "spaced, alternately detuned), swept by its LFO between Min and Max (or held at "
+                        "spaced, alternately detuned), swept by its LFO between Low and High (or held at "
                         "Position when the shape is Manual) from 20 Hz up to Range, with feedback around the "
                         "stages. Stereo offsets the right channel's LFO; Cancel takes some of the dry signal "
                         "out again. LFO Out is the sweep position, 0..1.";
@@ -41,8 +41,8 @@ public:
             makeCombo ("lfoShape", "LFO Shape", { "Manual", "Sine", "Triangle", "Ramp Up", "Ramp Down", "Square", "Tanh" }, 1, 0, 2),
             makeRotary ("sweepFreq", "Rate", 0.01f, 100.0f, 0.25f, 0, "Hz", true),
             makeRotary ("manualPos", "Position", 0.0f, 1.0f, 0.5f, 0).visibleWhen ("lfoShape", 0.0f),
-            makeRotary ("minDepth", "Min", 0.0f, 1.0f, 0.0f, 0),
-            makeRotary ("maxDepth", "Max", 0.0f, 1.0f, 1.0f, 0),
+            makeRotary ("minDepth", "Low", 0.0f, 1.0f, 0.0f, 0),
+            makeRotary ("maxDepth", "High", 0.0f, 1.0f, 1.0f, 0),
             makeRotary ("stereo", "Stereo", 0.0f, 1.0f, 0.25f, 0),
 
             makeRotary ("freqRange", "Range", 50.0f, 20000.0f, 1500.0f, 1, "Hz", true),

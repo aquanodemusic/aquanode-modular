@@ -18,7 +18,8 @@ static aquanode::ModuleDescriptor bitcrushDescriptor()
     };
     d.params = {
         makeRotary ("bits",   "Bits",    1.0f, 16.0f, 8.0f, 0),
-        makeRotary ("dryWet", "Dry/Wet", 0.0f, 100.0f, 100.0f, 0, "%")
+        makeRotary ("dryWet", "Dry/Wet", 0.0f, 100.0f, 100.0f, 0, "%"),
+        makeRotary ("level",  "Level",   0.0f, 1.0f, 1.0f, 0).whenMissing (1.0f)   // (6.7.11)
     };
     return d;
 }

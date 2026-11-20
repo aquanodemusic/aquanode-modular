@@ -63,6 +63,10 @@ struct ModuleInstance
     // Sum where voices are summed): samples since each voice last reached it
     int voiceQuiet[aquanode::kMaxVoices] {};
 
+    // audio thread only: how many samples of silent input put this module to
+    // sleep (sleep on silence) - worked out once a block
+    int sleepInNeed { 1 << 30 };
+
     // runtime socket buffers (audio thread only)
     std::vector<aquanode::StereoFrame> inBuf, outBuf, prevOutBuf;              // global lane
     std::vector<aquanode::StereoFrame> outV, prevOutV;   // per-voice lanes, [voice * numOut + socket]
@@ -102,6 +106,13 @@ class AquanodeModularAudioProcessor : public juce::AudioProcessor,
 public:
     AquanodeModularAudioProcessor();
     int debugLatency() const { return patchLatency.load (std::memory_order_relaxed); }   // (tests)
+
+    // Latency compensation (6.7.12): parallel paths lined up where they meet
+    // (see ProcessGraph::delays). Off by default in a patch (live playing would
+    // wait for the slowest chain), saved with it; Fruit DAW's engine always.
+    bool getLatencyCompensation() const { return latencyCompensation.load (std::memory_order_relaxed); }
+    void setLatencyCompensation (bool shouldCompensate);   // message thread: rebuilds the graph
+    void setAlwaysCompensate (bool shouldCompensate);      // Fruit DAW's own engine
     ~AquanodeModularAudioProcessor() override;
 
     //=== AudioProcessor =======================================================
@@ -314,6 +325,8 @@ private:
         // the signal is heard at the trimmed level, while the same output into
         // a modulation input (FM In) or onto a knob keeps its full range
         const aquanode::SynthModule* trimSrc { nullptr };
+        // latency compensation (6.7.12): its delay line in ProcessGraph::delays (-1 none)
+        int delayIndex { -1 };
     };
 
     struct CompiledParamEdge
@@ -335,6 +348,7 @@ private:
         // source's value x becomes x * polMul + polAdd (2x - 1 centres a 0..1
         // source, x / 2 + 1/2 lifts a -1..1 one; otherwise as it is)
         float polMul { 1.0f }, polAdd { 0.0f };
+        int delayIndex { -1 };      // latency compensation (6.7.12), as CompiledEdge
     };
 
     // a MIDI note driver (Arp, Always Midi, Piano Roll) whose notes reach
@@ -407,13 +421,55 @@ private:
 
         std::vector<MidiDriverRef> midiDrivers;
         std::vector<const aquanode::SynthModule*> voiceHolders;   // canHoldVoicesOpen() modules
+        // CPU / RAM modules: each with the nodes its chain is made of (all that
+        // feeds it, by audio, knob or MIDI cables, back to the start)
+        struct CpuMeterRef { int node { -1 }; aquanode::SynthModule* dsp { nullptr }; std::vector<int> upstream; bool connected { false }; };
+        std::vector<CpuMeterRef> cpuMeters;
         std::vector<std::vector<CompiledEdge>> incoming;         // per node
         std::vector<std::vector<CompiledParamEdge>> incomingParams;
         juce::uint64 serial { 0 };
+
+        // Latency compensation (6.7.12). Where cables meet at a module that lines
+        // its inputs up (every module with the Patch menu's Latency Compensation
+        // on; always inside Fruit DAW and in a Fruit Arranger's lanes), each one
+        // but the latest waits in a delay line for the slowest: audio and control
+        // signals, and the knob cables onto a module with audio coming in. Several
+        // Audio Outs are lined up the same way. The delays follow the modules'
+        // latency every block (audio thread only, hence mutable).
+        struct EdgeDelay
+        {
+            std::vector<aquanode::StereoFrame> buf;
+            int mask { 0 }, write { 0 }, delay { 0 };
+            int srcNode { -1 }, dstNode { -1 };   // dstNode -1: an Audio Out lined up with the others
+        };
+        mutable std::vector<EdgeDelay> delays;
+        std::vector<int> hostOutDelay;            // per node: its EdgeDelay as an Audio Out (-1 none)
     };
 
     void rebuildGraph();
     void purgeRetired();
+
+    // The standalone app (and Android), 6.7.3: the device input (the
+    // microphone) is open only while the patch has an Audio In module; JUCE's
+    // own mute and yellow bar are never used. Opening / closing restarts the
+    // device and prepareToPlay then keeps the patch (StandaloneInput.cpp).
+    // Message thread; only the app's own top-level processor acts on it.
+    void updateStandaloneInputMute (bool patchHasAudioIn);
+public:
+    void refreshStandaloneInputMute()
+    {
+        bool has = false;
+        for (const auto& inst : instances)
+            has = has || (inst->dsp != nullptr && inst->dsp->wantsHostInput());
+        updateStandaloneInputMute (has);
+    }
+private:
+    // CPU / RAM module (audio thread): which samples are timed, the whole block's share
+    // one module at a time is timed on every sample for a window of 0.1 s (longer
+    // than any FFT hop), then the next: steady figures, two clock reads a sample
+    int meterNode { 0 }, meterWindowLeft { 0 }, meterWindowLen { 0 };
+    double meterWindowNs { 0.0 };
+    float meterGlobalShare { 0.0f };
     // the patch's delay, reported to the host so a DAW lines the track up: the
     // longest chain of late modules (FFTs, hosted plugins and their own
     // latency) to an Audio Out, plus Soft Clip's 31 samples while it is on.
@@ -429,11 +485,20 @@ private:
             const int wanted = owner.patchLatency.load (std::memory_order_relaxed);
             if (owner.getLatencySamples() != wanted)
                 owner.setLatencySamples (wanted);
+            if (owner.compensationShort.exchange (false))
+                owner.rebuildGraph();     // (longer delay lines)
         }
         AquanodeModularAudioProcessor& owner;
     };
     std::unique_ptr<LatencyWatch> latencyWatch;
     std::vector<int> latencyScratch;       // audio thread
+    std::vector<int> latencyInScratch;     // audio thread: when the latest input arrives (6.7.12)
+    // latency compensation (6.7.12): the Patch menu's switch (saved with the
+    // patch), Fruit DAW's own engine (always), and a delay line that ran out of
+    // room (a module's latency grew past it: the watch rebuilds the graph)
+    std::atomic<bool> latencyCompensation { false };
+    bool alwaysCompensate { false };
+    std::atomic<bool> compensationShort { false };
     void clearPatch();
     static void initInstanceBuffers (ModuleInstance& inst);
 
@@ -462,6 +527,10 @@ private:
     // member channel's latest bend / Slide / pressure (sent before or after
     // its note-on). Audio thread.
     int mpeChannelOfVoice[aquanode::kMaxVoices] {};
+    // MPE notes from a module (the MPE Piano Roll) to raw-MIDI modules: the member channel each plays on
+    struct MpeOutChannel { int source { -1 }, note { -1 }, channel { 0 }; juce::uint32 age { 0 }; };
+    std::array<MpeOutChannel, 15> mpeOutChannels {};
+    juce::uint32 mpeOutNext { 0 };
     float mpeChanBend[17] {}, mpeChanSlide[17] {}, mpeChanPressure[17] {};
     void mpeMessage (const ProcessGraph& graph, const juce::MidiMessage& msg);
     juce::SpinLock uiMidiLock;

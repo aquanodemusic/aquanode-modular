@@ -328,6 +328,7 @@ private:
     struct Voice
     {
         int   note { -1 };
+        int   channel { 0 };         // MPE (Aquanode): the member channel (2..16) it plays, 0 otherwise
         float velocity { 0.0f };
         float releaseVelocity { 0.0f };
         bool  held { false };        // key (or arp) still down
@@ -436,6 +437,15 @@ private:
 
     //== live controller state =================================================
     float pitchBend { 0.0f }, channelPressure { 0.0f };
+    // MPE (Aquanode; mpe is set by the processor): channels 2..16 carry one note
+    // each, with its own bend (+-48 semitones, on top of the global bend) and its
+    // own pressure (the Chan Pressure source). Channel 1 stays the global channel.
+public:
+    bool mpe { false };
+private:
+    int noteChannel { 0 };
+    std::array<float, 17> chanBend {};
+    std::array<float, 17> chanPress = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
     std::array<float, 128> controllers {};
     float inputL { 0.0f }, inputR { 0.0f };
     float followerValue { 0.0f };

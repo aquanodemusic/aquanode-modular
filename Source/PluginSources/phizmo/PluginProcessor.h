@@ -1228,6 +1228,7 @@ struct PhizmoVoice
     PhzMemo penvMemo, unisonMemo, macroMemoA, macroMemoB, pitchModMemoA, pitchModMemoB, gritMemo;
     PhzMemo panCosA, panSinA, panCosB, panSinB;
     int soundIndex = 0;      // which of the 4 Phizmo Sounds this voice plays
+    int channel = 0;         // (Aquanode) MPE: the member channel (2..16) it plays, 0 otherwise
     float  sahNoise = 0.f;   // stepped noise  (noiS)
     float  lpfNoise = 0.f;   // smoothed noise (LPF)
     double noisePhase = 0.0;
@@ -1383,9 +1384,24 @@ enum class ScanMode { Forward = 0, FwdStay = 1, BackForth = 2, BwdStay = 3, Back
 
 //==============================================================================
 class PhizmoAudioProcessor : public juce::AudioProcessor,
-    public juce::AudioProcessorValueTreeState::Listener
+    public juce::AudioProcessorValueTreeState::Listener,
+    public aquanode::MpeReceiver     // (Aquanode: MPE once a member channel plays)
 {
 public:
+    void enableMpe(bool on) override { mpeOn = on; }
+    // MPE (Aquanode): channels 2..16 carry one note each, with its own bend (+-48
+    // semitones, on top of the global bend) and its own pressure (in place of the
+    // global pressure: the Pressure, tPrS and CtPr mod sources and the vibrato).
+    // Channel 1 stays the global channel.
+    bool mpeOn = false;
+    int noteChannel = 0;
+    std::array<float, 17> mpeBend {};
+    std::array<float, 17> mpePress = [] { std::array<float, 17> a {}; a.fill(-1.0f); return a; }();
+    bool isMember(const PhizmoVoice& v) const { return v.channel >= 2 && v.channel <= 16; }
+    float pressureOf(const PhizmoVoice& v) const
+    {
+        return isMember(v) && mpePress[(size_t) v.channel] >= 0.0f ? mpePress[(size_t) v.channel] : chanPressure.load();
+    }
     PhizmoAudioProcessor();
     ~PhizmoAudioProcessor() override;
 

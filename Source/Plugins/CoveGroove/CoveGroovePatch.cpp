@@ -27,6 +27,7 @@
 #include "../../PluginSources/covegroove/CgEngine.h"
 #include "../../PluginSources/covegroove/CgSampleIO.h"
 #include "../../PluginSources/covegroove/CgSampleView.h"
+#include "../../PluginSources/covegroove/CgPhysRender.h"
 #if JUCE_ANDROID
  #include "../../Platform/AndroidFileChooserShim.h"     // a picked document as a real file
 #endif
@@ -448,11 +449,16 @@ std::unique_ptr<juce::Component> CoveGrooveSequencerModule::createExtraContentCo
 //==============================================================================
 // a drum's own sample and its volume curve (what every drum module shares)
 //==============================================================================
-class CoveGrooveDrumBase : public SynthModule
+class CoveGrooveDrumBase : public SynthModule, private juce::Timer
 {
 public:
-    explicit CoveGrooveDrumBase (int laneType) : lane (laneType) {}
+    explicit CoveGrooveDrumBase (int laneType) : lane (laneType) { startTimerHz (12); }
+    ~CoveGrooveDrumBase() override { stopTimer(); }
     const int lane;
+
+    //=== a modelled kit's sound (message thread): rendered when its settings change
+    phys::Variants getPhys() const { const juce::ScopedLock sl (mutex); return physSound; }
+    std::atomic<int> physVersion { 0 };
 
     //=== the sample (message thread) ==========================================
     bool loadSampleFile (const juce::File& f)
@@ -521,7 +527,7 @@ public:
     }
 
     std::unique_ptr<juce::Component> createExtraContentComponent() override;
-    int extraContentHeight() const override { return 96; }
+    int extraContentHeight() const override { return 122; }
 
     // the audio thread's copy, when it changed
     void blockStart() override
@@ -529,16 +535,49 @@ public:
         if (const int s = serial.load (std::memory_order_acquire); s != audioSerial)
         {
             const juce::SpinLock::ScopedTryLockType lk (handoffLock);
-            if (lk.isLocked()) { audioSample = handoffSample; audioCurve = handoffCurve; audioSerial = s; }
+            if (lk.isLocked()) { audioSample = handoffSample; audioCurve = handoffCurve; audioPhys = handoffPhys; audioSerial = s; }
         }
     }
 
 protected:
     std::shared_ptr<const SampleData> audioSample;      // the audio thread's
     Curve audioCurve;
+    phys::Variants audioPhys;
     std::atomic<bool> auditionFlag { false };
 
 private:
+    // the modelled kits: the drum's settings (unmodulated) rendered off the audio thread
+    void timerCallback() override
+    {
+        const int model = (int) std::lround (getParameter ("model"));
+        if (isPhysModel (model))
+        {
+            phys::Spec sp;
+            sp.kit = physKitOf (model);
+            sp.lane = lane;
+            sp.choice = (int) std::lround (getParameter ("pm"));
+            sp.tune = getParameter ("tune");
+            sp.decay = getParameter ("decay") * 0.01f;
+            sp.tone = getParameter ("tone") * 0.01f;
+            sp.extra[0] = getParameter ("x1") * 0.01f;
+            sp.extra[1] = getParameter ("x2") * 0.01f;
+            sp.extra[2] = getParameter ("x3") * 0.01f;
+            sp.sr = sampleRate;
+            renderer.request (sp);
+        }
+        phys::Variants v;
+        const juce::ScopedLock sl (mutex);
+        if (renderer.take (v))
+        {
+            for (auto& old : physSound) if (old != nullptr) retired.push_back (old);
+            physSound = std::move (v);
+            publish();
+            ++physVersion;
+        }
+        else
+            retired.erase (std::remove_if (retired.begin(), retired.end(), [] (const auto& d) { return d.use_count() <= 1; }), retired.end());
+    }
+
     // the audio thread takes the new one; a replaced sample waits in retired
     // until no voice holds it, so it is never freed on the audio thread
     void publish()
@@ -547,6 +586,7 @@ private:
             const juce::SpinLock::ScopedLockType lk (handoffLock);
             handoffSample = sample;
             handoffCurve = curve;
+            handoffPhys = physSound;
         }
         serial.fetch_add (1, std::memory_order_release);
         ++sampleVersion;
@@ -563,6 +603,8 @@ private:
     std::atomic<int> serial { 0 };
     int audioSerial { -1 };
     std::vector<std::shared_ptr<const SampleData>> retired;
+    phys::Renderer renderer;
+    phys::Variants physSound, handoffPhys;
    #if JUCE_ANDROID
     std::unique_ptr<juce::AqpFileChooser> chooser;
    #else
@@ -622,6 +664,17 @@ namespace
             load.setTooltip ("A sound file of your own for this drum (Sound: Sample plays it)");
             shape.setTooltip ("A ready-made volume curve");
             for (auto* b : { &load, &clear, &shape, &play }) addAndMakeVisible (*b);
+            modelBox.setTooltip ("A modelled kit's sound (Sound: 808, 909, Classic Kit ...): any of the kit's sounds");
+            modelBox.onChange = [this]
+            {
+                if (syncing || modelBox.getSelectedId() <= 0) return;
+                if (auto* d = drum())
+                {
+                    d->setParameter ("pm", (float) (modelBox.getSelectedId() - 1));
+                    if (paramValuesChangedByContent) paramValuesChangedByContent();
+                }
+            };
+            addAndMakeVisible (modelBox);
             refresh();
             startTimerHz (10);
         }
@@ -629,6 +682,8 @@ namespace
         void resized() override
         {
             auto r = getLocalBounds().reduced (2);
+            modelBox.setBounds (r.removeFromTop (22));
+            r.removeFromTop (4);
             auto row = r.removeFromBottom (22);
             r.removeFromBottom (4);
             curveEditor.setBounds (r);
@@ -652,8 +707,40 @@ namespace
         void timerCallback() override
         {
             if (auto* d = drum(); d != nullptr && d->sampleVersion.load() != shown) refresh();
+            refreshModels();
         }
 
+        // the Model menu follows the drum's Sound
+        void refreshModels()
+        {
+            auto* d = drum();
+            if (d == nullptr) return;
+            const int model = (int) std::lround (d->getParameter ("model"));
+            const int kit = isPhysModel (model) ? physKitOf (model) : -1;
+            const int choice = (int) std::lround (d->getParameter ("pm"));
+            if (kit == shownKit && choice == shownChoice) return;
+            const juce::ScopedValueSetter<bool> svs (syncing, true);
+            if (kit != shownKit)
+            {
+                modelBox.clear (juce::dontSendNotification);
+                if (kit >= 0)
+                {
+                    const auto* def = phys::presetFor (kit, d->lane, 0);
+                    modelBox.addItem ("Lane Default" + (def != nullptr ? " (" + juce::String (phys::shortName (*def, kit)) + ")" : juce::String()), 1);
+                    const auto& list = phys::kitPresets (kit);
+                    for (size_t i = 0; i < list.size() && i < 127; ++i) modelBox.addItem (phys::shortName (*list[i], kit), (int) i + 2);
+                }
+                modelBox.setTextWhenNothingSelected (kit >= 0 ? "" : "Model: a modelled kit's Sound (808, 909 ...)");
+                modelBox.setEnabled (kit >= 0);
+            }
+            if (kit >= 0) modelBox.setSelectedId (choice + 1, juce::dontSendNotification);
+            shownKit = kit;
+            shownChoice = choice;
+        }
+
+        juce::ComboBox modelBox;
+        int shownKit { -2 }, shownChoice { -1 };
+        bool syncing { false };
         juce::WeakReference<SynthModule> module;
         CurveEditor curveEditor;
         juce::TextButton load { "LOAD" }, clear { "CLEAR" }, shape { "SHAPE" }, play { "PLAY" };
@@ -685,7 +772,9 @@ public:
                         "Choke In cuts it short, Midi In / the keys play it on its own key (" + juce::MidiMessage::getMidiNoteName (36 + Lane, true, true, 4)
                         + "; an octave up for its second note). Audio Out at Level and Pan, Send Out for the delay. "
                         "Sound: Sample plays a file of your own (LOAD on the card, up to 10 s), shaped by the volume curve "
-                        "drawn over it; the sample is saved with the patch.";
+                        "drawn over it; the sample is saved with the patch. Sound: 808, 909, Classic Kit, Electro Kit, Large Drums, Metal Kit, "
+                        "Orchestral or World Kit plays a physically modelled kit's sound - the card's Model menu picks any of the kit's "
+                        "sounds and Model 1-3 move the model itself (the menu's sound: Sweep, Snappy, Damping ...).";
         d.section = ModuleSection::Oscillator;
         d.accent = kit::accentOf (kPlugin);
         d.sidebarOrder = 401 + Lane;
@@ -698,7 +787,12 @@ public:
             makeRotary ("tone", "Tone", 0.0f, 100.0f, 50.0f, 1, "%", false, 0.1f),
             makeRotary ("level", "Level", 0.0f, 150.0f, 80.0f, 0, "%", false, 0.1f),
             makeRotary ("pan", "Pan", -100.0f, 100.0f, 0.0f, 0, {}, false, 0.1f),
-            makeRotary ("send", "Send", 0.0f, 100.0f, 0.0f, 1, "%", false, 0.1f)
+            makeRotary ("send", "Send", 0.0f, 100.0f, 0.0f, 1, "%", false, 0.1f),
+            // the modelled kits (6.4.0): which of the kit's sounds (the card's menu), and its model's three knobs
+            makeRotary ("pm", "Model", 0.0f, 127.0f, 0.0f, 2, {}, false, 1.0f).hide().noMod(),
+            makeRotary ("x1", "Model 1", -100.0f, 100.0f, 0.0f, 2, "%", false, 0.1f).noMod(),
+            makeRotary ("x2", "Model 2", -100.0f, 100.0f, 0.0f, 2, "%", false, 0.1f).noMod(),
+            makeRotary ("x3", "Model 3", -100.0f, 100.0f, 0.0f, 2, "%", false, 0.1f).noMod()
         };
         return d;
     }
@@ -795,6 +889,8 @@ private:
         s.tone = param (pTone) * 0.01f;
         s.sample = audioSample;
         s.curve = audioCurve;
+        s.phys = audioPhys;
+        s.physPitch = std::pow (2.0f, (s.tune - getParameterBase (pTune)) / 12.0f);   // Tune modulated away from the render
         v.start (Lane, s, vel, alt, ++seed);
     }
 

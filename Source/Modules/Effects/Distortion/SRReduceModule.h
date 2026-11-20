@@ -10,7 +10,7 @@
 class SRReduceModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pRate = 0, pDryWet };
+    enum ParamIndex { pRate = 0, pDryWet, pLevel };
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Flexible; }
 
@@ -38,8 +38,9 @@ public:
         }
 
         const float wet01 = param (pDryWet) * 0.01f;
-        outputs[0][0] = inputs[0][0] + wet01 * (heldL[v] - inputs[0][0]);
-        outputs[0][1] = inputs[0][1] + wet01 * (heldR[v] - inputs[0][1]);
+        const float level = param (pLevel);   // (6.7.11: the whole output, for automation lanes)
+        outputs[0][0] = (inputs[0][0] + wet01 * (heldL[v] - inputs[0][0])) * level;
+        outputs[0][1] = (inputs[0][1] + wet01 * (heldR[v] - inputs[0][1])) * level;
     }
 
     void processSample (const aquanode::StereoFrame* inputs, aquanode::StereoFrame* outputs) override

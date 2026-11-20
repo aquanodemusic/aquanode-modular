@@ -4,9 +4,12 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 class K5AudioProcessor : public juce::AudioProcessor,
+                         public aquanode::MpeReceiver,     // (Aquanode: MPE once a member channel plays)
                          private juce::AudioProcessorValueTreeState::Listener
 {
 public:
+    void enableMpe (bool on) override { mpeState.on = on; }
+    K5MpeState mpeState;
     K5AudioProcessor();
     ~K5AudioProcessor() override;
 

@@ -205,6 +205,7 @@ struct Voice
 {
     // identity
     int note = -1, group = -1; float velocity = 0; bool gate = false, active = false;
+    int channel = 0;                          // MPE (Aquanode): the member channel (2..16) it plays, 0 otherwise
     uint64_t age = 0; int unisonIndex = 0;
     float detuneSemis = 0, pan = 0;           // unison
     float analogSemis = 0, analogDrift = 0, analogCut = 0;
@@ -336,9 +337,32 @@ private:
     float mgInc = 0, unisonGain = 1.0f;
 
     // ---- MIDI ----
+public:
+    // MPE (Aquanode), switched on by the host at the first note on a member channel:
+    // channels 2..16 then carry one note each, with its own bend (+-48 semitones, on
+    // top of the global bend) and its own pressure (the Pressure ext source, in place
+    // of the global one). Channel 1 stays the global channel.
+    bool mpe = false;
+    int noteChannel = 0;
+    float chanBend[17] {};
+    float chanPress[17] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+    float pressureOf (const Voice& v) const { return v.channel != 0 && chanPress[v.channel] >= 0.0f ? chanPress[v.channel] : g.pressure; }
+
+private:
     void handleMidi (const MidiEv& m)
     {
         const int st = m.b0 & 0xf0;
+        const int ch = mpe ? (m.b0 & 0x0f) + 1 : 1;
+        const bool member = ch >= 2 && ch <= 16;
+        if (member && st == 0xE0) { chanBend[ch] = (float) (((int) m.b2 << 7 | m.b1) - 8192) / 8192.0f * 48.0f; return; }
+        if (member && st == 0xD0) { chanPress[ch] = m.b1 / 127.0f; return; }
+        noteChannel = member ? ch : 0;
+        handleMidiOn (m, st);
+        noteChannel = 0;
+    }
+
+    void handleMidiOn (const MidiEv& m, int st)
+    {
         if (st == 0x90 && m.b2 > 0) noteOn (m.b1, m.b2);
         else if (st == 0x80 || (st == 0x90 && m.b2 == 0)) noteOff (m.b1);
         else if (st == 0xE0) g.bend = (float) (((int) m.b2 << 7 | m.b1) - 8192) / 8192.0f;
@@ -363,6 +387,7 @@ private:
     void startVoice (Voice& v, int note, float vel, int group, int uIndex, bool retrigger, bool fresh)
     {
         v.note = note; v.group = group; v.velocity = vel; v.gate = true; v.active = true;
+        v.channel = noteChannel;
         v.age = ++ageCounter; v.unisonIndex = uIndex;
         const float off = nUnison > 1 ? ((float) uIndex / (float) (nUnison - 1) - 0.5f) * 2.0f : 0.0f;
         v.detuneSemis = off * p[UnisonDetune] * 0.5f;       // 10 = +-50 cents
@@ -459,7 +484,7 @@ private:
             for (int u = 0; u < MaxVoices; ++u) if (voices[u].active && voices[u].group == 0 && voices[u].note == key) voices[u].gate = false;
             return;
         }
-        for (auto& v : voices) if (v.active && v.gate && v.note == key) v.gate = false;
+        for (auto& v : voices) if (v.active && v.gate && v.note == key && (noteChannel == 0 || v.channel == noteChannel)) v.gate = false;
     }
 
     void updateBlockValues()
@@ -523,7 +548,7 @@ private:
         {
             case 1: return v.velocity * 2.0f - 1.0f;
             case 2: return std::clamp ((v.kbdSemis - 60.0f) / 30.0f, -1.0f, 1.0f);
-            case 3: return g.pressure;
+            case 3: return pressureOf (v);
             case 4: return g.bend;
             case 5: return modWheel;
             case 6: return g.breath;
@@ -748,7 +773,7 @@ private:
             const float kb12 = patched (jVco12Cv) ? 40.0f + in (v, jVco12Cv, 0) * 20.0f : v.kbdSemis;
             const float kb2 = patched (jVco2Cv) ? 40.0f + in (v, jVco2Cv, 0) * 20.0f : kb12;
             v.analogDrift += (v.rng.uni() * 0.02f - v.analogDrift) * 0.00002f;
-            const float common = bendSemis + fine + dPitchMg * total + dPitchEg * freqIn + v.detuneSemis + v.analogSemis + v.analogDrift * p[Analog] * 3.0f;
+            const float common = bendSemis + (v.channel != 0 ? chanBend[v.channel] : 0.0f) + fine + dPitchMg * total + dPitchEg * freqIn + v.detuneSemis + v.analogSemis + v.analogDrift * p[Analog] * 3.0f;
             // pitch and filter coefficients run at a quarter of the voice rate (24 kHz at 48 kHz)
             const bool ctlTick = (v.coefCounter++ & 3) == 0;
             if (ctlTick)

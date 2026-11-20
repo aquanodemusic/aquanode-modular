@@ -38,8 +38,19 @@ struct AliasVoice : public juce::SynthesiserVoice
     }
 
 
-    void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*, int) override
+    void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition) override
     {
+        // the pitch wheel (+-2 semitones); MPE: a note on a member channel bends
+        // +-48 and its pressure adds or takes away FM (none at 0.7, the MPE Piano
+        // Roll's resting pressure). The Synthesiser hands each voice its own channel's.
+        memberChannel = 0;
+        if (processor != nullptr && processor->mpeOn)
+            for (int ch = 2; ch <= 16; ++ch)
+                if (isPlayingChannel(ch)) { memberChannel = ch; break; }
+        bendRange = memberChannel != 0 ? 48.0f : 2.0f;
+        pressure = memberChannel != 0 ? processor->mpePress[(size_t) memberChannel] : -1.0f;
+        pitchWheelMoved(currentPitchWheelPosition);
+
         level = velocity;
         modPhase = 0.0f;
         naivePhase = 0.0f;
@@ -80,7 +91,8 @@ struct AliasVoice : public juce::SynthesiserVoice
 
         // Fetch Parameters
         const int mode = (int)*parameters.getRawParameterValue("mode");
-        const float fmAmount = *parameters.getRawParameterValue("fmAmount");
+        const float fmAmount = pressure < 0.0f ? (float) *parameters.getRawParameterValue("fmAmount")
+                                               : juce::jlimit(0.0f, 10.0f, *parameters.getRawParameterValue("fmAmount") + (pressure - 0.7f) * 5.0f);
         const float fmRatio = *parameters.getRawParameterValue("fmRatio");
         const float masterVol = *parameters.getRawParameterValue("masterVol");
         const float nyquistLimit = *parameters.getRawParameterValue("nyquistLimit");
@@ -92,7 +104,7 @@ struct AliasVoice : public juce::SynthesiserVoice
         // Downsampling (Sample & Hold) factor
         int holdFactor = juce::jmax(1, (int)std::round(voiceSampleRate / (nyquistLimit * 2.0f)));
 
-        float noteFreq = juce::MidiMessage::getMidiNoteInHertz(getCurrentlyPlayingNote());
+        float noteFreq = (float) juce::MidiMessage::getMidiNoteInHertz(getCurrentlyPlayingNote()) * std::exp2(bendSemis / 12.0f);
         float transposeTarget = *parameters.getRawParameterValue("transpose");
 
         // --- ONLY update target each block ---
@@ -158,7 +170,8 @@ struct AliasVoice : public juce::SynthesiserVoice
         }
     }
 
-    void pitchWheelMoved(int) override {}
+    void pitchWheelMoved(int newValue) override { bendSemis = (float) (newValue - 8192) / 8192.0f * bendRange; }
+    void channelPressureChanged(int newValue) override { if (memberChannel != 0) pressure = (float) newValue / 127.0f; }
     void controllerMoved(int, int) override {}
 
 
@@ -226,6 +239,8 @@ private:
     int sampleHoldCounter = 0;
     double samplePosition = 0.0;
     float level = 0.0f;
+    float bendSemis = 0.0f, bendRange = 2.0f, pressure = -1.0f;
+    int memberChannel = 0;
     double voiceSampleRate = 44100.0;
 
     juce::SmoothedValue<float> transposeSmooth;
@@ -287,6 +302,14 @@ void AliasSynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     // Clear buffer to prevent "screaming" feedback noise
     buffer.clear();
+
+    if (mpeOn)   // MPE: each member channel's pressure, for the notes it starts
+        for (const auto m : midiMessages)
+        {
+            const auto msg = m.getMessage();
+            if (msg.isChannelPressure() && msg.getChannel() >= 2)
+                mpePress[(size_t) msg.getChannel()] = (float) msg.getChannelPressureValue() / 127.0f;
+        }
 
     // The Synthesiser handles the voice management and rendering logic
     synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());

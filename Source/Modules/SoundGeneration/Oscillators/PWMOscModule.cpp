@@ -9,7 +9,8 @@ static ModuleDescriptor pwmOscDescriptor()
     d.displayName = "PWM";
     d.description =
         "A polysynth VCO: Saw, PW or PWM at 16' 8' 4', with the square sub-oscillator one or two "
-        "octaves down. In PWM the PW/PWM knob is the depth of its own PWM LFO. It never gates - "
+        "octaves down. In PWM the PW/PWM knob is the depth of its own PWM LFO. Env In takes an ADSR "
+        "(or any envelope) that shapes each voice directly; with nothing there it never gates - "
         "follow it with Warm Ladder and a Volume whose Vol Mod takes an Analog EG.";
     d.section = ModuleSection::Oscillator;
     d.family = ModuleFamily::Vintage;
@@ -17,6 +18,7 @@ static ModuleDescriptor pwmOscDescriptor()
     d.sockets = {
         modIn    ("pitchIn",   "Pitch In"),
         midiIn   ("addMidiIn", "Add Midi In"),
+        modIn    ("envIn",     "Env In"),      // (6.7.10; after the others, so old patches keep their indices)
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

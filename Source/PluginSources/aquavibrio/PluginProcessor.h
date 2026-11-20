@@ -21,9 +21,11 @@ namespace aquavibrio
 //  change.
 //==============================================================================
 class AquaVibrioProcessor : public juce::AudioProcessor,
+                            public ::aquanode::MpeReceiver,   // (Aquanode: MPE once a member channel plays)
                             private juce::Timer
 {
 public:
+    void enableMpe (bool on) override { engine.mpe = on; originalEngine.mpe = on; }
     AquaVibrioProcessor();
     ~AquaVibrioProcessor() override = default;
 

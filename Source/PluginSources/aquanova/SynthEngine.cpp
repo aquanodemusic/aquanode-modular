@@ -88,6 +88,28 @@ void SynthEngine::panic()
 //==============================================================================
 void SynthEngine::handleMidi (const juce::MidiMessage& m)
 {
+    const int ch = mpe ? m.getChannel() : 1;
+    const bool member = ch >= 2 && ch <= 16;
+    noteChannel = member ? ch : 0;
+    handleMidiOn (m, ch, member);
+    noteChannel = 0;   // notes the arpeggiator plays later are not MPE notes
+}
+
+void SynthEngine::handleMidiOn (const juce::MidiMessage& m, int ch, bool member)
+{
+    if (member && m.isPitchWheel())
+    {
+        chanBend[(size_t) ch] = ((float) m.getPitchWheelValue() - 8192.0f) / 8192.0f * 48.0f;
+        for (auto& v : voices) if (v.getChannel() == ch) v.setPitchBend (bendFor (ch));
+        return;
+    }
+    if (member && m.isChannelPressure())
+    {
+        chanPress[(size_t) ch] = (float) m.getChannelPressureValue() / 127.0f;
+        for (auto& v : voices) if (v.getChannel() == ch) v.setAftertouch (pressureFor (ch));
+        return;
+    }
+
     if (m.isNoteOn())
     {
         const int n = m.getNoteNumber();
@@ -133,7 +155,7 @@ void SynthEngine::handleMidi (const juce::MidiMessage& m)
         pitchBend = norm * (float) range;
 
         for (auto& v : voices)
-            v.setPitchBend (pitchBend);
+            v.setPitchBend (bendFor (v.getChannel()));
     }
     else if (m.isController())
     {
@@ -147,7 +169,7 @@ void SynthEngine::handleMidi (const juce::MidiMessage& m)
     {
         aftertouch = (float) (m.isChannelPressure() ? m.getChannelPressureValue()
                                                     : m.getAfterTouchValue()) / 127.0f;
-        for (auto& v : voices) v.setAftertouch (aftertouch);
+        for (auto& v : voices) v.setAftertouch (pressureFor (v.getChannel()));
     }
 }
 
@@ -220,8 +242,9 @@ void SynthEngine::startVoices (int note, float velocity)
         target->setGainScale (1.0f / std::sqrt ((float) count));
         target->setStartOrder (++voiceCounter);
         target->setModWheel (modWheel);
-        target->setPitchBend (pitchBend);
-        target->setAftertouch (aftertouch);
+        target->setChannel (noteChannel);
+        target->setPitchBend (bendFor (noteChannel));
+        target->setAftertouch (pressureFor (noteChannel));
         target->noteOn (note, velocity, cents, spread * 0.7f);
     }
 }
@@ -235,7 +258,8 @@ void SynthEngine::stopVoices (int note)
     }
 
     for (auto& v : voices)
-        if (v.isActive() && v.isHeld() && v.getNote() == note)
+        if (v.isActive() && v.isHeld() && v.getNote() == note
+             && (noteChannel == 0 || v.getChannel() == noteChannel))
             v.noteOff();
 }
 
@@ -316,8 +340,9 @@ void SynthEngine::retriggerMono (int note, float velocity)
         target->setGainScale (1.0f / std::sqrt ((float) count));
         target->setStartOrder (++voiceCounter);
         target->setModWheel (modWheel);
-        target->setPitchBend (pitchBend);
-        target->setAftertouch (aftertouch);
+        target->setChannel (noteChannel);
+        target->setPitchBend (bendFor (noteChannel));
+        target->setAftertouch (pressureFor (noteChannel));
         target->noteOn (note, velocity, cents, spread * 0.7f);
     }
 

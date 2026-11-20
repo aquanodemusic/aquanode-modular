@@ -48,7 +48,9 @@ private:
         int selected { 0 };
     };
 
-    // the Skeuomorphic knob ring's start and end colours, beside Skeuomorphic
+    // the Skeuomorphic knob ring's start and end colours (Glass: Leaves and
+    // Sheen), beside Skeuomorphic - or, on a phone held upright, as two more
+    // chips of the grid, under Plugin Titles (gridStyle)
     struct KnobChips : public juce::Component, public juce::SettableTooltipClient
     {
         void paint (juce::Graphics& g) override;
@@ -56,6 +58,7 @@ private:
         juce::Rectangle<int> chip (int which) const;
         std::function<void (int)> onPick;
         int selected { -1 };
+        bool gridStyle { false };
     };
 
     std::function<void()> changed;

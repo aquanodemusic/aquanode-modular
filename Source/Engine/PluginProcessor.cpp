@@ -11,6 +11,7 @@
 #include "../Modules/Utilities/Control/DawModModule.h"
 #include "../Modules/Utilities/MIDI/PianoRollModule.h"
 #include "PatchStateFiles.h"
+#include "../Plugins/Host/HostedPlugin.h"
 
 #include <algorithm>
 
@@ -41,6 +42,13 @@ AquanodeModularAudioProcessor::AquanodeModularAudioProcessor()
 
     rebuildGraph();   // publish an (empty) graph so processBlock is always valid
 
+    // Android: JUCE's empty permission / picker dialog kept invisible (StandaloneInput.cpp)
+    if (wrapperType == wrapperType_Standalone)
+    {
+        extern void aquanodeHideAndroidOverlays();
+        aquanodeHideAndroidOverlays();
+    }
+
     // MPE: as it was last switched (the app's settings)
     {
         juce::PropertiesFile::Options o;
@@ -51,6 +59,8 @@ AquanodeModularAudioProcessor::AquanodeModularAudioProcessor()
         o.storageFormat = juce::PropertiesFile::storeAsXML;
         juce::PropertiesFile file (o);
         mpeEnabled.store (file.getBoolValue ("mpe.enabled", false));
+        // the plugins' block (the top bar's Plugin Block)
+        aquanode::plugins::HostedPluginModule::globalBlockSize().store (juce::jlimit (16, 512, file.getIntValue ("plugins.block", 128)));
     }
 
     // MTS-ESP: the client registers here, on the message thread; the audio
@@ -61,8 +71,20 @@ AquanodeModularAudioProcessor::AquanodeModularAudioProcessor()
 AquanodeModularAudioProcessor::~AquanodeModularAudioProcessor() = default;
 
 //==============================================================================
+bool aquanodeDeviceRestartKeepsState();   // (StandaloneInput.cpp)
+
 void AquanodeModularAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    // the standalone app opening or closing the microphone restarts the device
+    // at the same rate: nothing in the patch needs preparing again (tails ring
+    // on, held notes stay held)
+    if (aquanodeDeviceRestartKeepsState() && isPrepared && sampleRate == currentSampleRate)
+    {
+        if (inputScratch.getNumSamples() < samplesPerBlock)
+            inputScratch.setSize (2, juce::jmax (1, samplesPerBlock), false, false, true);
+        return;
+    }
+
     currentSampleRate = sampleRate;
     isPrepared = true;
     inputScratch.setSize (2, juce::jmax (1, samplesPerBlock));
@@ -71,6 +93,7 @@ void AquanodeModularAudioProcessor::prepareToPlay (double sampleRate, int sample
         inst->dsp->prepare (sampleRate);
     outputClipper.reset();
     latencyScratch.reserve (1024);
+    latencyInScratch.reserve (1024);
 
     for (auto& vs : voiceStates)
         vs = VoiceState();

@@ -30,6 +30,9 @@ public:
 
     bool isActive() const noexcept        { return env1.isActive(); }
     int  getNote() const noexcept         { return note; }
+    // MPE (Aquanode): the member channel (2..16) this voice plays, 0 otherwise
+    void setChannel (int c) noexcept      { channel = c; }
+    int  getChannel() const noexcept      { return channel; }
     bool isHeld() const noexcept          { return held; }
     juce::uint32 getStartOrder() const noexcept { return startOrder; }
     void setStartOrder (juce::uint32 o) noexcept { startOrder = o; }
@@ -68,6 +71,7 @@ private:
     float modWheel = 0.0f;
     float aftertouch = 0.0f;
     bool held = false;
+    int channel = 0;
     juce::uint32 startOrder = 0;
 
     float glideCurrent = 60.0f, glideTarget = 60.0f;

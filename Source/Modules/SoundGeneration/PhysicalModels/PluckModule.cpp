@@ -36,6 +36,7 @@ void PluckModule::renderVoice (int v, const StereoFrame* inputs, StereoFrame* ou
                                                 : (double) (int) param (pNote);
     const double semis = baseNote + (double) inputs[1][0] * 60.0;
     const double freq = juce::jlimit (20.0, 8000.0, midiNoteToHz (semis));
+    if (harpMode()) { renderHarp (v, semis, freq, outputs); return; }
     const double delaySamples = juce::jlimit (2.0, (double) maxDelaySamples - 2.0, sampleRate / freq);
 
     if (burstSamples[v] < 0)    // freshly triggered: burst length = one string period
@@ -78,6 +79,26 @@ void PluckModule::renderVoice (int v, const StereoFrame* inputs, StereoFrame* ou
     outputs[0][1] = looped;
 }
 
+// the Harp: a fitted string model (Shared/HarpString.h); Decay scales its ring, Damp the
+// highs' decay, Color the finger (soft pad .. firm tip)
+void PluckModule::renderHarp (int v, double semis, double freq, StereoFrame* outputs)
+{
+    if (harp == nullptr) { outputs[0] = { 0.0f, 0.0f }; return; }
+    auto& h = harp[(size_t) v];
+    if (burstSamples[v] < 0)
+    {
+        burstSamples[v] = 0;
+        aquanode::harp::Shape sh;
+        sh.t60Scale = juce::jlimit (0.03, 5.0, (double) param (pDecay) / 2000.0);
+        sh.hiScale = std::pow (2.0, (30.0 - (double) param (pDamp)) / 25.0);
+        sh.fingerScale = std::pow (2.0, (80.0 - (double) param (pColor)) / 30.0);
+        harpFrom[v] = freq;
+        h.start (semis, freq, harpVel[v] > 0.0f ? harpVel[v] : 0.85, sh, sampleRate, harpSeed++ * 2654435761ull);
+    }
+    const double y = harpEq[v].process (h.process (freq / juce::jmax (1.0, harpFrom[v]), sampleRate));
+    outputs[0] = { (float) y, (float) y };
+}
+
 static ModuleDescriptor pluckDescriptor()
 {
     ModuleDescriptor d;
@@ -85,7 +106,10 @@ static ModuleDescriptor pluckDescriptor()
     d.displayName = "Pluck";
     d.description =
         "Karplus-Strong plucked string: A noise burst exciting a tuned feedback delay line with "
-        "damping in the loop. Played from the keyboard it is fully polyphonic; Trig In takes a "
+        "damping in the loop. Model Harp plays a concert harp instead: a gut string plucked near its middle by a "
+        "fingertip, two polarisations into the soundboard, fitted to a recorded harp note by note (Decay scales how "
+        "long it rings, Damp how soon the highs die away, Color the finger from soft pad to firm tip). "
+        "Played from the keyboard it is fully polyphonic; Trig In takes a "
         "Clock, Euclid or Step Seq gate, and Pitch In takes a Step Seq's Pitch Out or KeyTrack "
         "directly (both use the same semitones/60 scaling). Midi In plays it from notes (Keyboard Midi, Piano Roll...): each note plucks at that pitch, alongside Trig In.";
     d.section = ModuleSection::Oscillator;
@@ -102,7 +126,8 @@ static ModuleDescriptor pluckDescriptor()
         makeRotary ("damp",  "Damp",  0.0f, 100.0f, 30.0f, 0, "%"),
         makeRotary ("color", "Color", 0.0f, 100.0f, 80.0f, 0, "%")
     ,
-        makeRotary ("voices", "Voices", 1.0f, (float) kMaxVoices, (float) kMaxVoices, 1, {}, false, 1.0f).noMod()
+        makeRotary ("voices", "Voices", 1.0f, (float) kMaxVoices, (float) kMaxVoices, 1, {}, false, 1.0f).noMod(),
+        makeCombo ("model", "Model", { "Karplus", "Harp" }, 0, 1, 2).noMod()
     };
     d.params.push_back (makeOutputTrim (-3.0f));   // brought down to sit with the other sources
     return d;

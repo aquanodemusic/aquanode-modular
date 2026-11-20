@@ -39,3 +39,34 @@ namespace
 }
 
 AQP_DEFINE_PLUGIN (AudioStretcherGuiModule, "audiostretcher", aqp_audiostretcher)
+
+//==============================================================================
+// the patch version: the plugin whole, one module (Host/WholePluginPatch.h)
+//==============================================================================
+#include "../Host/WholePluginPatch.h"
+
+namespace
+{
+    const aquanode::plugins::whole::Def& AudioStretcherWholeModuleDef()
+    {
+        static const aquanode::plugins::whole::Def def = []
+        {
+            aquanode::plugins::whole::Def x;
+            x.pluginId = "audiostretcher";
+            x.kind = "Player";
+            x.description = "AudioStretcher whole, as one module: load a sound on its panel, choose the region, set Pitch, Fine and Speed (and the fades) - here also as knobs that take cables - and Play: the Rubber Band Library renders it in the background and it plays from Audio Out. The sound is saved with the patch.";
+            x.section = aquanode::ModuleSection::Oscillator;
+            x.midi = false;
+            x.audioIn = false;
+            x.sideIn = false;
+            x.showPanel = true;
+            x.panelWidth = 400; x.panelHeight = 690; x.cardWidth = 360;
+            return x;
+        }();
+        return def;
+    }
+
+    bool AudioStretcherWholeModuleLoad (juce::AudioProcessor&, const juce::File&) { return false; }
+}
+
+AQP_WHOLE_PLUGIN_PATCH (AudioStretcherWholeModule, AudioStretcherWholeModuleDef, AudioStretcherWholeModuleLoad)

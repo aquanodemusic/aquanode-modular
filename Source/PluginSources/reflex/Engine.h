@@ -62,6 +62,7 @@ struct Envelope {
 struct Voice {
   bool active = false, gate = false;
   int note = 60, vel = 100, slot = 0, offDelay = 0;
+  int channel = 0;   // MPE (Aquanode): the member channel (2..16) it plays, 0 otherwise
   uint64_t age = 0;
   static constexpr int MaxCopies = 11;
   double phase[3][MaxCopies];
@@ -99,6 +100,11 @@ public:
   void allNotesOff();
   void reset();
   float p[NumParams];
+  // MPE (Aquanode), switched on by the host at the first note on a member channel:
+  // channels 2..16 then carry one note each, with its own bend (+-48 semitones, on
+  // top of the global bend) and its own pressure (in place of the global aftertouch,
+  // for the vibrato). Channel 1 stays the global channel.
+  bool mpe = false;
 
 private:
   double sr = 44100.0;
@@ -122,6 +128,9 @@ private:
   Biquad eq[4][2];
   int eqMode = -1;
   double modWheel = 0, pitchBend = 0, aftertouch = 0;
+  int noteChannel = 0;   // MPE: the member channel of the event being handled, 0 otherwise
+  double chanBend[17] = {};
+  double chanPress[17] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
   TranceGate tg;
   TempoDelay dly;
   Freeverb rev;
@@ -142,6 +151,7 @@ private:
   void fxTail(double& L, double& R);
   void doTick(const MidiEv* ev, int nev, int& ei, int segEnd);
   void handleEvent(const MidiEv& e);
+  void handleNoteEvent(const MidiEv& e, int st);
   void noteOn(int note, int vel);
   void noteOff(int note);
   void startVoice(int note, int vel);

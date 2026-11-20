@@ -250,6 +250,7 @@ void PianoRollModule::reset()
         p = 0;
     numPendingPreviews = 0;
     wasPlaying = false;
+    songPos = -1.0;   // (a Fruit Arranger's song picks up from where it is)
     for (auto& e : recStart)
         e = -1.0;
     for (auto& h : thruHeld)
@@ -391,6 +392,62 @@ int PianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* events
     const double loopLen = juce::jlimit (1, kMaxBars, (int) std::lround (param (pBars))) * kBeatsPerBar;
     recLoopLen = loopLen;
 
+    // ---- Fruit Arranger (6.7.12): while its song plays it says where in the
+    // pattern we are (2 + beats; 1: silent); stopped (0), the roll is its own
+    // again, stopped at the start
+    const float sv = isInputConnected (0) ? songValue - 2.0f : -2.0f;
+    double songWindowEnd = -1.0;
+    if (sv < -1.5f)
+    {
+        if (songDriven)
+        {
+            songDriven = false;
+            uiSongDriven.store (false, std::memory_order_relaxed);
+            releaseAllActive (events, n, maxEvents);
+            position = 0.0;
+            nextIndex = firstNoteAtOrAfter (0.0);
+            wasPlaying = false;
+            setParameterByIndex (pPlaying, 0.0f);
+        }
+    }
+    else
+    {
+        if (! songDriven)
+        {
+            songDriven = true;
+            uiSongDriven.store (true, std::memory_order_relaxed);
+            seekRequest.store (-1.0, std::memory_order_release);
+            releaseAllActive (events, n, maxEvents);
+            wasPlaying = false;
+            songPos = -1.0;
+        }
+        rollCommandPending = false;
+        if (sv < 0.0f)
+        {
+            if (songPos >= 0.0)
+                releaseAllActive (events, n, maxEvents);   // the block is over
+            songPos = -1.0;
+            uiPlayhead.store (position, std::memory_order_relaxed);
+            return n;
+        }
+        const double target = std::fmod ((double) sv, loopLen);
+        if (songPos < 0.0 || listChanged || target < songPos - 1.0e-6 || target > songPos + 0.5)
+        {
+            // a block starts, the pattern comes round, or the song jumped: from here
+            // (and the notes a hair before: the first sample of a block is up to a sample past its start)
+            releaseAllActive (events, n, maxEvents);
+            nextIndex = firstNoteAtOrAfter (juce::jmax (0.0, target - 1.0e-3));
+            listChanged = false;
+            position = target;
+            songWindowEnd = target + 1.0e-9;
+        }
+        else
+        {
+            position = songPos;
+            songWindowEnd = juce::jmax (songPos, target);
+        }
+    }
+
     // ---- Play All / Stop All: back to the start, playing or stopped, on the
     // first sample of the block every roll got the command in
     if (rollCommandPending)
@@ -415,7 +472,7 @@ int PianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* events
         listChanged = false;
     }
 
-    const bool playing = param (pPlaying) > 0.5f;
+    const bool playing = songDriven || param (pPlaying) > 0.5f;
     if (! playing)
     {
         if (wasPlaying)
@@ -425,7 +482,7 @@ int PianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* events
         return n;
     }
 
-    if (! wasPlaying || listChanged)
+    if (! songDriven && (! wasPlaying || listChanged))
     {
         nextIndex = firstNoteAtOrAfter (position);
         wasPlaying = true;
@@ -433,14 +490,14 @@ int PianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* events
     }
 
     // the loop got shorter than where we are: start over
-    if (position >= loopLen)
+    if (! songDriven && position >= loopLen)
     {
         releaseAllActive (events, n, maxEvents);
         position = 0.0;
         nextIndex = 0;
     }
 
-    const double windowEnd = position + bpm / 60.0 / sr;
+    const double windowEnd = songDriven ? songWindowEnd : position + bpm / 60.0 / sr;
 
     // swing: the playhead runs in real beats, the notes sit on straight ones - the second
     // sixteenth of every eighth is reached later (the loop's length is whole eighths, unchanged)
@@ -511,6 +568,12 @@ int PianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* events
     }
 
     position = windowEnd;
+    if (songDriven)
+    {
+        songPos = juce::jmin (windowEnd, loopLen - 1.0e-9);
+        uiPlayhead.store (position, std::memory_order_relaxed);
+        return n;
+    }
 
     // ---- end of the loop
     if (position >= loopLen)
@@ -744,14 +807,53 @@ void PianoRollModule::uiButtonClicked (const juce::String& paramId)
 //==============================================================================
 namespace
 {
-    namespace prc
+    // the roll's colours (6.7.10): a look of its own that borrows from the Glass
+    // and Skeuomorphic looks - a lagoon-to-teal night behind the grid, aqua
+    // notes that glow a little and carry a glossy top, a softly glowing
+    // playhead. With Glass on it leans fully into Glass (jungle lagoon, mint
+    // notes with a halo); with Skeuomorphic on into a hardware panel, its
+    // notes glossy buttons in the colourway's Utilities colour.
+    struct RollPalette
     {
-        const juce::Colour background   (0xff141414);
-        const juce::Colour whiteKeyRow  (0xff1f1f1f);
-        const juce::Colour blackKeyRow  (0xff181818);
-        const juce::Colour note         (0xffd970b0);   // utility pink
-        const juce::Colour playhead     (0xff00ffff);   // the MIDI cyan
-        const juce::Colour pastEnd      (0xff000000);
+        juce::Colour bgTop, bgBottom, whiteKeyRow, blackKeyRow, note, noteSoft, playhead, pastEnd, ruler, keyWhite, keyBlack, accent;
+        juce::Colour button { 0xff1e2a31 };
+        bool glow { true };
+        bool plain { false };   // (6.7.12) the base look: the roll as it was before 6.7.10, flat and plain
+    };
+    RollPalette rollPalette()
+    {
+        const auto& th = aquanode::themeColours();
+        RollPalette p;
+        if (th.glass)
+        {
+            p.bgTop = juce::Colour (0xff0b2a27); p.bgBottom = juce::Colour (0xff0a1b2c);
+            p.whiteKeyRow = juce::Colour (0x22a8ffe0); p.blackKeyRow = juce::Colour (0x10000000);
+            p.note = juce::Colour (0xff7ff5c8); p.noteSoft = juce::Colour (0xff5ec8e8);
+            p.playhead = juce::Colour (0xffc8fff0); p.pastEnd = juce::Colour (0xff031012);
+            p.ruler = juce::Colour (0xcc06191c); p.keyWhite = juce::Colour (0xffe4f4ef); p.keyBlack = juce::Colour (0xff143238);
+            p.accent = juce::Colour (0xff3fd6a8); p.glow = true;
+        }
+        else if (th.skeuomorphic)
+        {
+            p.bgTop = juce::Colour (0xff26231f); p.bgBottom = juce::Colour (0xff1a1815);
+            p.whiteKeyRow = juce::Colour (0x14ffffff); p.blackKeyRow = juce::Colour (0x18000000);
+            p.note = th.colour[aquanode::ThemeColours::Utility]; p.noteSoft = p.note.darker (0.35f);
+            p.playhead = juce::Colour (0xff9dffb0); p.pastEnd = juce::Colour (0xff000000);
+            p.ruler = juce::Colour (0xff121110); p.keyWhite = juce::Colour (0xffe9e4d8); p.keyBlack = juce::Colour (0xff24211d);
+            p.accent = p.note; p.glow = false;
+        }
+        else
+        {
+            // the base look (6.7.12): plain dark rows, utility-pink notes, the MIDI cyan playhead
+            p.bgTop = p.bgBottom = juce::Colour (0xff141414);
+            p.whiteKeyRow = juce::Colour (0xff1f1f1f); p.blackKeyRow = juce::Colour (0xff181818);
+            p.note = p.noteSoft = juce::Colour (0xffd970b0);
+            p.playhead = juce::Colour (0xff00ffff); p.pastEnd = juce::Colour (0xff000000);
+            p.ruler = juce::Colour (0xff0e0e0e); p.keyWhite = juce::Colour (0xffdedad2); p.keyBlack = juce::Colour (0xff2a2a2a);
+            p.accent = juce::Colour (0xffd970b0); p.button = juce::Colour (0xff262626);
+            p.glow = false; p.plain = true;
+        }
+        return p;
     }
 
     bool isBlackKey (int pitch)
@@ -778,8 +880,8 @@ namespace
 
     void styleButton (juce::TextButton& b)
     {
-        b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff262626));
-        b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffd970b0));
+        b.setColour (juce::TextButton::buttonColourId, rollPalette().button);
+        b.setColour (juce::TextButton::buttonOnColourId, rollPalette().accent);
         b.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.85f));
         b.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
     }
@@ -947,7 +1049,12 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto* m = roll();
-        g.fillAll (prc::background);
+        const auto pal = rollPalette();
+        {
+            const auto b = getLocalBounds().toFloat();
+            g.setGradientFill (juce::ColourGradient (pal.bgTop, 0.0f, b.getY(), pal.bgBottom, 0.0f, b.getBottom(), false));
+            g.fillAll();
+        }
         if (m == nullptr)
             return;
 
@@ -962,7 +1069,7 @@ public:
         for (int p = firstPitch; p <= lastPitch; ++p)
         {
             const float y = (float) yForPitch (p);
-            g.setColour (isBlackKey (p) ? prc::blackKeyRow : prc::whiteKeyRow);
+            g.setColour (isBlackKey (p) ? pal.blackKeyRow : pal.whiteKeyRow);
             g.fillRect (juce::Rectangle<float> ((float) keyW, y, (float) (area.getWidth() - keyW), (float) rowH));
             g.setColour (juce::Colours::white.withAlpha (p % 12 == 0 ? 0.14f : 0.04f));
             g.drawHorizontalLine ((int) (y + rowH), (float) keyW, (float) area.getWidth());
@@ -991,10 +1098,10 @@ public:
             const float endX = (float) xForBeat (loopLen);
             if (endX < area.getWidth())
             {
-                g.setColour (prc::pastEnd.withAlpha (0.55f));
+                g.setColour (pal.pastEnd.withAlpha (0.55f));
                 g.fillRect (juce::Rectangle<float> (juce::jmax ((float) keyW, endX), (float) gridTop,
                                                     (float) area.getWidth(), (float) area.getHeight()));
-                g.setColour (prc::playhead.withAlpha (0.5f));
+                g.setColour (pal.playhead.withAlpha (0.5f));
                 if (endX >= keyW)
                     g.drawVerticalLine ((int) endX, 0.0f, (float) area.getHeight());
             }
@@ -1010,12 +1117,40 @@ public:
                 continue;
 
             const auto& n = list[(size_t) i];
-            const float a = 0.35f + 0.65f * n.velocity;
-            g.setColour (prc::note.withMultipliedBrightness (0.55f + 0.45f * a));
-            g.fillRoundedRectangle (r, 2.0f);
+            if (pal.plain)
+            {
+                // the base look: flat, brighter the harder
+                const float a = 0.35f + 0.65f * n.velocity;
+                g.setColour (pal.note.withMultipliedBrightness (0.55f + 0.45f * a));
+                g.fillRoundedRectangle (r, 2.0f);
+                const bool selPlain = i == selected || inGroup (n);
+                g.setColour (selPlain ? juce::Colours::white : juce::Colours::black.withAlpha (0.6f));
+                g.drawRoundedRectangle (r, 2.0f, selPlain ? 1.6f : 1.0f);
+                if (r.getWidth() > 28.0f && rowH >= 10.0)
+                {
+                    g.setColour (juce::Colours::black.withAlpha (0.8f));
+                    g.drawText (midiNoteName (n.pitch), r.reduced (3.0f, 0.0f), juce::Justification::centredLeft, false);
+                }
+                continue;
+            }
+            // velocity: brighter and greener the harder, deeper blue the softer
+            const auto base = pal.noteSoft.interpolatedWith (pal.note, juce::jlimit (0.0f, 1.0f, n.velocity))
+                                  .withMultipliedBrightness (0.7f + 0.3f * n.velocity);
+            if (pal.glow)
+            {
+                g.setColour (base.withAlpha (0.16f + 0.14f * n.velocity));
+                g.fillRoundedRectangle (r.expanded (2.0f), 4.0f);   // (a little glow)
+            }
+            g.setGradientFill (juce::ColourGradient (base.brighter (0.3f), r.getX(), r.getY(), base.darker (0.25f), r.getX(), r.getBottom(), false));
+            g.fillRoundedRectangle (r, 2.5f);
+            if (r.getHeight() >= 4.0f)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.26f));   // (a glossy top)
+                g.fillRoundedRectangle (r.withHeight (juce::jmax (1.0f, r.getHeight() * 0.36f)).reduced (1.2f, 0.7f), 1.5f);
+            }
             const bool sel = i == selected || inGroup (n);
-            g.setColour (sel ? juce::Colours::white : juce::Colours::black.withAlpha (0.6f));
-            g.drawRoundedRectangle (r, 2.0f, sel ? 1.6f : 1.0f);
+            g.setColour (sel ? juce::Colours::white : base.darker (0.7f).withAlpha (0.85f));
+            g.drawRoundedRectangle (r, 2.5f, sel ? 1.6f : 1.0f);
 
             if (r.getWidth() > 28.0f && rowH >= 10.0)
             {
@@ -1035,7 +1170,7 @@ public:
         }
 
         // ---- ruler
-        g.setColour (juce::Colour (0xff0e0e0e));
+        g.setColour (pal.ruler);
         g.fillRect (0, 0, area.getWidth(), rulerH);
         g.setFont (juce::Font (juce::FontOptions (11.0f)));
         const int barStep = juce::jmax (1, (int) std::ceil (36.0 / (pxPerBeat * PianoRollModule::kBeatsPerBar)));
@@ -1057,7 +1192,12 @@ public:
             const float x = (float) xForBeat (m->getPlayheadBeats());
             if (x >= keyW && x <= area.getWidth())
             {
-                g.setColour (prc::playhead.withAlpha (0.9f));
+                if (pal.glow)
+                {
+                    g.setColour (pal.playhead.withAlpha (0.16f));   // (a soft glow round it)
+                    g.fillRect (juce::Rectangle<float> (x - 3.0f, 0.0f, 6.0f, (float) area.getHeight()));
+                }
+                g.setColour (pal.playhead.withAlpha (0.9f));
                 g.drawLine (x, 0.0f, x, (float) area.getHeight(), 1.5f);
                 juce::Path tri;
                 tri.addTriangle (x - 5.0f, 0.0f, x + 5.0f, 0.0f, x, 7.0f);
@@ -1071,7 +1211,11 @@ public:
             const auto key = juce::Rectangle<float> (0.0f, (float) yForPitch (p), (float) keyW, (float) rowH);
             if (key.getBottom() < gridTop)
                 continue;
-            g.setColour (isBlackKey (p) ? juce::Colour (0xff2a2a2a) : juce::Colour (0xffdedad2));
+            const auto kc = isBlackKey (p) ? pal.keyBlack : pal.keyWhite;
+            if (pal.plain)
+                g.setColour (kc);
+            else
+                g.setGradientFill (juce::ColourGradient (kc.darker (0.12f), key.getX(), 0.0f, kc.brighter (0.06f), key.getRight(), 0.0f, false));
             g.fillRect (key.reduced (0.0f, 0.5f));
             if (p % 12 == 0 && rowH >= 9.0)
             {
@@ -1080,7 +1224,7 @@ public:
                 g.drawText (midiNoteName (p), key.reduced (3.0f, 0.0f), juce::Justification::centredRight, false);
             }
         }
-        g.setColour (juce::Colour (0xff0e0e0e));
+        g.setColour (pal.ruler);
         g.fillRect (0, 0, keyW, rulerH);
         g.setColour (juce::Colours::white.withAlpha (0.5f));
         g.setFont (juce::Font (juce::FontOptions (11.0f)));
@@ -1710,8 +1854,8 @@ public:
             s.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 80, 22);
             s.setRange (lo, hi, step);
             s.setTextValueSuffix (suffix);
-            s.setColour (juce::Slider::trackColourId, juce::Colour (0xffd970b0).withAlpha (0.55f));
-            s.setColour (juce::Slider::backgroundColourId, juce::Colour (0xff262626));
+            s.setColour (juce::Slider::trackColourId, rollPalette().accent.withAlpha (0.55f));
+            s.setColour (juce::Slider::backgroundColourId, rollPalette().button);
             s.setColour (juce::Slider::textBoxTextColourId, juce::Colours::white);
             s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
             addAndMakeVisible (s);
@@ -1820,8 +1964,13 @@ public:
     void paint (juce::Graphics& g) override
     {
         // the toolbar sits on a dark strip, like the grid below it
-        g.setColour (prc::background);
-        g.fillRoundedRectangle (getLocalBounds().withHeight (toolbarBottom).toFloat(), 4.0f);
+        const auto pal = rollPalette();
+        const auto strip = getLocalBounds().withHeight (toolbarBottom).toFloat();
+        if (pal.plain)
+            g.setColour (pal.bgTop);
+        else
+            g.setGradientFill (juce::ColourGradient (pal.ruler.brighter (0.12f), 0.0f, strip.getY(), pal.bgTop, 0.0f, strip.getBottom(), false));
+        g.fillRoundedRectangle (strip, 4.0f);
     }
 
 private:
@@ -1908,8 +2057,11 @@ private:
         auto* r = roll();
         if (r == nullptr)
             return;
-        playButton.setButtonText (r->isPlaying() ? "Pause" : "Play");
-        playButton.setToggleState (r->isPlaying(), juce::dontSendNotification);
+        // (6.7.12) while a Fruit Arranger's song plays it, the song has the transport
+        const bool song = r->isSongDriven();
+        playButton.setButtonText (song ? "Song" : r->isPlaying() ? "Pause" : "Play");
+        playButton.setToggleState (song || r->isPlaying(), juce::dontSendNotification);
+        playButton.setEnabled (! song);
         recButton.setToggleState (r->isRecording(), juce::dontSendNotification);
         loopButton.setButtonText (r->getParameter ("loop") > 0.5f ? "Once" : "Loop");
         undoButton.setEnabled (r->canUndo());
@@ -1936,8 +2088,12 @@ private:
         r->collectRecorded();
         syncControlsFromModule();
         refreshAllButton();
-        statusLabel.setText (formatBeatPosition (r->getPlayheadBeats()) + "   " + tempoStatus (*r),
+        // (6.7.12) its number on a Fruit Arranger, so the two are easy to match
+        const int an = r->isInputConnected (0) ? r->arrangerNumber.load (std::memory_order_relaxed) : 0;
+        statusLabel.setText ((an > 0 ? "Arranger " + juce::String (an) + "   " : juce::String())
+                                 + formatBeatPosition (r->getPlayheadBeats()) + "   " + tempoStatus (*r),
                              juce::dontSendNotification);
+        refreshButtons();
         grid.tick();
     }
 
@@ -1978,7 +2134,9 @@ static ModuleDescriptor pianoRollDescriptor()
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 25;
     d.sockets = {
-        midiOut ("midiOut", "Midi Out")
+        midiOut ("midiOut", "Midi Out"),
+        // (6.7.12) the Fruit Arranger's link, wired by the graph itself - no cable
+        hiddenSocket (modIn ("songIn", "Song In"))
     };
     d.params = {
         // all owned by the panel inside the card, saved with the patch

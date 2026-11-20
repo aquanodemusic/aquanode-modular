@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/HarpString.h"
+#include <memory>
 
 // Pluck - Karplus-Strong plucked string: a noise burst excites a tuned
 // feedback delay line with a damping low-pass in the loop. Played from the
@@ -25,6 +27,9 @@ public:
     void prepare (double sr) override
     {
         SynthModule::prepare (sr);
+        pModel = paramIndex ("model");
+        if (harp == nullptr) harp = std::make_unique<aquanode::harp::HarpString[]> ((size_t) aquanode::kMaxVoices);
+        for (auto& e : harpEq) e.build (aquanode::studio::voicing (aquanode::studio::Harp), sr);
         reset();
     }
 
@@ -44,6 +49,8 @@ public:
         burstSamples[v] = 0;
         noteOfVoice[v] = -1;
         lastTrig[v] = 0.0f;
+        if (harp != nullptr) harp[(size_t) v].reset();
+        harpEq[v].reset();
     }
 
     void voiceNoteOn (int v, int note, bool) override
@@ -54,13 +61,17 @@ public:
     }
 
     void voiceNoteOff (int v) override { pool.noteOff (v, voiceLimit()); }   // string rings out
+    void voiceVelocity (int v, float velocity01) override { harpVel[v] = velocity01; }
 
-    double voiceTailSeconds() const override { return param (pDecay) * 0.001 + 0.2; }
+    // the Harp's bass strings ring ~8 s at the default Decay
+    double voiceTailSeconds() const override { return harpMode() ? 9.0 * param (pDecay) / 2000.0 + 0.3 : param (pDecay) * 0.001 + 0.2; }
 
     void processVoiceSample (int v, const aquanode::StereoFrame* inputs,
                              aquanode::StereoFrame* outputs) override;
     void renderVoice (int voice, const aquanode::StereoFrame* inputs,
                       aquanode::StereoFrame* outputs);
+    void renderHarp (int voice, double semis, double freq, aquanode::StereoFrame* outputs);
+    bool harpMode() const { return pModel >= 0 && param (pModel) > 0.5f; }
 
     void processSample (const aquanode::StereoFrame* inputs, aquanode::StereoFrame* outputs) override
     {
@@ -87,4 +98,11 @@ private:
     int noteOfVoice [aquanode::kMaxVoices] {};
     float lastTrig [aquanode::kMaxVoices] {};
     juce::Random random;
+    // the Harp model
+    int pModel { -1 };
+    std::unique_ptr<aquanode::harp::HarpString[]> harp;
+    aquanode::studio::EqChain harpEq [aquanode::kMaxVoices];
+    float harpVel [aquanode::kMaxVoices] {};
+    double harpFrom [aquanode::kMaxVoices] {};
+    uint64_t harpSeed { 1 };
 };

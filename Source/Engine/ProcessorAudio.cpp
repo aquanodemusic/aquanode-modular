@@ -7,6 +7,7 @@
 #include "../Modules/Utilities/Control/DawModModule.h"
 #include "../Modules/Utilities/MIDI/PianoRollModule.h"
 #include "PatchStateFiles.h"
+#include "../Platform/AndroidPerfHint.h"
 
 #include <algorithm>
 
@@ -17,6 +18,30 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                                                   juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // "Don't slow down" (Android): the app's own patch reports each block's
+    // work against its length, so the phone keeps the clock up (AndroidPerfHint.h)
+    struct BlockTimer
+    {
+        bool on { false };
+        long long blockNs { 0 };
+        std::chrono::steady_clock::time_point t0;
+        ~BlockTimer()
+        {
+            if (on)
+                aquanode::perfhint::reportBlock ((long long) std::chrono::duration_cast<std::chrono::nanoseconds> (
+                                                     std::chrono::steady_clock::now() - t0).count(), blockNs);
+        }
+    } blockTimer;
+   #if JUCE_ANDROID
+    if (wrapperType == wrapperType_Standalone && aquanode::perfhint::switchedOn().load (std::memory_order_relaxed)
+        && currentSampleRate > 0.0)
+    {
+        blockTimer.on = true;
+        blockTimer.blockNs = (long long) (1.0e9 * buffer.getNumSamples() / currentSampleRate);
+        blockTimer.t0 = std::chrono::steady_clock::now();
+    }
+   #endif
 
     std::shared_ptr<const ProcessGraph> graph;
     {
@@ -52,6 +77,8 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     }
 
     const int numSamples = buffer.getNumSamples();
+    const auto blockStartTime = std::chrono::steady_clock::now();   // (the CPU / RAM module's global reading)
+    const bool metering = aquanode::cpuMeterActive();
 
     // copy the host input before clearing (in and out may share the buffer)
     if (inputScratch.getNumSamples() < numSamples)
@@ -216,10 +243,29 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         if (graph->hostOut[ni])
             softClip = juce::jmax (softClip, graph->nodes[ni]->dsp->hostSoftClip());
 
+    // Sleep on silence: a sleeping module wakes when one of its knobs is
+    // moved, it gets a new sample or its switch is turned off. Once a block.
+    for (const auto& np : graph->nodes)
+    {
+        auto* d = np->dsp.get();
+        if (! d->hasSleepSwitch())
+            continue;
+        np->sleepInNeed = (int) (currentSampleRate * juce::jlimit (1.0, 30.0, d->silenceMemorySeconds() + 1.0))
+                        + juce::jmax (0, d->latencySamples());
+        const auto& sl = d->sleepState;
+        if (sl.asleep && (! d->sleepSwitchedOn()
+                          || d->getSampleChangeCounter() != sl.sampleCounter
+                          || std::abs (d->baseParamSum() - sl.paramSum) > 1.0e-9))
+            d->wakeFromSleep();
+    }
+    const int sleepOutNeed = (int) currentSampleRate;   // a second of silence coming out
+
     // the patch's delay as it is right now (see patchLatency)
     {
         if (latencyScratch.size() < graph->nodes.size())
             latencyScratch.resize (graph->nodes.size());   // (reserved in prepareToPlay; a bigger patch grows it once)
+        if (latencyInScratch.size() < graph->nodes.size())
+            latencyInScratch.resize (graph->nodes.size());
         int longest = 0;
         for (size_t ni = 0; ni < graph->nodes.size(); ++ni)
         {
@@ -227,14 +273,37 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             for (const auto& e : graph->incoming[ni])
                 if (! e.feedback)
                     in = juce::jmax (in, latencyScratch[(size_t) e.srcNode]);
+            latencyInScratch[ni] = in;
             latencyScratch[ni] = in + juce::jmax (0, graph->nodes[ni]->dsp->latencySamples());
             if (graph->hostOut[ni])
                 longest = juce::jmax (longest, latencyScratch[ni]);
         }
+
+        // latency compensation (6.7.12): each delay line waits for the latest
+        // input of its module (or, for an Audio Out, for the latest Audio Out)
+        for (auto& d : graph->delays)
+        {
+            const int want = d.dstNode >= 0 ? latencyInScratch[(size_t) d.dstNode] - latencyScratch[(size_t) d.srcNode]
+                                            : longest - latencyScratch[(size_t) d.srcNode];
+            if (want > d.mask)
+                compensationShort.store (true, std::memory_order_relaxed);
+            d.delay = juce::jlimit (0, d.mask, want);
+        }
+
         if (softClip > 0.0f)
             longest += AudioOutModule::kLatency;
         patchLatency.store (longest, std::memory_order_relaxed);
     }
+
+    // a delay line: this sample in, the one from its delay ago out
+    auto delayed = [&graph] (int index, aquanode::StereoFrame x) noexcept
+    {
+        auto& d = graph->delays[(size_t) index];
+        d.buf[(size_t) d.write] = x;
+        const auto y = d.buf[(size_t) ((d.write - d.delay) & d.mask)];
+        d.write = (d.write + 1) & d.mask;
+        return y;
+    };
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -250,7 +319,7 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             {
                 const bool isNote = msg.isNoteOnOrOff();
                 for (int ni : (isNote ? graph->keyboardRawNodes : graph->rawNodes))
-                    nodes[(size_t) ni]->dsp->rawMidiMessage (msg);
+                    nodes[(size_t) ni]->dsp->deliverRawMidi (msg);
             }
             if (msg.isNoteOn() && aquanode::tuning::shouldFilterNote (msg.getNoteNumber()))
                 {}   // a key the MTS-ESP master's keyboard map leaves out
@@ -299,9 +368,27 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
 
         float sumL = 0.0f, sumR = 0.0f;
 
+        // CPU / RAM module: the module whose turn it is, timed on this sample
+        const int timedNode = metering && meterNode < (int) nodes.size() ? meterNode : -1;
+
         for (size_t ni = 0; ni < nodes.size(); ++ni)
         {
             auto& node = *nodes[ni];
+            struct NodeClock
+            {
+                aquanode::SynthModule* dsp { nullptr };
+                std::chrono::steady_clock::time_point t0;
+                ~NodeClock()
+                {
+                    if (dsp != nullptr)
+                        dsp->cpuNs += (double) std::chrono::duration_cast<std::chrono::nanoseconds> (std::chrono::steady_clock::now() - t0).count();
+                }
+            } nodeClock;
+            if ((int) ni == timedNode && ! node.dsp->timesItself())
+            {
+                nodeClock.dsp = node.dsp.get();
+                nodeClock.t0 = std::chrono::steady_clock::now();
+            }
 
             // ---- knob modulation: sum every param cable into its offset.
             // A module running in the global lane gets per-voice sources
@@ -360,7 +447,10 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 for (const auto& pe : pedges)
                     node.dsp->setParamMod (pe.paramIdx, 0.0f);
                 for (const auto& pe : pedges)
-                    applyParamEdge (pe, globalEdgeValue (pe));
+                {
+                    const float v = globalEdgeValue (pe);
+                    applyParamEdge (pe, pe.delayIndex >= 0 ? delayed (pe.delayIndex, { v, v })[0] : v);
+                }
             }
 
             if (node.perVoice)
@@ -500,7 +590,9 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 for (const auto& e : graph->incoming[ni])
                 {
                     auto& src = *nodes[(size_t) e.srcNode];
-                    auto& dst = node.inBuf[(size_t) e.dstSock];
+                    // (a cable that waits for a slower one (6.7.12) is summed on its own, then delayed)
+                    StereoFrame waiting { 0.0f, 0.0f };
+                    auto& dst = e.delayIndex >= 0 ? waiting : node.inBuf[(size_t) e.dstSock];
 
                     if (src.perVoice)
                     {
@@ -515,9 +607,67 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     {
                         accumulateEdge (dst, (e.feedback ? src.prevOutBuf : src.outBuf)[(size_t) e.srcSock], e);
                     }
+
+                    if (e.delayIndex >= 0)
+                    {
+                        const auto late = delayed (e.delayIndex, waiting);
+                        auto& in = node.inBuf[(size_t) e.dstSock];
+                        in[0] += late[0];
+                        in[1] += late[1];
+                    }
                 }
 
-                node.dsp->processSample (node.inBuf.data(), node.outBuf.data());
+                // ---- sleep on silence: once the audio going in has been
+                // silent for longer than the module can hold it and nothing has
+                // come out for a second, it is not run until sound comes in
+                bool sleeping = false;
+                if (node.dsp->sleepSwitchedOn())
+                {
+                    auto& sl = node.dsp->sleepState;
+                    bool quietIn = true;
+                    for (int i = 0; i < node.numIn && quietIn; ++i)
+                        if ((node.dsp->audioInMask >> i) & 1u)
+                            quietIn = std::abs (node.inBuf[(size_t) i][0]) < aquanode::kSleepSilence
+                                   && std::abs (node.inBuf[(size_t) i][1]) < aquanode::kSleepSilence;
+                    sl.quietIn = quietIn ? juce::jmin (sl.quietIn + 1, 1 << 30) : 0;
+                    if (sl.asleep)
+                    {
+                        if (quietIn)
+                            sleeping = true;
+                        else
+                            node.dsp->wakeFromSleep();
+                    }
+                }
+                else if (node.dsp->sleepState.asleep)
+                    node.dsp->wakeFromSleep();
+
+                if (sleeping)
+                {
+                    for (int i = 0; i < node.numOut; ++i)
+                        node.outBuf[(size_t) i] = { 0.0f, 0.0f };
+                }
+                else
+                {
+                    node.dsp->processSample (node.inBuf.data(), node.outBuf.data());
+
+                    if (node.dsp->sleepSwitchedOn())
+                    {
+                        auto& sl = node.dsp->sleepState;
+                        bool quietOut = true;
+                        for (int i = 0; i < node.numOut && quietOut; ++i)
+                            if ((node.dsp->audioOutMask >> i) & 1u)
+                                quietOut = std::abs (node.outBuf[(size_t) i][0]) < aquanode::kSleepSilence
+                                        && std::abs (node.outBuf[(size_t) i][1]) < aquanode::kSleepSilence;
+                        sl.quietOut = quietOut ? juce::jmin (sl.quietOut + 1, 1 << 30) : 0;
+                        if (sl.quietOut >= sleepOutNeed && sl.quietIn >= node.sleepInNeed)
+                        {
+                            sl.asleep = true;
+                            sl.paramSum = node.dsp->baseParamSum();
+                            sl.sampleCounter = node.dsp->getSampleChangeCounter();
+                            node.dsp->sleepingNow.store (true, std::memory_order_relaxed);
+                        }
+                    }
+                }
                 if (node.dsp->tapOn.load (std::memory_order_relaxed))
                     node.dsp->tapWrite (node.numIn > 0 ? 0.5f * (node.inBuf[0][0] + node.inBuf[0][1]) : 0.0f,
                                         node.numOut > 0 ? 0.5f * (node.outBuf[0][0] + node.outBuf[0][1]) : 0.0f);
@@ -526,6 +676,12 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 {
                     float l = 0.0f, r = 0.0f;
                     node.dsp->getHostOutput (l, r);
+                    if (const int di = graph->hostOutDelay.empty() ? -1 : graph->hostOutDelay[ni]; di >= 0)
+                    {
+                        const auto late = delayed (di, { l, r });   // lined up with the latest Audio Out (6.7.12)
+                        l = late[0];
+                        r = late[1];
+                    }
                     sumL += l;
                     sumR += r;
                 }
@@ -558,6 +714,76 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         outL[s] = sumL;
         if (outR != nullptr)
             outR[s] = sumR;
+    }
+
+    // CPU / RAM module: this block's shares (of real time), and each meter's chain
+    {
+        const double blockNs = 1.0e9 * (double) numSamples / juce::jmax (1.0, currentSampleRate);
+        const double used = (double) std::chrono::duration_cast<std::chrono::nanoseconds> (std::chrono::steady_clock::now() - blockStartTime).count();
+        meterGlobalShare += 0.03f * ((float) (used / blockNs) - meterGlobalShare);
+        if (metering)
+        {
+            // hosted plugins: their own exact time, every block
+            for (const auto& n : nodes)
+            {
+                auto& d = *n->dsp;
+                if (! d.timesItself()) continue;
+                const float now = (float) (d.cpuNs / blockNs);
+                d.cpuNs = 0.0;
+                const float prev = d.cpuShare.load (std::memory_order_relaxed);
+                d.cpuShare.store (prev + 0.03f * (now - prev), std::memory_order_relaxed);
+            }
+            // the module whose turn it is: its window so far, and on to the next when it is over
+            if (meterNode >= (int) nodes.size()) { meterNode = 0; meterWindowLeft = 0; }
+            if (meterWindowLen <= 0 || meterWindowLeft <= 0)
+            {
+                meterWindowLen = meterWindowLeft = juce::jmax (numSamples, (int) (0.1 * currentSampleRate));
+                meterWindowNs = 0.0;
+            }
+            if (meterNode < (int) nodes.size())
+            {
+                auto& d = *nodes[(size_t) meterNode]->dsp;
+                if (d.timesItself()) meterWindowLeft = 0;   // (a hosted plugin: nothing to do, on to the next)
+                else { meterWindowNs += d.cpuNs; d.cpuNs = 0.0; meterWindowLeft -= numSamples; }
+                if (meterWindowLeft <= 0)
+                {
+                    if (! d.timesItself())
+                    {
+                        const double windowNs = 1.0e9 * (double) (meterWindowLen - meterWindowLeft) / juce::jmax (1.0, currentSampleRate);
+                        const float now = (float) (meterWindowNs / juce::jmax (1.0, windowNs));
+                        const float prev = d.cpuShare.load (std::memory_order_relaxed);
+                        d.cpuShare.store (prev <= 0.0f ? now : prev + 0.5f * (now - prev), std::memory_order_relaxed);
+                    }
+                    meterNode = (meterNode + 1) % (int) nodes.size();
+                    meterWindowLeft = 0;
+                }
+            }
+            for (const auto& m : graph->cpuMeters)
+            {
+                aquanode::SynthModule::CpuReading r;
+                r.globalShare = meterGlobalShare;
+                r.connected = m.connected;
+                for (int ni : m.upstream)
+                {
+                    const auto& inst = *nodes[(size_t) ni];
+                    const float share = inst.dsp->cpuShare.load (std::memory_order_relaxed);
+                    r.chainShare += share;
+                    r.chainRam += inst.dsp->ramBytes.load (std::memory_order_relaxed);
+                    // the three heaviest
+                    int at = r.numTop;
+                    while (at > 0 && r.topShare[at - 1] < share) --at;
+                    if (at < 3)
+                    {
+                        for (int k = juce::jmin (2, r.numTop); k > at; --k) { r.topShare[k] = r.topShare[k - 1]; r.topName[k] = r.topName[k - 1]; }
+                        r.topShare[at] = share;
+                        r.topName[at] = inst.reg != nullptr ? &inst.reg->descriptor.displayName : nullptr;
+                        r.numTop = juce::jmin (3, r.numTop + 1);
+                    }
+                }
+                r.chainShare = juce::jmin (r.chainShare, juce::jmax (r.globalShare, 0.0f));   // (a chain is never more than the whole)
+                m.dsp->setCpuReading (r);
+            }
+        }
     }
 
     // Safety net: if anything in the patch produced NaN or infinity, never

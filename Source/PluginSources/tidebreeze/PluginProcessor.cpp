@@ -270,6 +270,7 @@ void TidebreezeAudioProcessor::startVoice (Voice& v, int note, float velocity, b
 {
     const bool wasActive = v.active;
     v.note = note; v.velocity = velocity; v.active = true; v.held = true; v.sustained = false;
+    v.channel = noteChannel;
     v.age = ++noteCounter;
     v.glideTarget = (float) note;
     if (! wasActive || P.porta == 0) v.glideNote = (float) note;
@@ -393,7 +394,7 @@ void TidebreezeAudioProcessor::handleNoteOff (int note)
         releaseVoice (v);
         return;
     }
-    for (auto& v : voices) if (v.active && v.held && v.note == note) releaseVoice (v);
+    for (auto& v : voices) if (v.active && v.held && v.note == note && (noteChannel == 0 || v.channel == noteChannel)) releaseVoice (v);
 }
 
 void TidebreezeAudioProcessor::renderVoices (float* L, float* R, int n)
@@ -409,6 +410,9 @@ void TidebreezeAudioProcessor::renderVoices (float* L, float* R, int n)
     {
         if (! v.active) continue;
         bool anySounding = false;
+        const bool member = v.channel >= 2 && v.channel <= 16;
+        const float noteBend = member ? chanBend[(size_t) v.channel] : 0.0f;
+        const float pressUnits = member && chanPress[(size_t) v.channel] >= 0.0f ? (chanPress[(size_t) v.channel] - 0.7f) * 40.0f : 0.0f;
         for (int start = 0; start < n; start += kCtl)
         {
             const int len = std::min (kCtl, n - start);
@@ -434,12 +438,12 @@ void TidebreezeAudioProcessor::renderVoices (float* L, float* R, int n)
 
                 const float semis = 60.0f + (v.glideNote - 60.0f) * (float) q.pSlope * 0.1f
                                   + 12.0f * (float) (q.octave - 2) + (float) q.transpose + (float) q.tune * 0.01f
-                                  + bendSemis + (float) q.pegInt * peg + 0.1f * ((float) q.l1Pitch * l1 + (float) q.l2Pitch * l2);
+                                  + bendSemis + noteBend + (float) q.pegInt * peg + 0.1f * ((float) q.l1Pitch * l1 + (float) q.l2Pitch * l2);
                 ov.inc = (double) midiToHz (semis) / (double) ov.reader.rootHz() * ov.reader.rate() / sr;
 
                 const float keyUnits = (float) q.fKt / 99.0f * 0.8777f * ((float) v.note - 60.0f);
                 const float cA = (float) q.fA + (float) P.rtCutoff * 0.8f + keyUnits + (float) q.fEgA * egScale * feg
-                               + (float) q.fVelA * v.velocity * 0.6f + 0.5f * ((float) q.fL1A * l1 + (float) q.fL2A * l2);
+                               + (float) q.fVelA * v.velocity * 0.6f + 0.5f * ((float) q.fL1A * l1 + (float) q.fL2A * l2) + pressUnits;
                 const float cB = (float) q.fB + (float) q.fEgB * egScale * feg + keyUnits;
                 const float reso = juce::jlimit (0.0f, 1.0f, ((float) q.fRes + (float) P.rtReso * 0.8f) / 99.0f);
                 ov.filter.set (cutoffHz (juce::jlimit (0.0f, 104.0f, cA)), cutoffHz (juce::jlimit (0.0f, 104.0f, cB)), reso, sr);
@@ -526,7 +530,12 @@ void TidebreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         const int at = juce::jlimit (0, n, meta.samplePosition);
         if (at > pos) { renderVoices (L + pos, R + pos, at - pos); pos = at; }
         const auto m = meta.getMessage();
-        if (m.isNoteOn()) handleNoteOn (m.getNoteNumber(), m.getFloatVelocity());
+        const int ch = mpeOn && ! P.arpOn ? m.getChannel() : 1;   // (the arpeggiator's notes are not MPE notes)
+        const bool member = ch >= 2 && ch <= 16;
+        noteChannel = member ? ch : 0;
+        if (member && m.isPitchWheel()) chanBend[(size_t) ch] = (float) (m.getPitchWheelValue() - 8192) / 8192.0f * 48.0f;
+        else if (member && m.isChannelPressure()) chanPress[(size_t) ch] = (float) m.getChannelPressureValue() / 127.0f;
+        else if (m.isNoteOn()) handleNoteOn (m.getNoteNumber(), m.getFloatVelocity());
         else if (m.isNoteOff()) handleNoteOff (m.getNoteNumber());
         else if (m.isPitchWheel()) bendSemis = (float) (m.getPitchWheelValue() - 8192) / 8192.0f * (float) P.bend;
         else if (m.isSustainPedalOn()) sustainPedal = true;
@@ -538,6 +547,7 @@ void TidebreezeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         else if (m.isAllNotesOff() || m.isAllSoundOff())
             for (auto& v : voices) if (v.active) releaseVoice (v);
     }
+    noteChannel = 0;
     if (pos < n) renderVoices (L + pos, R + pos, n - pos);
 
     if (wavesWanted.exchange (false)) triggerAsyncUpdate();

@@ -17,7 +17,7 @@ static aquanode::ModuleDescriptor specDelayDescriptor()
         audioOut ("audioOut", "Audio Out")
     };
     d.params = {
-        makeRotary ("maxTime",  "Max Time", 0.05f, 5.0f, 1.0f, 0, "s", true),
+        makeRotary ("maxTime",  "Longest Time", 0.05f, 5.0f, 1.0f, 0, "s", true),
         makeRotary ("feedback", "Feedback", 0.0f, 100.0f, 0.0f, 0, "%"),
         makeRotary ("dryWet",   "Dry/Wet",  0.0f, 100.0f, 100.0f, 0, "%")
     };

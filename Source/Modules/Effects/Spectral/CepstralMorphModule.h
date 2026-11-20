@@ -128,7 +128,7 @@ public:
 
         // Same safety net the standalone Spectral Morph has at its output: a
         // soft knee from -1 dBFS. The morph itself may boost a bin by up to
-        // Max Boost (72 dB by default) - that is intentional - but it must
+        // Peak Boost (72 dB by default) - that is intentional - but it must
         // never leave this module at +70 dB.
         // Inside a patch signals are often hotter than a DAW channel (several
         // summed voices), so the knee is scaled to the louder input: a 0 dBFS

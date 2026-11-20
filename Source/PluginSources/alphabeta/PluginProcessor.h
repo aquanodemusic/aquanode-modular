@@ -504,6 +504,10 @@ public:
         velocity = vel;
         noteNumber = midiNote;
         polyAftertouch = 0.0f;
+        memberChannel = 0;                       // MPE: the member channel it plays, 0 otherwise
+        if (ctx != nullptr && ctx->midi.mpe)
+            for (int ch = 2; ch <= 16; ++ch)
+                if (isPlayingChannel(ch)) { memberChannel = ch; break; }
         float target = (float)juce::MidiMessage::getMidiNoteInHertz(midiNote);
 
         if (glideOnStart && glideTime > 0.001f && currentFreq > 10.0f)
@@ -714,7 +718,10 @@ private:
         case Mod::SRC_NOTE_LOG:   return juce::jlimit(-1.0f, 1.0f, std::exp2(((float)noteNumber - 60.0f) / 24.0f) - 1.0f);
         case Mod::SRC_NOTE_LIN:   return juce::jlimit(-1.0f, 1.0f, ((float)noteNumber - 60.0f) / 60.0f);
         case Mod::SRC_VELOCITY:   return velocity;
-        case Mod::SRC_AFTERTOUCH: return juce::jmax(polyAftertouch, m.channelPressure);
+        case Mod::SRC_AFTERTOUCH:
+            if (memberChannel != 0 && m.chanPress[(size_t)memberChannel] >= 0.0f)
+                return juce::jmax(polyAftertouch, m.chanPress[(size_t)memberChannel]);
+            return juce::jmax(polyAftertouch, m.channelPressure);
         case Mod::SRC_PITCHWHEEL: return m.pitchWheel;
         case Mod::SRC_MODWHEEL:   return m.cc[1];
         case Mod::SRC_BREATH:     return m.cc[2];
@@ -776,7 +783,8 @@ private:
         noteTime += (float)n / sr;
 
         // ---- Pitch (semitones) ----
-        const float bend = ctx != nullptr ? ctx->midi.pitchWheel * ctx->bendRange : 0.0f;
+        const float bend = ctx != nullptr ? ctx->midi.pitchWheel * ctx->bendRange
+                                          + (memberChannel != 0 ? ctx->midi.chanBend[(size_t)memberChannel] : 0.0f) : 0.0f;
         // Analog: slow random pitch drift on top of the per-note offset
         if (analog > 0.0001f) {
             driftTimer -= (float)n / sr;
@@ -865,6 +873,7 @@ private:
 
     // modulation state
     int   noteNumber = 60;
+    int   memberChannel = 0;
     float polyAftertouch = 0.0f;
     float lastAmpEnv = 0.0f, lastFiltEnv = 0.0f;
     float noteTime = 0.0f;
@@ -945,10 +954,18 @@ public:
         juce::Synthesiser::handleController(ch, cc, value);
     }
     void handlePitchWheel(int ch, int value) override {
+        if (midi != nullptr && midi->mpe && ch >= 2 && ch <= 16) {   // MPE: that channel's note only
+            midi->chanBend[(size_t)ch] = (float)(value - 8192) / 8192.0f * 48.0f;
+            return;
+        }
         if (midi != nullptr) midi->pitchWheel = juce::jlimit(-1.0f, 1.0f, (float)(value - 8192) / 8191.0f);
         juce::Synthesiser::handlePitchWheel(ch, value);
     }
     void handleChannelPressure(int ch, int value) override {
+        if (midi != nullptr && midi->mpe && ch >= 2 && ch <= 16) {
+            midi->chanPress[(size_t)ch] = (float)value / 127.0f;
+            return;
+        }
         if (midi != nullptr) midi->channelPressure = (float)value / 127.0f;
         juce::Synthesiser::handleChannelPressure(ch, value);
     }
@@ -961,8 +978,10 @@ private:
 // ==============================================================
 //  Audio Processor
 // ==============================================================
-class AlphaBetaAudioProcessor : public juce::AudioProcessor {
+class AlphaBetaAudioProcessor : public juce::AudioProcessor,
+                                public aquanode::MpeReceiver {   // (Aquanode: MPE once a member channel plays)
 public:
+    void enableMpe(bool on) override { modCtx.midi.mpe = on; origEngine.mpe = on; }
     AlphaBetaAudioProcessor();
     ~AlphaBetaAudioProcessor() override = default;
 

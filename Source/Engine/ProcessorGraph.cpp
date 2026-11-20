@@ -6,6 +6,7 @@
 #include "../Modules/Utilities/MIDI/DiscardMidiModule.h"
 #include "../Modules/Utilities/Control/DawModModule.h"
 #include "../Modules/Utilities/MIDI/PianoRollModule.h"
+#include "../Modules/Utilities/MIDI/FruitArrangerLinks.h"
 #include "PatchStateFiles.h"
 
 #include <algorithm>
@@ -133,6 +134,53 @@ void AquanodeModularAudioProcessor::rebuildGraph()
         }
 
         adjacency[(size_t) from].push_back ((int) rawEdges.size());
+        rawEdges.push_back (e);
+    }
+
+    // Fruit Arranger (6.7.12): its lanes checked against the patch as it is now,
+    // and its hidden links - into its piano rolls' Song In, onto the knobs it
+    // automates (absolute: the curve is the knob's whole range). Its patterns
+    // come back into it, so these links would close loops: they are read a
+    // sample late (feedback) and kept out of the ordering, so the patterns'
+    // cables into Lanes In stay ordinary - lined up by the compensation.
+    FruitArrangerLinks arrangerLinks;
+    fruitArrangerSync (*this, arrangerLinks);
+    for (const auto& sl : arrangerLinks.songs)
+    {
+        const int from = nodeIndexOf (sl.arranger), to = nodeIndexOf (sl.roll);
+        if (from < 0 || to < 0)
+            continue;
+        RawEdge e;
+        e.from = from;  e.fromSock = instances[(size_t) from]->descriptor().outputIndexOf ("roll" + juce::String (sl.output + 1));
+        e.to = to;      e.toSock = instances[(size_t) to]->descriptor().inputIndexOf ("songIn");
+        if (e.fromSock < 0 || e.toSock < 0)
+            continue;
+        e.fromKind = e.toKind = SocketKind::Modulation;
+        e.feedback = true;
+        rawEdges.push_back (e);
+    }
+    for (const auto& kl : arrangerLinks.knobs)
+    {
+        const int from = nodeIndexOf (kl.arranger), to = nodeIndexOf (kl.module);
+        if (from < 0 || to < 0)
+            continue;
+        const auto& toDesc = instances[(size_t) to]->descriptor();
+        if (kl.param < 0 || kl.param >= (int) toDesc.params.size())
+            continue;
+        RawEdge e;
+        e.from = from;  e.fromSock = instances[(size_t) from]->descriptor().outputIndexOf ("auto" + juce::String (kl.output + 1));
+        e.to = to;      e.toSock = 0;
+        if (e.fromSock < 0)
+            continue;
+        e.fromKind = e.toKind = SocketKind::Modulation;
+        e.isParam = true;
+        e.paramIdx = kl.param;
+        e.absolute = true;
+        e.depth = 1.0f;
+        e.minValue = toDesc.params[(size_t) kl.param].minValue;
+        e.maxValue = toDesc.params[(size_t) kl.param].maxValue;
+        e.scale = e.maxValue - e.minValue;
+        e.feedback = true;
         rawEdges.push_back (e);
     }
 
@@ -611,6 +659,32 @@ void AquanodeModularAudioProcessor::rebuildGraph()
         if (inst->perVoice && inst->dsp->canHoldVoicesOpen())
             graph->voiceHolders.push_back (inst->dsp.get());
 
+    // CPU / RAM modules: their chains, everything upstream of them
+    for (size_t ni = 0; ni < graph->nodes.size(); ++ni)
+    {
+        if (! graph->nodes[ni]->dsp->isCpuMeter())
+            continue;
+        ProcessGraph::CpuMeterRef ref;
+        ref.node = (int) ni;
+        ref.dsp = graph->nodes[ni]->dsp.get();
+        ref.connected = ! graph->incoming[ni].empty() || ! graph->incomingParams[ni].empty() || ! graph->midi[ni].sources.empty();
+        std::vector<char> seen (graph->nodes.size(), 0);
+        std::vector<int> todo { (int) ni };
+        seen[ni] = 1;
+        while (! todo.empty())
+        {
+            const int at = todo.back();
+            todo.pop_back();
+            auto visit = [&] (int src) { if (src >= 0 && src < (int) seen.size() && ! seen[(size_t) src]) { seen[(size_t) src] = 1; ref.upstream.push_back (src); todo.push_back (src); } };
+            for (const auto& e : graph->incoming[(size_t) at]) visit (e.srcNode);
+            for (const auto& pe : graph->incomingParams[(size_t) at]) visit (pe.srcNode);
+            for (int id : graph->midi[(size_t) at].sources)
+                for (size_t k = 0; k < graph->nodes.size(); ++k)
+                    if (graph->nodes[k]->id == id) { visit ((int) k); break; }
+        }
+        graph->cpuMeters.push_back (std::move (ref));
+    }
+
     graph->feedbackSource.assign (graph->nodes.size(), 0);
     graph->hostIn.assign (graph->nodes.size(), 0);
     graph->hostOut.assign (graph->nodes.size(), 0);
@@ -646,12 +720,65 @@ void AquanodeModularAudioProcessor::rebuildGraph()
                 softClip = softClip || graph->nodes[ni]->dsp->hostSoftClip() > 0.0f;
             }
         }
+        const int longestPaths = longest;
         if (softClip)
             longest += AudioOutModule::kLatency;
         patchLatency.store (longest, std::memory_order_relaxed);
         if (auto* mm = juce::MessageManager::getInstanceWithoutCreating(); mm != nullptr && mm->isThisTheMessageThread())
             if (getLatencySamples() != longest)
                 setLatencySamples (longest);
+
+        // ---- latency compensation (6.7.12): a delay line for every cable into a
+        // module that lines its inputs up and has more than one coming in (and
+        // for the knob cables onto one with audio coming in), sized from the
+        // latency as it is now with room to grow; the audio thread sets the
+        // delays every block (processBlock)
+        const bool everywhere = alwaysCompensate || latencyCompensation.load (std::memory_order_relaxed);
+        auto aligns = [&] (size_t ni)
+        {
+            if (everywhere) return true;
+            return std::find (arrangerLinks.aligned.begin(), arrangerLinks.aligned.end(), graph->nodes[ni]->id) != arrangerLinks.aligned.end();
+        };
+        auto addDelay = [&graph] (int src, int dst, int need) -> int
+        {
+            ProcessGraph::EdgeDelay d;
+            int cap = 4096;
+            while (cap < 2 * need + 2048 && cap < (1 << 21))
+                cap <<= 1;
+            d.buf.assign ((size_t) cap, aquanode::StereoFrame { 0.0f, 0.0f });
+            d.mask = cap - 1;
+            d.srcNode = src;
+            d.dstNode = dst;
+            d.delay = juce::jlimit (0, d.mask, need);
+            graph->delays.push_back (std::move (d));
+            return (int) graph->delays.size() - 1;
+        };
+        int hostOuts = 0;
+        for (size_t ni = 0; ni < graph->nodes.size(); ++ni)
+        {
+            hostOuts += graph->hostOut[ni] ? 1 : 0;
+            if (! aligns (ni) || graph->nodes[ni]->perVoice)
+                continue;
+            int signals = 0, inMax = 0;
+            for (const auto& e : graph->incoming[ni])
+                if (! e.feedback) { ++signals; inMax = juce::jmax (inMax, lat[(size_t) e.srcNode]); }
+            if (signals >= 2)
+                for (auto& e : graph->incoming[ni])
+                    if (! e.feedback)
+                        e.delayIndex = addDelay (e.srcNode, (int) ni, inMax - lat[(size_t) e.srcNode]);
+            if (signals >= 1)
+                for (auto& pe : graph->incomingParams[ni])
+                    if (! pe.feedback)
+                        pe.delayIndex = addDelay (pe.srcNode, (int) ni, juce::jmax (0, inMax - lat[(size_t) pe.srcNode]));
+        }
+        graph->hostOutDelay.assign (graph->nodes.size(), -1);
+        bool alignOuts = everywhere;
+        for (size_t ni = 0; ni < graph->nodes.size() && ! alignOuts; ++ni)
+            alignOuts = graph->hostOut[ni] && aligns (ni);
+        if (hostOuts >= 2 && alignOuts)
+            for (size_t ni = 0; ni < graph->nodes.size(); ++ni)
+                if (graph->hostOut[ni])
+                    graph->hostOutDelay[ni] = addDelay ((int) ni, -1, longestPaths - lat[ni]);
     }
 
     // publish: keep the old graph alive in the graveyard until the audio
@@ -664,6 +791,11 @@ void AquanodeModularAudioProcessor::rebuildGraph()
     }
     if (old != nullptr)
         graveyard.emplace_back (graph->serial, std::const_pointer_cast<ProcessGraph> (old));
+
+    bool hasAudioIn = false;
+    for (size_t ni = 0; ni < graph->nodes.size() && ! hasAudioIn; ++ni)
+        hasAudioIn = graph->hostIn[ni] != 0;
+    updateStandaloneInputMute (hasAudioIn);
 }
 
 void AquanodeModularAudioProcessor::purgeRetired()
@@ -672,4 +804,21 @@ void AquanodeModularAudioProcessor::purgeRetired()
     graveyard.erase (std::remove_if (graveyard.begin(), graveyard.end(),
         [adopted] (const auto& entry) { return adopted >= entry.first; }),
         graveyard.end());
+}
+
+//==============================================================================
+// latency compensation (6.7.12)
+void AquanodeModularAudioProcessor::setLatencyCompensation (bool shouldCompensate)
+{
+    if (latencyCompensation.exchange (shouldCompensate) != shouldCompensate)
+        rebuildGraph();
+}
+
+void AquanodeModularAudioProcessor::setAlwaysCompensate (bool shouldCompensate)
+{
+    if (alwaysCompensate != shouldCompensate)
+    {
+        alwaysCompensate = shouldCompensate;
+        rebuildGraph();
+    }
 }

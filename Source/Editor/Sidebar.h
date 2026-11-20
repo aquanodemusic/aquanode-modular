@@ -82,6 +82,8 @@ private:
     // the two pills at the right end of a Plugins row
     static juce::Rectangle<int> pluginGuiPillArea (const Row& row)
     {
+        // (a plugin without a patch version shows no Patch pill: GUI sits at the end)
+        if (! row.pluginHasPatch) return row.area.withLeft (row.area.getRight() - 38).withWidth (34).reduced (0, 2);
         return row.area.withLeft (row.area.getRight() - 84).withWidth (34).reduced (0, 2);
     }
     static juce::Rectangle<int> pluginPatchPillArea (const Row& row)

@@ -817,6 +817,10 @@ public:
 
     void setBendRatio (float r) noexcept { s1.setBendRatio (r); s2.setBendRatio (r); }
 
+    // MPE pressure (Aquanode): opens or closes the filter, 0.7 (the MPE Piano
+    // Roll's resting pressure) leaving it where the patch has it; < 0: none
+    void setPressure (float p) noexcept { pressureOctaves = p < 0.0f ? 0.0f : (p - 0.7f) * 3.0f; }
+
     /** Renders numSamples of mono output, adding into out[]. */
     void render (float* out, int numSamples) noexcept
     {
@@ -832,7 +836,7 @@ public:
             const float lfoValue = lfo.advance (block);
             const float vibratoRatio = std::exp2 (lfoValue * vibratoAmount / 12.0f);
             const float tremoloGain  = 1.0f - tremoloAmount * 0.5f * (1.0f - lfoValue);
-            const float filterMod    = lfoValue * filterAmount;
+            const float filterMod    = lfoValue * filterAmount + pressureOctaves;
 
             s1.renderControlBlock (out + offset, block, *dft, vibratoRatio, tremoloGain, filterMod);
             s2.renderControlBlock (out + offset, block, *dft, vibratoRatio, tremoloGain, filterMod);
@@ -849,6 +853,16 @@ private:
     DigitalFormantFilter* dft = nullptr;
 
     float vibratoAmount = 0.0f, tremoloAmount = 0.0f, filterAmount = 0.0f;
+    float pressureOctaves = 0.0f;
+};
+
+//==============================================================================
+/** MPE (Aquanode), shared by the voices: on once the host has seen a note on a
+    member channel; each member channel's last pressure (-1: none yet). */
+struct K5MpeState
+{
+    bool on = false;
+    std::array<float, 17> press = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
 };
 
 //==============================================================================
@@ -877,10 +891,22 @@ public:
         return dynamic_cast<K5Sound*> (sound) != nullptr;
     }
 
+    const K5MpeState* mpe = nullptr;
+
     void startNote (int midiNoteNumber, float velocity,
                     juce::SynthesiserSound*, int currentPitchWheelPosition) override
     {
-        pitchBendSemitones = (float) (currentPitchWheelPosition - 8192) / 8192.0f * 2.0f;
+        // MPE: a note on a member channel bends +-48 semitones and hears its
+        // channel's pressure (the Synthesiser already hands each voice only
+        // its own channel's pitch wheel and pressure)
+        memberChannel = 0;
+        if (mpe != nullptr && mpe->on)
+            for (int ch = 2; ch <= 16; ++ch)
+                if (isPlayingChannel (ch)) { memberChannel = ch; break; }
+        bendRange = memberChannel != 0 ? 48.0f : 2.0f;
+        voice.setPressure (memberChannel != 0 ? mpe->press[(size_t) memberChannel] : -1.0f);
+
+        pitchBendSemitones = (float) (currentPitchWheelPosition - 8192) / 8192.0f * bendRange;
         voice.setBendRatio (std::exp2 (pitchBendSemitones / 12.0f));
 
         const float frequency = (float) juce::MidiMessage::getMidiNoteInHertz (midiNoteNumber);
@@ -902,8 +928,14 @@ public:
 
     void pitchWheelMoved (int newValue) override
     {
-        pitchBendSemitones = (float) (newValue - 8192) / 8192.0f * 2.0f;
+        pitchBendSemitones = (float) (newValue - 8192) / 8192.0f * bendRange;
         voice.setBendRatio (std::exp2 (pitchBendSemitones / 12.0f));
+    }
+
+    void channelPressureChanged (int newValue) override
+    {
+        if (memberChannel != 0)
+            voice.setPressure ((float) newValue / 127.0f);
     }
 
     void controllerMoved (int, int) override {}
@@ -935,4 +967,6 @@ public:
 private:
     juce::AudioBuffer<float> scratch;
     float pitchBendSemitones = 0.0f;
+    float bendRange = 2.0f;
+    int memberChannel = 0;
 };

@@ -6,7 +6,7 @@ namespace covegroove
     // any built-in sound but the lane's Sample (the drum machines' included)
     static int randomSynthModel (juce::Random& r)
     {
-        const int m = r.nextInt (kSampleModel + kMachineModels);
+        const int m = r.nextInt (kSampleModel + kMachineModels + kPhysModels);
         return m < kSampleModel ? m : m + 1;
     }
 
@@ -163,19 +163,30 @@ namespace covegroove
 
         //=== the kits (a sound for every lane at once) ==========================
         struct Kit { const char* name; int models[kNumLanes]; float levels[kNumLanes]; float decays[kNumLanes]; };
+        // (alphabetical, as the KIT menu shows them; the modelled kits are
+        // models kFirstPhysModel + 0..7: 808, 909, Classic, Electro, Large Drums, Metal, Orchestral, World)
         const Kit kKits[] = {
-            { "Hardgroove", { 0, 0, 0, 0, 0, 2, 0, 0 }, { 46, 22, 60, 85, 65, 60, 75, 60 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "707",        { 13, 12, 13, 13, 13, 13, 12, 13 }, { 60, 20, 58, 66, 52, 40, 48, 48 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "808",        { 14, 14, 14, 14, 14, 14, 14, 14 }, { 62, 34, 52, 58, 48, 38, 52, 46 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "909",        { 15, 15, 15, 15, 15, 15, 15, 15 }, { 60, 30, 54, 58, 48, 38, 50, 46 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
             { "Analog",        { 4, 4, 4, 4, 4, 4, 4, 5 }, { 55, 20, 58, 82, 60, 45, 55, 55 }, { 70, 60, 100, 100, 70, 80, 100, 100 } },
+            { "Classic Kit", { 16, 16, 16, 16, 16, 16, 16, 16 }, { 58, 30, 52, 52, 44, 36, 50, 40 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "Crunch",     { 7, 3, 2, 2, 3, 3, 3, 7 }, { 50, 24, 60, 80, 60, 45, 60, 45 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "Electro Kit", { 17, 17, 17, 17, 17, 17, 17, 17 }, { 58, 30, 52, 52, 44, 36, 50, 40 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "Hardgroove", { 0, 0, 0, 0, 0, 2, 0, 0 }, { 46, 22, 60, 85, 65, 60, 75, 60 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
             { "Hybrid",        { 5, 5, 5, 5, 5, 5, 1, 4 }, { 52, 22, 55, 80, 60, 45, 60, 50 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
             { "Hybrid Acid",   { 5, 5, 6, 5, 5, 2, 0, 7 }, { 52, 24, 52, 78, 58, 50, 70, 45 }, { 100, 130, 100, 100, 100, 100, 100, 100 } },
             { "Kit",        { 6, 7, 7, 6, 6, 6, 7, 4 }, { 55, 26, 55, 70, 50, 42, 55, 45 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
-            { "Crunch",     { 7, 3, 2, 2, 3, 3, 3, 7 }, { 50, 24, 60, 80, 60, 45, 60, 45 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "Large Drums", { 18, 18, 18, 18, 18, 18, 18, 18 }, { 58, 28, 50, 46, 40, 34, 46, 38 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "Metal Kit",  { 19, 19, 19, 19, 19, 19, 19, 19 }, { 54, 28, 50, 50, 42, 34, 46, 38 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "Orchestral", { 20, 20, 20, 20, 20, 20, 20, 20 }, { 60, 32, 54, 56, 44, 38, 50, 40 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "Retro 808",  { 11, 11, 11, 11, 11, 11, 11, 11 }, { 60, 18, 62, 70, 50, 40, 50, 55 }, { 120, 90, 100, 100, 100, 100, 100, 100 } },
+            { "Retro 909",  { 12, 13, 12, 12, 12, 12, 13, 13 }, { 58, 20, 58, 68, 52, 42, 50, 45 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
+            { "Retro 909 Clap", { 12, 11, 13, 12, 12, 13, 12, 12 }, { 58, 18, 55, 66, 50, 38, 45, 45 }, { 100, 110, 100, 100, 100, 100, 100, 100 } },
             { "Warehouse",  { 8, 8, 8, 8, 8, 8, 8, 9 }, { 50, 26, 58, 80, 60, 50, 72, 50 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
             { "Warehouse Verb", { 9, 9, 9, 9, 9, 9, 9, 8 }, { 50, 24, 55, 80, 60, 45, 70, 50 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
-            { "808",        { 11, 11, 11, 11, 11, 11, 11, 11 }, { 60, 18, 62, 70, 50, 40, 50, 55 }, { 120, 90, 100, 100, 100, 100, 100, 100 } },
-            { "909",        { 12, 13, 12, 12, 12, 12, 13, 13 }, { 58, 20, 58, 68, 52, 42, 50, 45 }, { 100, 100, 100, 100, 100, 100, 100, 100 } },
-            { "909 Clap",   { 12, 11, 13, 12, 12, 13, 12, 12 }, { 58, 18, 55, 66, 50, 38, 45, 45 }, { 100, 110, 100, 100, 100, 100, 100, 100 } },
-            { "707",        { 13, 12, 13, 13, 13, 13, 12, 13 }, { 60, 20, 58, 66, 52, 40, 48, 48 }, { 100, 100, 100, 100, 100, 100, 100, 100 } } };
+            { "World Kit",  { 21, 21, 21, 21, 21, 21, 21, 21 }, { 56, 30, 52, 50, 44, 36, 52, 40 }, { 100, 100, 100, 100, 100, 100, 100, 100 } } };
+        static_assert (kFirstPhysModel == 14, "the kits above name the modelled kits by number");
         constexpr int kNumKits = (int) (sizeof (kKits) / sizeof (kKits[0]));
 
         //=== the effect presets (the phaser, band-pass, delay and drive alone) =====
@@ -260,6 +271,31 @@ namespace covegroove
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "driveTone", 1 }, "Drive Tone", NormalisableRange<float> (-100.0f, 100.0f, 0.1f), 0.0f));
         p.push_back (pct ("driveMix", "Drive Mix", 0.0f, 100.0f, 100.0f));
         p.push_back (pct ("volume", "Volume", 0.0f, 150.0f, 43.0f));
+        // the modelled kits' tweak row (6.4.0): which of the kit's sounds, and its model's three knobs
+        for (int l = 0; l < kNumLanes; ++l)
+        {
+            const String n (laneName (l));
+            auto id = [l] (const char* w) { return laneParam (l, w); };
+            p.push_back (std::make_unique<AudioParameterInt> (ParameterID { id ("pm"), 1 }, n + " Model", 0, 127, 0));
+            for (int k = 1; k <= 3; ++k)
+                p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id (("x" + std::to_string (k)).c_str()), 1 }, n + " Model " + String (k),
+                                                                    NormalisableRange<float> (-100.0f, 100.0f, 0.1f), 0.0f));
+        }
+        // each lane's ADSR (6.7.0): the Sound Up Close view's handles, after the voice; flat by default
+        for (int l = 0; l < kNumLanes; ++l)
+        {
+            const String n (laneName (l));
+            auto id = [l] (const char* w) { return laneParam (l, w); };
+            auto ms = [] (float hi, float skew) { return NormalisableRange<float> (0.0f, hi, 0.1f, skew); };
+            const auto unitMs = AudioParameterFloatAttributes().withLabel ("ms");
+            p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id ("eA"), 1 }, n + " Env Attack", ms (1000.0f, 0.35f), 0.0f, unitMs));
+            p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id ("eD"), 1 }, n + " Env Decay", ms (2000.0f, 0.35f), 0.0f, unitMs));
+            p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id ("eS"), 1 }, n + " Env Sustain", NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f,
+                                                                AudioParameterFloatAttributes().withLabel ("%")));
+            p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id ("eH"), 1 }, n + " Env Release At", ms (LaneEnv::kOff * 1000.0f, 0.35f),
+                                                                LaneEnv::kOff * 1000.0f, unitMs));
+            p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id ("eR"), 1 }, n + " Env Release", ms (2000.0f, 0.35f), 0.0f, unitMs));
+        }
         return { p.begin(), p.end() };
     }
 
@@ -270,9 +306,78 @@ namespace covegroove
     {
         loadFactory (0);
         apvts.addParameterListener ("bars", this);
+        startTimerHz (15);
     }
 
-    CoveGrooveProcessor::~CoveGrooveProcessor() { apvts.removeParameterListener ("bars", this); }
+    CoveGrooveProcessor::~CoveGrooveProcessor()
+    {
+        stopTimer();
+        apvts.removeParameterListener ("bars", this);
+    }
+
+    //==========================================================================
+    // the modelled kits: each lane playing one rendered whenever its settings change
+    phys::Spec CoveGrooveProcessor::physSpec (int lane) const
+    {
+        phys::Spec s;
+        s.kit = physKitOf ((int) getParam (laneParam (lane, "model")));
+        s.lane = lane;
+        s.choice = (int) getParam (laneParam (lane, "pm"));
+        s.tune = getParam (laneParam (lane, "tune"));
+        s.decay = getParam (laneParam (lane, "decay")) * 0.01f;
+        s.tone = getParam (laneParam (lane, "tone")) * 0.01f;
+        s.extra[0] = getParam (laneParam (lane, "x1")) * 0.01f;
+        s.extra[1] = getParam (laneParam (lane, "x2")) * 0.01f;
+        s.extra[2] = getParam (laneParam (lane, "x3")) * 0.01f;
+        s.sr = sr;
+        return s;
+    }
+
+    void CoveGrooveProcessor::timerCallback()
+    {
+        bool arrived = false;
+        for (int l = 0; l < kNumLanes; ++l)
+        {
+            if (isPhysModel ((int) getParam (laneParam (l, "model"))))
+                physRenderers[(size_t) l].request (physSpec (l));
+            phys::Variants v;
+            if (physRenderers[(size_t) l].take (v))
+            {
+                const juce::ScopedLock sl (sampleMutex);
+                for (auto& old : physSounds[(size_t) l]) if (old != nullptr) retired.push_back (old);
+                physSounds[(size_t) l] = std::move (v);
+                arrived = true;
+            }
+        }
+        const juce::ScopedLock sl (sampleMutex);
+        if (arrived) { publishSamples(); ++physVersion; }
+        else purgeRetired();
+    }
+
+    phys::Variants CoveGrooveProcessor::getPhysSound (int lane) const
+    {
+        const juce::ScopedLock sl (sampleMutex);
+        return physSounds[(size_t) juce::jlimit (0, kNumLanes - 1, lane)];
+    }
+
+    std::shared_ptr<SampleData> CoveGrooveProcessor::previewLane (int lane) const
+    {
+        lane = juce::jlimit (0, kNumLanes - 1, lane);
+        Sound s;
+        s.model = juce::jlimit (0, kNumModels - 1, (int) getParam (laneParam (lane, "model")));
+        s.tune = getParam (laneParam (lane, "tune"));
+        s.decay = getParam (laneParam (lane, "decay")) * 0.01f;
+        s.tone = getParam (laneParam (lane, "tone")) * 0.01f;
+        {
+            const juce::ScopedLock sl (sampleMutex);
+            s.sample = laneSamples[(size_t) lane].data;
+            s.curve = laneSamples[(size_t) lane].curve;
+            s.phys = physSounds[(size_t) lane];
+        }
+        // (a modelled kit's sound: its first variation, as rendered)
+        if (isPhysModel (s.model)) s.phys = { s.phys[0], s.phys[0], s.phys[0] };
+        return phys::preview (lane, s, (float) sr);
+    }
 
     // Bars: the pattern grows (repeating itself) or shrinks
     void CoveGrooveProcessor::parameterChanged (const juce::String& id, float value)
@@ -315,6 +420,7 @@ namespace covegroove
             m.send = v (laneParam (l, "send")) * 0.01f;
             m.top = v (laneParam (l, "top")) > 0.5f;
             m.mute = v (laneParam (l, "mute")) > 0.5f;
+            s.env = laneEnv (l);
         }
         // the lanes' samples and curves, when they changed
         if (const int serial = sampleSerial.load (std::memory_order_acquire); serial != audioSampleSerial)
@@ -327,6 +433,7 @@ namespace covegroove
                     auto& s = groove.lanes.sound[(size_t) l];
                     s.sample = handoffData[(size_t) l];
                     s.curve = handoffCurve[(size_t) l];
+                    s.phys = handoffPhys[(size_t) l];
                 }
                 audioSampleSerial = serial;
             }
@@ -552,8 +659,32 @@ namespace covegroove
             setParam (laneParam (l, "tune"), 0.0f);
             setParam (laneParam (l, "decay"), k.decays[l]);
             setParam (laneParam (l, "tone"), 50.0f);
+            setParam (laneParam (l, "pm"), 0.0f);
+            for (const char* x : { "x1", "x2", "x3" }) setParam (laneParam (l, x), 0.0f);
+            resetLaneEnv (l);
         }
         if (const unsigned mask = rolesChangedMask (before)) generate (mask);
+    }
+
+    LaneEnv CoveGrooveProcessor::laneEnv (int lane) const
+    {
+        LaneEnv e;
+        e.attack = getParam (laneParam (lane, "eA")) * 0.001f;
+        e.decay = getParam (laneParam (lane, "eD")) * 0.001f;
+        e.sustain = getParam (laneParam (lane, "eS")) * 0.01f;
+        e.releaseAt = std::max (e.attack + e.decay, getParam (laneParam (lane, "eH")) * 0.001f);
+        if (getParam (laneParam (lane, "eH")) * 0.001f >= LaneEnv::kOff - 1.0e-4f) e.releaseAt = LaneEnv::kOff;
+        e.release = getParam (laneParam (lane, "eR")) * 0.001f;
+        return e;
+    }
+
+    void CoveGrooveProcessor::resetLaneEnv (int lane)
+    {
+        setParam (laneParam (lane, "eA"), 0.0f);
+        setParam (laneParam (lane, "eD"), 0.0f);
+        setParam (laneParam (lane, "eS"), 100.0f);
+        setParam (laneParam (lane, "eH"), LaneEnv::kOff * 1000.0f);
+        setParam (laneParam (lane, "eR"), 0.0f);
     }
 
     int CoveGrooveProcessor::getNumFxPresets() { return kNumFxPresets; }
@@ -753,6 +884,16 @@ namespace covegroove
         auto copy = t.createCopy();
         const auto smp = copy.getChildWithName ("Samples");
         if (smp.isValid()) copy.removeChild (smp, nullptr);
+        // a state from before a parameter existed: that parameter at its default
+        for (auto* prm : getParameters())
+            if (auto* r = dynamic_cast<juce::RangedAudioParameter*> (prm))
+                if (! copy.getChildWithProperty ("id", r->getParameterID()).isValid())
+                {
+                    juce::ValueTree c ("PARAM");
+                    c.setProperty ("id", r->getParameterID(), nullptr);
+                    c.setProperty ("value", r->convertFrom0to1 (r->getDefaultValue()), nullptr);
+                    copy.appendChild (c, nullptr);
+                }
         apvts.replaceState (copy);
         Pattern p;
         if (p.fromString (t.getProperty ("pattern").toString().toStdString()))
@@ -834,6 +975,7 @@ namespace covegroove
             {
                 handoffData[(size_t) l] = laneSamples[(size_t) l].data;
                 handoffCurve[(size_t) l] = laneSamples[(size_t) l].curve;
+                handoffPhys[(size_t) l] = physSounds[(size_t) l];
             }
         }
         sampleSerial.fetch_add (1, std::memory_order_release);

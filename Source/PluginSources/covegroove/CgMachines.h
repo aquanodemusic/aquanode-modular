@@ -31,14 +31,14 @@ namespace covegroove
     inline const char* machineName (int lane, int which)
     {
         static const char* n[8][kMachineModels] = {
-            { "808 Kick", "909 Kick", "707 Kick" },
-            { "808 Boom", "808 Low Tom", "909 Low Tom" },
-            { "808 Snare", "909 Snare", "909 Clap" },
-            { "808 Hat", "909 Hat", "707 Hat" },
-            { "808 Open", "909 Open", "707 Open" },
-            { "808 Cymbal", "909 Ride", "909 Crash" },
-            { "808 Cowbell", "808 Rim", "909 Tom" },
-            { "808 Clave", "808 Maracas", "707 Tamb" } };
+            { "Retro 808 Kick", "Retro 909 Kick", "707 Kick" },
+            { "Retro 808 Boom", "Retro 808 Low Tom", "Retro 909 Low Tom" },
+            { "Retro 808 Snare", "Retro 909 Snare", "Retro 909 Clap" },
+            { "Retro 808 Hat", "Retro 909 Hat", "707 Hat" },
+            { "Retro 808 Open", "Retro 909 Open", "707 Open" },
+            { "Retro 808 Cymbal", "Retro 909 Ride", "Retro 909 Crash" },
+            { "Retro 808 Cowbell", "Retro 808 Rim", "Retro 909 Tom" },
+            { "Retro 808 Clave", "Retro 808 Maracas", "707 Tamb" } };
         return n[std::clamp (lane, 0, 7)][std::clamp (which, 0, kMachineModels - 1)];
     }
 

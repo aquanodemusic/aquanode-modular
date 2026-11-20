@@ -42,6 +42,13 @@ namespace vital {
       static constexpr int kDefaultSampleRate = 44100;
 
       SoundEngine();
+
+      // Vita FX: the effects chain takes this audio instead of the voices'
+      // (set once, before playing); setExternalInput gives it a block of the
+      // host's audio, held for the oversampled rate the chain runs at
+      void setEffectOnly(bool effect_only);
+      bool isEffectOnly() const { return effect_only_; }
+      void setExternalInput(const float* left, const float* right, int num_samples);
       virtual ~SoundEngine();
 
       void init() override;
@@ -112,6 +119,8 @@ namespace vital {
       Value* bps_;
       Value* legato_;
       Decimator* decimator_;
+      Processor* external_input_ = nullptr;
+      bool effect_only_ = false;
       PeakMeter* peak_meter_;
 
       CircularQueue<Processor*> modulation_processors_;

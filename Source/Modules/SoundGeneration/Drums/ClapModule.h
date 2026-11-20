@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/SnapDrums.h"
 
 // Clap - the classic analog clap trick: instead of one noise burst, three short bursts
 // fire a few milliseconds apart (that stutter is what the ear reads as many
@@ -16,7 +17,14 @@ public:
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Flexible; }
 
-    void prepare (double sr) override { SynthModule::prepare (sr); reset(); }
+    void prepare (double sr) override
+    {
+        SynthModule::prepare (sr);
+        pModel = paramIndex ("model");
+        for (auto& c : snappy) c.prepare ((float) sr);
+        for (auto& c : clack) c.prepare ((float) sr);
+        reset();
+    }
 
     void reset() override
     {
@@ -33,6 +41,8 @@ public:
         bpLow[v] = bpBand[v] = 0.0f;
         lastTrig[v] = 0.0f;
         running[v] = false;
+        snappy[v].reset();
+        clack[v].reset();
     }
 
     void voiceNoteOn (int v, int, bool) override
@@ -41,7 +51,11 @@ public:
         trigger (v);
     }
 
-    double voiceTailSeconds() const override { return 0.15 + aquanode::decayTailSeconds (juce::jmax (5.0f, param (pTailDecay))); }   // bursts, then the tail
+    double voiceTailSeconds() const override
+    {
+        if (model() > 0) return 0.08 + 0.35 * param (pTailDecay) / 220.0;   // the measured claps ring ~50 ms at the default
+        return 0.15 + aquanode::decayTailSeconds (juce::jmax (5.0f, param (pTailDecay)));   // bursts, then the tail
+    }
 
     void processVoiceSample (int v, const aquanode::StereoFrame* inputs,
                              aquanode::StereoFrame* outputs) override;
@@ -58,8 +72,22 @@ public:
     bool acceptsGlobalMidiNotes() const override { return true; }
 
 private:
+    int model() const { return pModel >= 0 ? (int) std::lround (param (pModel)) : 0; }
+
     void trigger (int v)
     {
+        // the measured models: the knobs scale them around their defaults
+        const float tone = std::pow (2.0f, (param (pTone) - 50.0f) / 50.0f);
+        if (model() == 1)
+        {
+            snappy[v].setTone (tone);
+            snappy[v].trigger (param (pSpread), param (pBurstDecay) / 8.0f, param (pTailDecay) / 220.0f, param (pTailMix) / 60.0f);
+        }
+        else if (model() == 2)
+        {
+            clack[v].setTone (tone);
+            clack[v].trigger (param (pBurstDecay) / 8.0f, param (pTailDecay) / 220.0f, param (pTailMix) / 60.0f);
+        }
         burstEnv[v] = 1.0f;
         burstsLeft[v] = kBursts;      // this one plus two more
         burstTimer[v] = 0.0;
@@ -68,6 +96,9 @@ private:
     }
 
     aquanode::ModuleVoicePool pool;
+    int pModel { -1 };
+    aquanode::snapdrums::SnappyClap snappy [aquanode::kMaxVoices];
+    aquanode::snapdrums::Snap clack [aquanode::kMaxVoices];
     float burstEnv [aquanode::kMaxVoices] {};
     float tailEnv  [aquanode::kMaxVoices] {};
     int burstsLeft [aquanode::kMaxVoices] {};

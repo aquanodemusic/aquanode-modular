@@ -81,6 +81,8 @@ class FullInterface : public SynthSection, public HeaderSection::Listener,
 
 
     void tabSelected(int index) override;
+    // Vita FX: only the effects page (no tabs, voices, modulation or keyboard)
+    void setEffectOnly(bool effect_only) { effect_only_ = effect_only; if (effect_only && modulation_manager_) tabSelected(1); resized(); }
     void clearTemporaryTab(int current_tab) override;
 
     void effectsMoved() override;
@@ -143,6 +145,7 @@ class FullInterface : public SynthSection, public HeaderSection::Listener,
 
     std::unique_ptr<Component> standalone_settings_section_;
 
+    bool effect_only_ = false;
     std::unique_ptr<HeaderSection> header_;
     std::unique_ptr<SynthesisInterface> synthesis_interface_;
     std::unique_ptr<MasterControlsInterface> master_controls_interface_;

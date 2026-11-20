@@ -2,6 +2,8 @@
 
 using namespace aquanode;
 
+static constexpr float kSnapKickGain = 1.0f;   // Snap Kick next to Classic
+
 void KickModule::processVoiceSample (int v, const StereoFrame* inputs, StereoFrame* outputs)
 {
     // voice-steal de-click: a muted voice ramps out over a few ms instead of
@@ -27,6 +29,14 @@ void KickModule::renderVoice (int v, const StereoFrame* inputs, StereoFrame* out
     if (trigIn > 0.5f && lastTrig[v] <= 0.5f)
         trigger (v);
     lastTrig[v] = trigIn;
+
+    if (snapModel())
+    {
+        const float y = snapKick[v].process() * kSnapKickGain;
+        outputs[0][0] = y;
+        outputs[0][1] = y;
+        return;
+    }
 
     if (ampEnv[v] < 1.0e-5f && clickSamples[v] <= 0)
     {
@@ -71,7 +81,9 @@ static ModuleDescriptor kickDescriptor()
     d.description =
         "Classic analog kick: a sine with an exponential pitch-drop envelope, a click transient and "
         "tanh drive. Trig In takes a Clock, Euclid or Step Seq gate; it also fires on MIDI "
-        "note-on, so it is polyphonic from the keyboard and mono from a sequencer. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a hit, alongside Trig In.";
+        "note-on, so it is polyphonic from the keyboard and mono from a sequencer. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a hit, alongside Trig In. "
+        "Model Snap Kick plays a kick-clap measured from a drum track: a sine swept down to its note, held, then cut short, "
+        "with a bright crack on top - Tune, Drop, P Decay and Decay shape the kick, Click is the crack, Drive the saturation.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 4;
     d.sockets = {
@@ -87,7 +99,8 @@ static ModuleDescriptor kickDescriptor()
         makeRotary ("click",      "Click",    0.0f, 100.0f, 30.0f, 1, "%"),
         makeRotary ("drive",      "Drive",    0.0f, 100.0f, 20.0f, 1, "%")
     ,
-        makeRotary ("voices", "Voices", 1.0f, (float) kMaxVoices, (float) kMaxVoices, 1, {}, false, 1.0f).noMod()
+        makeRotary ("voices", "Voices", 1.0f, (float) kMaxVoices, (float) kMaxVoices, 1, {}, false, 1.0f).noMod(),
+        makeCombo ("model", "Model", { "Classic", "Snap Kick" }, 0, 1, 2).noMod()
     };
     d.params.push_back (makeOutputTrim (-12.0f));   // brought down to sit with the other sources
     return d;

@@ -60,6 +60,8 @@ SynthGuiInterface::SynthGuiInterface(SynthBase* synth, bool use_gui) : synth_(sy
       lfo_sources[i] = synth->getLfoSource(i);
     SynthGuiData synth_data(synth_);
     gui_ = std::make_unique<FullInterface>(&synth_data);
+    if (synth->getEngine() && synth->getEngine()->isEffectOnly())
+      gui_->setEffectOnly(true);
   }
 }
 

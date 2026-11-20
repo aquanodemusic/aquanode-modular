@@ -166,7 +166,8 @@ public:
             makeRotary ("beat", "Beat", 0.0f, 1.0f, 0.3f, 2),
             makeRotary ("width", "Width", 0.0f, 1.0f, 0.5f, 2),
             makeRotary ("tune", "Tune", -50.0f, 50.0f, 0.0f, 2, "ct"),
-            makeRotary ("partials", "Partials", 8.0f, 64.0f, 48.0f, 2, {}, false, 1.0f).noMod()
+            makeRotary ("partials", "Partials", 8.0f, 64.0f, 48.0f, 2, {}, false, 1.0f).noMod(),
+            makeOutputTrim (5.0f)   // 6.7.0: up to the other pianos
         };
         return d;
     }

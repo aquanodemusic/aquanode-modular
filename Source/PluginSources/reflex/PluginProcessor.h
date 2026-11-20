@@ -6,8 +6,10 @@
 #include "Randomizer.h"
 #include <random>
 
-class ReflexProcessor : public juce::AudioProcessor {
+class ReflexProcessor : public juce::AudioProcessor,
+                        public aquanode::MpeReceiver {   // (Aquanode: MPE once a member channel plays)
 public:
+  void enableMpe(bool on) override { engine.mpe = on; }
   ReflexProcessor();
   ~ReflexProcessor() override = default;
 

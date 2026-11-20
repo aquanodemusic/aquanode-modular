@@ -29,8 +29,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PhorestAudioProcessor::creat
     juce::NormalisableRange<float> sweepRange(0.01f, 100.0f);
     sweepRange.setSkewForCentre(10.0f); // 12 o'clock = 1 Hz
     params.push_back(std::make_unique<juce::AudioParameterFloat>("sweepFreq", "Sweep Freq", sweepRange, 0.25f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("minDepth", "Min Depth", 0.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("maxDepth", "Max Depth", 0.0f, 1.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("minDepth", "Low Depth", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("maxDepth", "High Depth", 0.0f, 1.0f, 1.0f));
     // freqRange is now the maximum sweep frequency in Hz (log-skewed).
     // Centre of the knob = 1500 Hz → classic phaser territory.
     // Low values keep the sweep in the bass; high values open it up to air/treble.

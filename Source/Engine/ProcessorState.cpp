@@ -232,6 +232,9 @@ std::unique_ptr<juce::XmlElement> AquanodeModularAudioProcessor::buildPatchXml (
     root->setAttribute ("version", 1);
     // the patch's own tempo (the top bar's BPM box), used where no host gives one
     root->setAttribute ("bpm", patchBpm.load());
+    // latency compensation (6.7.12): the Patch menu's switch (older patches: off)
+    if (latencyCompensation.load (std::memory_order_relaxed))
+        root->setAttribute ("latencyCompensation", 1);
 
     // the colours travel with the patch (and with the session the app and a DAW keep)
     {
@@ -377,6 +380,7 @@ void AquanodeModularAudioProcessor::applyPatchXml (const juce::XmlElement& xml,
     clearPatch();
     patchName = "Patch";   // a patch never stores a name; importPatchFrom* name it after its file
     patchBpm.store (juce::jlimit (20.0, 400.0, xml.getDoubleAttribute ("bpm", 120.0)));   // older patches: 120
+    latencyCompensation.store (xml.getBoolAttribute ("latencyCompensation", false), std::memory_order_relaxed);   // (the graph is rebuilt below)
 
     // its colours; a patch saved before they were kept with it leaves the
     // current ones as they are

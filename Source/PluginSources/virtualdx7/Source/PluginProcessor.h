@@ -332,6 +332,10 @@ public:
     // whenever the emulator takes over from the native engine.
     void setFunctions   (const FunctionSettings& f);
     void setDcBlockHz   (float hz) { native_.setDcBlockHz (hz); }
+    // MPE (Aquanode): the native engine only - the emulated firmware hears
+    // every channel as channel 1, without the member channels' bend and pressure
+    void setMpe (bool on) { mpe_ = on; native_.setMpe (on); }
+    bool mpe() const { return mpe_; }
 
     // Display readback (audio thread writes, any thread reads).
     void getLcd (char line1[17], char line2[17]) const;
@@ -375,6 +379,7 @@ private:
     // this way the callbacks go first and the client second.
     vdx7::MtsEspClient       mts_;
     vdx7native::NativeEngine native_;
+    bool mpe_ { false };
     std::atomic<bool> emulatorWanted_ { false };
     uint8_t nativeVced_[155] {};
 
@@ -409,8 +414,10 @@ private:
 //  juce::AudioProcessor
 // ============================================================================
 class VDX7AudioProcessor : public juce::AudioProcessor,
-                           public juce::ChangeBroadcaster
+                           public juce::ChangeBroadcaster,
+                           public aquanode::MpeReceiver     // (Aquanode: MPE once a member channel plays, native engine)
 {public:
+    void enableMpe (bool on) override { engine_.setMpe (on); }
     VDX7AudioProcessor();
     ~VDX7AudioProcessor() override;
 

@@ -18,7 +18,7 @@
 //
 // The output runs Min..Max (0..1 by default). A cable into a knob maps that
 // onto the knob's WHOLE range - 0 is the knob's minimum, 1 its maximum,
-// wherever the knob itself is set - so Min and Max are the part of the knob's
+// wherever the knob itself is set - so Low and High are the part of the knob's
 // range the curve covers. The cable's depth blends between the knob's own
 // setting (0%) and the curve (100%, the default); a negative depth flips it.
 //

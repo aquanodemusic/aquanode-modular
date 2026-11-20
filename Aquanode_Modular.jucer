@@ -2,7 +2,7 @@
 
 <JUCERPROJECT id="GZWYPf" name="Aquanode Modular" projectType="audioplug" useAppConfig="0"
               pluginName="Aquanode Modular" pluginManufacturerCode="Aqnd" pluginCode="Aqmo"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="6.3.0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="6.9.1"
               companyName="aquanodemusic" companyCopyright="none" companyEmail="node.aqua@gmail.com"
               pluginFormats="buildStandalone,buildVST3" pluginCharacteristicsValue="pluginIsSynth,pluginProducesMidiOut,pluginWantsMidiIn">
   <MAINGROUP id="m2RO6u" name="Aquanode Modular">
@@ -37,11 +37,13 @@
       <FILE id="TmqINC" name="PluginProcessor.h" compile="0" resource="0" file="Source/Engine/PluginProcessor.h"/>
       <FILE id="aq1539" name="ProcessorAudio.cpp" compile="1" resource="0" file="Source/Engine/ProcessorAudio.cpp"/>
       <FILE id="aqd461" name="ProcessorGraph.cpp" compile="1" resource="0" file="Source/Engine/ProcessorGraph.cpp"/>
+      <FILE id="aqe7dec9" name="StandaloneInput.cpp" compile="1" resource="0" file="Source/Engine/StandaloneInput.cpp"/>
       <FILE id="aqdb4e" name="ProcessorHistory.cpp" compile="1" resource="0" file="Source/Engine/ProcessorHistory.cpp"/>
       <FILE id="aq6859" name="ProcessorPatch.cpp" compile="1" resource="0" file="Source/Engine/ProcessorPatch.cpp"/>
       <FILE id="aq73a4" name="ProcessorState.cpp" compile="1" resource="0" file="Source/Engine/ProcessorState.cpp"/>
       <FILE id="aq86d3" name="ProcessorVoices.cpp" compile="1" resource="0" file="Source/Engine/ProcessorVoices.cpp"/>
       <FILE id="aqTun1" name="Tuning.cpp" compile="1" resource="0" file="Source/Engine/Tuning.cpp"/>
+      <FILE id="aqMemU1" name="MemoryUsage.cpp" compile="1" resource="0" file="Source/Engine/MemoryUsage.cpp"/>
       <FILE id="aqTun2" name="Tuning.h" compile="0" resource="0" file="Source/Engine/Tuning.h"/>
     </GROUP>
     <GROUP id="{8997C715-FA54-DCDC-1266-75DFE96E139A}" name="Modules">
@@ -57,6 +59,11 @@
           <FILE id="aqn1c" name="ADelaySRModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Delays/ADelaySRModule.cpp"/>
           <FILE id="aqn1h" name="ADelaySRModule.h" compile="0" resource="0" file="Source/Modules/Effects/Delays/ADelaySRModule.h"/>
           <FILE id="129c6d" name="CrossDelayModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Delays/CrossDelayModule.cpp"/>
+          <FILE id="aq91624f" name="BeatRepeatModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Delays/BeatRepeatModule.cpp"/>
+          <FILE id="aqc69dd8" name="StutterModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Glitch/StutterModule.cpp"/>
+          <FILE id="aqa84168" name="ReverserModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Glitch/ReverserModule.cpp"/>
+          <FILE id="aq185ed3" name="TapeStopModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Glitch/TapeStopModule.cpp"/>
+          <FILE id="aq00089f" name="MultibandDelayModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Delays/MultibandDelayModule.cpp"/>
           <FILE id="df2b6f" name="CrossDelayModule.h" compile="0" resource="0" file="Source/Modules/Effects/Delays/CrossDelayModule.h"/>
           <FILE id="FIgH2V" name="DelayModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Delays/DelayModule.cpp"/>
           <FILE id="UaTqLz" name="DelayModule.h" compile="0" resource="0" file="Source/Modules/Effects/Delays/DelayModule.h"/>
@@ -76,6 +83,7 @@
           <FILE id="aqg6c" name="WaveshaperModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Distortion/WaveshaperModule.cpp"/>
           <FILE id="aqg6h" name="WaveshaperModule.h" compile="0" resource="0" file="Source/Modules/Effects/Distortion/WaveshaperModule.h"/>
           <FILE id="aqspf1" name="SplineFolderModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Distortion/SplineFolderModule.cpp"/>
+          <FILE id="aq264f26" name="NoiseExciterModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Exciters/NoiseExciterModule.cpp"/>
         </GROUP>
         <GROUP id="{73A27EF5-A430-45C0-6479-F036A353FD6A}" name="Dynamics">
           <FILE id="aqx08c" name="CompressorModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Dynamics/CompressorModule.cpp"/>
@@ -121,6 +129,7 @@
         </GROUP>
         <GROUP id="{2B56FFDE-3EBE-A9BE-19CB-95892AD1B1F1}" name="Resonators">
           <FILE id="aqx15c" name="VocoderModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Resonators/VocoderModule.cpp"/>
+          <FILE id="aq9f2e83" name="ModalBodyModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Resonators/ModalBodyModule.cpp"/>
           <FILE id="aqx15h" name="VocoderModule.h" compile="0" resource="0" file="Source/Modules/Effects/Resonators/VocoderModule.h"/>
         </GROUP>
         <GROUP id="{7434066B-9424-10F5-1DBA-A0E122245E76}" name="Reverbs">
@@ -137,6 +146,8 @@
           <FILE id="tu736V" name="ReverbModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/ReverbModule.cpp"/>
           <FILE id="ngQkv1" name="ReverbModule.h" compile="0" resource="0" file="Source/Modules/Effects/Reverbs/ReverbModule.h"/>
           <FILE id="315b54" name="SmoothHallModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/SmoothHallModule.cpp"/>
+          <FILE id="aqaf63a7" name="BloomReverbModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/BloomReverbModule.cpp"/>
+          <FILE id="aqa7f5b4" name="ShimmerReverbModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/ShimmerReverbModule.cpp"/>
           <FILE id="6a4d51" name="SmoothHallModule.h" compile="0" resource="0" file="Source/Modules/Effects/Reverbs/SmoothHallModule.h"/>
           <FILE id="aqn3c" name="SpringerModule.cpp" compile="1" resource="0" file="Source/Modules/Effects/Reverbs/SpringerModule.cpp"/>
           <FILE id="aqn3h" name="SpringerModule.h" compile="0" resource="0" file="Source/Modules/Effects/Reverbs/SpringerModule.h"/>
@@ -187,6 +198,7 @@
           <FILE id="aqb02h" name="BellEQModule.h" compile="0" resource="0" file="Source/Modules/Filters/EQ/BellEQModule.h"/>
           <FILE id="7b1d4b" name="ResonanceSuppressorModule.cpp" compile="1" resource="0" file="Source/Modules/Filters/EQ/ResonanceSuppressorModule.cpp"/>
           <FILE id="5222e2" name="ShelfEQModule.cpp" compile="1" resource="0" file="Source/Modules/Filters/EQ/ShelfEQModule.cpp"/>
+          <FILE id="aq9075cc" name="FilterTableModule.cpp" compile="1" resource="0" file="Source/Modules/Filters/EQ/FilterTableModule.cpp"/>
           <FILE id="86b21b" name="ShelfEQModule.h" compile="0" resource="0" file="Source/Modules/Filters/EQ/ShelfEQModule.h"/>
         </GROUP>
         <GROUP id="{99BCF517-6C94-B2D2-E62C-A102729719DE}" name="Filters">
@@ -226,15 +238,31 @@
         <FILE id="7b1d50" name="DriveCore.h" compile="0" resource="0" file="Source/Modules/Shared/DriveCore.h"/>
         <FILE id="9c3774" name="DXDisplays.h" compile="0" resource="0" file="Source/Modules/Shared/DXDisplays.h"/>
         <FILE id="e32e30" name="DXNativeFM.h" compile="0" resource="0" file="Source/Modules/Shared/DXNativeFM.h"/>
+        <FILE id="v64s01" name="PhysDrumSynth.h" compile="0" resource="0" file="Source/Modules/Shared/PhysDrumSynth.h"/>
+        <FILE id="aq67cfee" name="RotaryCabinet.h" compile="0" resource="0" file="Source/Modules/Shared/RotaryCabinet.h"/>
+        <FILE id="aqe3467c" name="StudioVoicing.h" compile="0" resource="0" file="Source/Modules/Shared/StudioVoicing.h"/>
+        <FILE id="aq0934bb" name="HarpString.h" compile="0" resource="0" file="Source/Modules/Shared/HarpString.h"/>
+        <FILE id="aq327efc" name="SnapDrums.h" compile="0" resource="0" file="Source/Modules/Shared/SnapDrums.h"/>
+        <FILE id="v64s02" name="PhysDrumPresets.h" compile="0" resource="0" file="Source/Modules/Shared/PhysDrumPresets.h"/>
+        <FILE id="v64s03" name="PhysInstruments.h" compile="0" resource="0" file="Source/Modules/Shared/PhysInstruments.h"/>
+        <FILE id="v64s05" name="PhysInstrumentEngines.h" compile="0" resource="0" file="Source/Modules/Shared/PhysInstrumentEngines.h"/>
+        <FILE id="v64s04" name="PhysInstrumentData.h" compile="0" resource="0" file="Source/Modules/Shared/PhysInstrumentData.h"/>
         <FILE id="3950ce" name="VintageDSP.h" compile="0" resource="0" file="Source/Modules/Shared/VintageDSP.h"/>
+        <FILE id="aq6fd378" name="FxKit.h" compile="0" resource="0" file="Source/Modules/Shared/FxKit.h"/>
+        <FILE id="aq3a3970" name="MidiTake.h" compile="0" resource="0" file="Source/Modules/Shared/MidiTake.h"/>
+        <FILE id="aq061447" name="LookPalette.h" compile="0" resource="0" file="Source/Modules/Shared/LookPalette.h"/>
       </GROUP>
       <GROUP id="{F5AF9BAF-586B-09E9-B458-03A1B5BFE4A2}" name="SoundGeneration">
         <GROUP id="{9FFC53FC-0579-55ED-CBF7-3822045B2FFF}" name="Drums">
+          <FILE id="v64d01" name="DrumPadModules.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Drums/DrumPadModules.cpp"/>
+          <FILE id="v64d02" name="DrumPadModules.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Drums/DrumPadModules.h"/>
           <FILE id="aqn01c" name="ClapModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Drums/ClapModule.cpp"/>
           <FILE id="aqn01h" name="ClapModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Drums/ClapModule.h"/>
           <FILE id="aqx12c" name="HatsModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Drums/HatsModule.cpp"/>
           <FILE id="aqx12h" name="HatsModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Drums/HatsModule.h"/>
           <FILE id="aqx09c" name="KickModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Drums/KickModule.cpp"/>
+          <FILE id="aq331941" name="DrumMorphEngine.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Drums/DrumMorphEngine.h"/>
+          <FILE id="aq16278c" name="DrumMorphModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Drums/DrumMorphModule.cpp"/>
           <FILE id="aqx09h" name="KickModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Drums/KickModule.h"/>
           <FILE id="aqn00c" name="SnareModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Drums/SnareModule.cpp"/>
           <FILE id="aqn00h" name="SnareModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Drums/SnareModule.h"/>
@@ -274,9 +302,11 @@
           <FILE id="aqn04h" name="UnisonModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Oscillators/UnisonModule.h"/>
           <FILE id="2ae930" name="WarpOscModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/WarpOscModule.cpp"/>
           <FILE id="r4nd01" name="RandomPresetModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/RandomPresetModule.cpp"/>
+          <FILE id="aqa5b014" name="PresetCloudModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Oscillators/PresetCloudModule.cpp"/>
           <FILE id="26594a" name="WarpOscModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/Oscillators/WarpOscModule.h"/>
         </GROUP>
         <GROUP id="{049A0FCD-13DF-ECFE-7C2D-F0342E4118E8}" name="PhysicalModels">
+          <FILE id="v64i01" name="PhysInstrumentModules.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/PhysInstrumentModules.cpp"/>
           <FILE id="aqn06c" name="BowedModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/BowedModule.cpp"/>
           <FILE id="aqn06h" name="BowedModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/BowedModule.h"/>
           <FILE id="aqb07c" name="DropletsModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/DropletsModule.cpp"/>
@@ -284,6 +314,10 @@
           <FILE id="e54e4b" name="FeltPianoModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/FeltPianoModule.cpp"/>
           <FILE id="7cac8e" name="FeltPianoModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/FeltPianoModule.h"/>
           <FILE id="7b1d53" name="GrandPianoModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/GrandPianoModule.cpp"/>
+          <FILE id="aq77d578" name="ElectricPianoModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/ElectricPianoModule.cpp"/>
+          <FILE id="aq8b1c02" name="DrawbarOrganModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/DrawbarOrganModule.cpp"/>
+          <FILE id="aq1d0912" name="SoftPadModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Ambient/SoftPadModule.cpp"/>
+          <FILE id="aqf7f1d1" name="SummerWindsModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/Ambient/SummerWindsModule.cpp"/>
           <FILE id="49faae" name="HardPianoModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/HardPianoModule.cpp"/>
           <FILE id="b99797" name="HardPianoModule.h" compile="0" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/HardPianoModule.h"/>
           <FILE id="fd4c46" name="MidPianoModule.cpp" compile="1" resource="0" file="Source/Modules/SoundGeneration/PhysicalModels/MidPianoModule.cpp"/>
@@ -333,6 +367,7 @@
           <FILE id="aq77686b" name="InspectorModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Analysis/InspectorModule.cpp"/>
           <FILE id="aq3c970b" name="InspectorModule.h" compile="0" resource="0" file="Source/Modules/Utilities/Analysis/InspectorModule.h"/>
           <FILE id="tun0m1" name="TunerModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Analysis/TunerModule.cpp"/>
+          <FILE id="cpuRam1" name="CpuRamModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Analysis/CpuRamModule.cpp"/>
           <FILE id="tun0m2" name="TunerModule.h" compile="0" resource="0" file="Source/Modules/Utilities/Analysis/TunerModule.h"/>
         </GROUP>
         <GROUP id="{AD996AB3-C071-9BA5-8B2E-A079DDC586EA}" name="AudioTools">
@@ -358,8 +393,10 @@
         </GROUP>
         <GROUP id="{1FD1E48C-6E9E-77DB-8D9A-5A2DF732688F}" name="Control">
           <FILE id="aqc02c" name="CurveCVModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Control/CurveCVModule.cpp"/>
+          <FILE id="aq4c8c55" name="AutomationLanesModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Control/AutomationLanesModule.cpp"/>
           <FILE id="aqc02h" name="CurveCVModule.h" compile="0" resource="0" file="Source/Modules/Utilities/Control/CurveCVModule.h"/>
           <FILE id="aqd00c" name="DawModModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Control/DawModModule.cpp"/>
+          <FILE id="aq6fccaf" name="TempoModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Control/TempoModule.cpp"/>
           <FILE id="aqd00h" name="DawModModule.h" compile="0" resource="0" file="Source/Modules/Utilities/Control/DawModModule.h"/>
           <FILE id="aqm01c" name="DCOffsetModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/Control/DCOffsetModule.cpp"/>
           <FILE id="aqm01h" name="DCOffsetModule.h" compile="0" resource="0" file="Source/Modules/Utilities/Control/DCOffsetModule.h"/>
@@ -411,11 +448,20 @@
           <FILE id="457ddf" name="DiscardMidiModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/DiscardMidiModule.cpp"/>
           <FILE id="c3d32c" name="DiscardMidiModule.h" compile="0" resource="0" file="Source/Modules/Utilities/MIDI/DiscardMidiModule.h"/>
           <FILE id="7b1d4d" name="GraphicMidiAddModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/GraphicMidiAddModule.cpp"/>
+          <FILE id="aq8229b7" name="MidiRainModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/MidiRainModule.cpp"/>
+          <FILE id="aq171460" name="MidiBloomModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/MidiBloomModule.cpp"/>
+          <FILE id="aqb6f472" name="MidiStampModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/MidiStampModule.cpp"/>
+          <FILE id="aq067ff2" name="MidiStampData.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/MidiStampData.cpp"/>
+          <FILE id="aq441f78" name="MidiStampData.h" compile="0" resource="0" file="Source/Modules/Utilities/MIDI/MidiStampData.h"/>
           <FILE id="aqm00c" name="MidiAddModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/MidiAddModule.cpp"/>
           <FILE id="aqm00h" name="MidiAddModule.h" compile="0" resource="0" file="Source/Modules/Utilities/MIDI/MidiAddModule.h"/>
           <FILE id="aqMp1e" name="MpeModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/MpeModule.cpp"/>
           <FILE id="aqNr1d" name="NoteRandomModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/NoteRandomModule.cpp"/>
           <FILE id="aqp01c" name="PianoRollModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/PianoRollModule.cpp"/>
+          <FILE id="aq6bbc5a" name="FruitArrangerLinks.h" compile="0" resource="0" file="Source/Modules/Utilities/MIDI/FruitArrangerLinks.h"/>
+          <FILE id="aq981183" name="FruitArrangerModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/FruitArrangerModule.cpp"/>
+          <FILE id="v64m01" name="MpePianoRollModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/MpePianoRollModule.cpp"/>
+          <FILE id="v64m02" name="MpePianoRollModule.h" compile="0" resource="0" file="Source/Modules/Utilities/MIDI/MpePianoRollModule.h"/>
           <FILE id="aqp01h" name="PianoRollModule.h" compile="0" resource="0" file="Source/Modules/Utilities/MIDI/PianoRollModule.h"/>
           <FILE id="aqg1c" name="VelocityModule.cpp" compile="1" resource="0" file="Source/Modules/Utilities/MIDI/VelocityModule.cpp"/>
           <FILE id="aqg1h" name="VelocityModule.h" compile="0" resource="0" file="Source/Modules/Utilities/MIDI/VelocityModule.h"/>
@@ -441,6 +487,7 @@
       <FILE id="aqAD1c" name="AndroidDocuments.cpp" compile="1" resource="0" file="Source/Platform/AndroidDocuments.cpp"/>
       <FILE id="aqAD1h" name="AndroidDocuments.h" compile="0" resource="0" file="Source/Platform/AndroidDocuments.h"/>
       <FILE id="a3e0eb" name="AndroidFileChooserShim.h" compile="0" resource="0" file="Source/Platform/AndroidFileChooserShim.h"/>
+      <FILE id="aqc6e2f1" name="AndroidPerfHint.h" compile="0" resource="0" file="Source/Platform/AndroidPerfHint.h"/>
     </GROUP>
     <GROUP id="{FD384C5B-4A24-500E-D188-55341E0DC0A5}" name="Plugins">
       <GROUP id="{5F02DFB9-676C-69FD-961A-FD3E256CA428}" name="AliasSynth">
@@ -531,6 +578,8 @@
         <FILE id="708b15" name="HostedPlugin.cpp" compile="1" resource="0" file="Source/Plugins/Host/HostedPlugin.cpp"/>
         <FILE id="446495" name="HostedPlugin.h" compile="0" resource="0" file="Source/Plugins/Host/HostedPlugin.h"/>
         <FILE id="dd30c0" name="PatchKit.cpp" compile="1" resource="0" file="Source/Plugins/Host/PatchKit.cpp"/>
+        <FILE id="v64w01" name="WholePluginPatch.cpp" compile="1" resource="0" file="Source/Plugins/Host/WholePluginPatch.cpp"/>
+        <FILE id="v64w02" name="WholePluginPatch.h" compile="0" resource="0" file="Source/Plugins/Host/WholePluginPatch.h"/>
         <FILE id="407ed5" name="PatchKit.h" compile="0" resource="0" file="Source/Plugins/Host/PatchKit.h"/>
         <FILE id="42632b" name="PatchWidgets.cpp" compile="1" resource="0" file="Source/Plugins/Host/PatchWidgets.cpp"/>
         <FILE id="765a06" name="PatchWidgets.h" compile="0" resource="0" file="Source/Plugins/Host/PatchWidgets.h"/>
@@ -644,6 +693,10 @@
       <GROUP id="{F993C0C6-7B38-6B87-821B-CA1C0BC9879B}" name="SpectralCompress">
         <FILE id="aq60d316" name="PluginSpectralCompress.cpp" compile="1" resource="0" file="Source/Plugins/SpectralCompress/PluginSpectralCompress.cpp"/>
         <FILE id="aq625bdf" name="PluginSpectralCompressConfig.h" compile="0" resource="0" file="Source/Plugins/SpectralCompress/PluginSpectralCompressConfig.h"/>
+      </GROUP>
+      <GROUP id="{6A1F3C20-64A0-4E51-9B7D-5F0E2C9D4A11}" name="SpectralFilter">
+        <FILE id="v64f01" name="PluginSpectralFilter.cpp" compile="1" resource="0" file="Source/Plugins/SpectralFilter/PluginSpectralFilter.cpp"/>
+        <FILE id="v64f02" name="PluginSpectralFilterConfig.h" compile="0" resource="0" file="Source/Plugins/SpectralFilter/PluginSpectralFilterConfig.h"/>
       </GROUP>
       <GROUP id="{C2E3A5A1-B53C-B43F-AC4B-82C823DEEF3C}" name="SpectralStereoize">
         <FILE id="aq670fa7" name="PluginSpectralStereoize.cpp" compile="1" resource="0" file="Source/Plugins/SpectralStereoize/PluginSpectralStereoize.cpp"/>
@@ -765,8 +818,8 @@
         <MODULEPATH id="juce_video" path="../../../../Program Files/JUCE/modules"/>
       </MODULEPATHS>
     </VS2026>
-    <ANDROIDSTUDIO targetFolder="Builds/Android" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidPushNotifications="0" androidVersionCode="630" bigIcon="aqIcn1" smallIcon="aqIcn1" androidScreenOrientation="landscape"
-                   androidMinimumSDK="23" androidTargetSDK="35" androidMicNeeded="1"
+    <ANDROIDSTUDIO targetFolder="Builds/Android" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidPushNotifications="0" androidVersionCode="6901" bigIcon="aqIcn1" smallIcon="aqIcn1" androidScreenOrientation="unspecified"
+                   androidMinimumSDK="23" androidTargetSDK="35" microphonePermissionNeeded="1"
                    androidInternetNeeded="0" androidVibratePermission="0" androidBluetoothScanNeeded="0"
                    androidBluetoothConnectNeeded="0">
       <CONFIGURATIONS>

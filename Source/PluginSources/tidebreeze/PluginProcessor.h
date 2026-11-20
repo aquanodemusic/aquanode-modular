@@ -20,10 +20,12 @@
 #include "TbWaveBank.h"
 
 class TidebreezeAudioProcessor : public juce::AudioProcessor,
+                                 public aquanode::MpeReceiver,     // (Aquanode: MPE once a member channel plays)
                                  private juce::AudioProcessorValueTreeState::Listener,
                                  private juce::AsyncUpdater
 {
 public:
+    void enableMpe (bool on) override { mpeOn = on; }
     TidebreezeAudioProcessor();
     ~TidebreezeAudioProcessor() override;
 
@@ -113,6 +115,7 @@ private:
     struct Voice
     {
         int note = -1; float velocity = 0.0f;
+        int channel = 0;   // MPE: the member channel (2..16) it plays, 0 otherwise
         bool active = false, held = false, sustained = false;
         juce::uint64 age = 0;
         float glideNote = 60.0f, glideTarget = 60.0f;
@@ -161,6 +164,14 @@ private:
     std::vector<int> heldNotes;                  // mono / legato note stack
     float bendSemis = 0.0f;
     bool sustainPedal = false;
+    // MPE (Aquanode), switched on by the host at the first note on a member channel:
+    // channels 2..16 then carry one note each, with its own bend (+-48 semitones, on
+    // top of the global bend) and its own pressure, which opens or closes the filters
+    // (0.7, the MPE Piano Roll's resting pressure, leaves them as the patch has them)
+    bool mpeOn = false;
+    int noteChannel = 0;
+    std::array<float, 17> chanBend {};
+    std::array<float, 17> chanPress = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
     float freePhase[2][2] {};
 
     tb::Arp arp;

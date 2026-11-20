@@ -20,6 +20,7 @@ public:
     void setTempo (double bpm) noexcept { hostBpm = bpm; }
 
     void handleMidi (const juce::MidiMessage& m);
+    void handleMidiOn (const juce::MidiMessage& m, int ch, bool member);
 
     /** Stops everything dead and empties every effect tail. Used when the host
         transport stops, so the sound does not ring on after the DAW does. */
@@ -56,6 +57,19 @@ private:
     juce::uint32 voiceCounter = 0;
 
     float modWheel = 0.0f, aftertouch = 0.0f, pitchBend = 0.0f;
+
+public:
+    // MPE (Aquanode), switched on by the host at the first note on a member
+    // channel: channels 2..16 then carry one note each, with its own bend
+    // (+-48 semitones, on top of the global bend) and its own pressure (in
+    // place of the global aftertouch). Channel 1 stays the global channel.
+    bool mpe = false;
+private:
+    int noteChannel = 0;   // the member channel of the message being handled, 0 otherwise
+    std::array<float, 17> chanBend {};
+    std::array<float, 17> chanPress = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
+    float bendFor (int ch) const noexcept { return pitchBend + (ch >= 2 && ch <= 16 ? chanBend[(size_t) ch] : 0.0f); }
+    float pressureFor (int ch) const noexcept { return ch >= 2 && ch <= 16 && chanPress[(size_t) ch] >= 0.0f ? chanPress[(size_t) ch] : aftertouch; }
 
     // --- arpeggiator
     juce::Array<int> heldNotes, latchedNotes;

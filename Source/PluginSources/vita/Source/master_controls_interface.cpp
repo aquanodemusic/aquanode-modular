@@ -33,8 +33,8 @@
 namespace {
   const std::string kTuningNames[] = {
     "Default",
-    "Just - 7 Limit",
-    "Just - 5 Limit",
+    "Pure - 7 Limit",
+    "Pure - 5 Limit",
     "Pythagorean",
     "Custom"
   };

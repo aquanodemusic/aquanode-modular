@@ -431,7 +431,7 @@ static ModuleDescriptor curveCvDescriptor()
         "them (Curved - drag empty space to bend a segment - Smooth or Step) and how fast it "
         "plays, in Hz or synced bars. Loops, plays once or ping-pongs; Restart In or a note on "
         "Midi In starts it over. A cable into a knob takes it over: 0 to 1 is the knob's whole "
-        "range, wherever the knob is set, and Min/Max narrow that. Cable depth blends between "
+        "range, wherever the knob is set, and Low/High narrow that. Cable depth blends between "
         "the knob's own setting and the curve (100%, the default, is the curve alone); a "
         "negative depth turns it upside down.";
     d.section = ModuleSection::Utility;
@@ -447,8 +447,8 @@ static ModuleDescriptor curveCvDescriptor()
         makeSteppedList ("length", "Length", CurveCVModule::lengthChoices(), 4, 0).visibleWhen ("sync", 1.0f),
         makeCombo  ("mode",   "Mode",   { "Loop", "Once", "Ping-Pong" }, 0, 1, 2),
         makeCombo  ("interp", "Interp", { "Curved", "Smooth", "Step" }, 0, 2, 2),
-        makeRotary ("min",    "Min",    0.0f, 1.0f, 0.0f, 0),
-        makeRotary ("max",    "Max",    0.0f, 1.0f, 1.0f, 0),
+        makeRotary ("min",    "Low",    0.0f, 1.0f, 0.0f, 0),
+        makeRotary ("max",    "High",    0.0f, 1.0f, 1.0f, 0),
         makeButton ("reset",  "Reset",  2, 2)
     };
     return d;

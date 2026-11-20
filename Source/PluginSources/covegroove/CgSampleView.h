@@ -77,10 +77,14 @@ namespace covegroove
                     }
                     p.closeSubPath();
                 }
-                g.setColour (faint.withAlpha (0.22f));
-                g.fillPath (raw);
-                g.setColour (accent.withAlpha (0.85f));     // one flat colour, as the steps
+                // (6.7.7: the waveform as its outline with only a faint fill -
+                // it was one solid colour; as it is, fainter still)
+                g.setColour (faint.withAlpha (0.35f));
+                g.strokePath (raw, juce::PathStrokeType (0.8f));
+                g.setColour (accent.withAlpha (0.12f));
                 g.fillPath (shaped);
+                g.setColour (accent.withAlpha (0.9f));
+                g.strokePath (shaped, juce::PathStrokeType (1.0f));
             }
             else
             {

@@ -119,6 +119,50 @@ namespace covegroove
         std::shared_ptr<juce::FileChooser> chooser;
     };
 
+    // the tweak row over the steps: a lane's sound up close. LANE picks the
+    // lane; on a lane playing a modelled kit (its Sound: 808, 909, Classic
+    // Kit ...) MODEL picks any of the kit's sounds and three knobs move the
+    // model itself (named for what they do). The view shows the lane's sound
+    // as it plays - any lane, any sound - with its loudness over time
+    // (attack, decay and length marked).
+    class PhysRow : public juce::Component, private juce::Timer
+    {
+    public:
+        explicit PhysRow (CoveGrooveProcessor& p);
+        void paint (juce::Graphics&) override;
+        void resized() override;
+        void mouseDown (const juce::MouseEvent&) override;   // the view: hear the lane, or take an ADSR handle
+        void mouseDrag (const juce::MouseEvent&) override;
+        void mouseUp (const juce::MouseEvent&) override;
+        void mouseDoubleClick (const juce::MouseEvent&) override;   // on a handle: the ADSR back to flat
+        void setLane (int lane);
+        int getLane() const { return lane; }
+    private:
+        void timerCallback() override;
+        void rebuild();
+
+        // the lane's ADSR over the view: 0 Attack, 1 Decay / Sustain, 2 Release
+        // start, 3 Release end (shown only once the release starts somewhere)
+        float viewSeconds() const;
+        float timeToX (float t) const;
+        float xToTime (float x) const;
+        float levelToY (float g) const;
+        juce::Point<float> handlePos (int handle, const LaneEnv& e) const;
+        int handleAt (juce::Point<float> p) const;
+        void setEnvParam (const char* what, float value);
+        int dragHandle { -1 };
+        juce::String lastEnvKey;
+        CoveGrooveProcessor& proc;
+        int lane { 0 }, shownKit { -2 }, shownChoice { -1 };
+        juce::ComboBox laneBox, modelBox;
+        std::array<std::unique_ptr<Knob>, 3> knobs;
+        juce::Label hint;
+        juce::Rectangle<int> viewArea;
+        std::shared_ptr<SampleData> shown;
+        juce::String lastKey;
+        float attackS { 0.0f }, decayS { 0.0f }, lengthS { 0.0f };
+    };
+
     class CoveGrooveEditor : public juce::AudioProcessorEditor, private juce::Timer
     {
     public:
@@ -126,8 +170,9 @@ namespace covegroove
         ~CoveGrooveEditor() override;
         void paint (juce::Graphics&) override;
         void resized() override;
+        void mouseDown (const juce::MouseEvent&) override;   // a lane's name: shown in the tweak row
 
-        static constexpr int kWidth = 1100, kHeight = 620;
+        static constexpr int kWidth = 1100, kHeight = 700;
 
     private:
         void timerCallback() override;
@@ -156,6 +201,7 @@ namespace covegroove
         {
             juce::TextButton mute { "M" }, top { "TOP" };
             SampleEditButton edit;
+            juce::TextButton load { "+" };       // a sound file into this lane
             juce::TextButton rnd { "RND" };       // a new pattern for this lane
             juce::Label name;
             juce::ComboBox model;
@@ -168,6 +214,8 @@ namespace covegroove
         std::array<LaneRow, kNumLanes> lanes;
         StepGrid grid;
         SamplePanel samplePanel;
+        PhysRow physRow;
+        juce::Rectangle<int> physArea;
 
         // effects
         juce::ComboBox fxPresetBox;

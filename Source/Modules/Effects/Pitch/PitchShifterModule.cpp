@@ -381,7 +381,7 @@ void PitchShifterModule::processSample (const StereoFrame* inputs, StereoFrame* 
             const float a = dryLine[(size_t) c][(size_t) (i0 & mask)], b = dryLine[(size_t) c][(size_t) ((i0 + 1) & mask)];
             dry = a + (b - a) * f;
         }
-        outputs[0][(size_t) c] = dry * (1.0f - mix) + wet[c] * mix;
+        outputs[0][(size_t) c] = (dry * (1.0f - mix) + wet[c] * mix) * param (pLevel);   // (6.7.11: Level)
     }
 }
 
@@ -412,7 +412,8 @@ static ModuleDescriptor pitchShifterDescriptor()
         makeRotary ("feedback", "Feedback", 0.0f, 95.0f, 0.0f, 1, "%", false, 1.0f),
         makeCombo ("stereo", "Stereo", { "Linked", "Wide" }, 0, 2, 2),
         makeCombo ("dryDelay", "Dry Delay", { "Off", "Match" }, 1, 2, 2),
-        makeRotary ("xfade", "Crossfade", 2.0f, 40.0f, 10.0f, 0, "ms", true).visibleWhen ("algorithm", 1.0f)
+        makeRotary ("xfade", "Crossfade", 2.0f, 40.0f, 10.0f, 0, "ms", true).visibleWhen ("algorithm", 1.0f),
+        makeRotary ("level", "Level", 0.0f, 1.0f, 1.0f, 2).whenMissing (1.0f)   // (6.7.11)
     };
     return d;
 }

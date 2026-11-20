@@ -9,7 +9,7 @@ K5AudioProcessor::K5AudioProcessor()
     resetHarmonics (1);
 
     for (int i = 0; i < numVoices; ++i)
-        synth.addVoice (new K5SynthVoice());
+        { auto* v = new K5SynthVoice(); v->mpe = &mpeState; synth.addVoice (v); }
 
     synth.addSound (new K5Sound());
 
@@ -230,6 +230,13 @@ void K5AudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         applyParametersToVoices();
 
     buffer.clear();
+    if (mpeState.on)   // MPE: each member channel's pressure, for the notes it starts
+        for (const auto m : midi)
+        {
+            const auto msg = m.getMessage();
+            if (msg.isChannelPressure() && msg.getChannel() >= 2)
+                mpeState.press[(size_t) msg.getChannel()] = (float) msg.getChannelPressureValue() / 127.0f;
+        }
     synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
 
     // Master trim — 16 voices x 2 sources x 63 partials adds up fast.

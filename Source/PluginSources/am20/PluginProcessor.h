@@ -5,9 +5,11 @@
 #include "Engine.h"
 #include "PresetIO.h"
 
-class AM20Processor : public juce::AudioProcessor
+class AM20Processor : public juce::AudioProcessor,
+                      public aquanode::MpeReceiver     // (Aquanode: MPE once a member channel plays)
 {
 public:
+    void enableMpe (bool on) override { engine.mpe = on; }
     AM20Processor();
     ~AM20Processor() override = default;
 

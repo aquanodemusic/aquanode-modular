@@ -67,6 +67,16 @@ public:
     void blockStart() override;
     int midiDriverAdvanceEvents (double sr, aquanode::MidiDriverEvent* events, int maxEvents) override;
 
+    //=== Fruit Arranger (6.7.12) ==============================================
+    // Its hidden Song In: while a Fruit Arranger's song plays, 2 + where in the
+    // pattern the roll is (beats), or 1 (no block of it now: silent); with the
+    // song stopped (0 - also what a fresh link reads - or nothing linked) the
+    // roll is its own as before.
+    void processSample (const aquanode::StereoFrame* inputs, aquanode::StereoFrame*) override { songValue = inputs[0][0]; }
+    bool isSongDriven() const { return uiSongDriven.load (std::memory_order_relaxed); }
+    // its number on the arranger (0: on none) - set by the arranger's check
+    std::atomic<int> arrangerNumber { 0 };
+
     //=== editing (message thread) =============================================
     const NoteList& getNotes() const { return notes; }
     void setNotes (NoteList newNotes);              // sorts, clamps and publishes
@@ -155,6 +165,7 @@ private:
     std::array<std::pair<int, float>, 32> previewData {};
 
     std::atomic<double> uiPlayhead { 0.0 };
+    std::atomic<bool> uiSongDriven { false };
     std::atomic<double> uiBpm { 120.0 };
     std::atomic<bool> uiHostTempo { false };
 
@@ -164,6 +175,10 @@ private:
     double position { 0.0 };          // beats into the loop
     bool wasPlaying { false };
     bool listChanged { false };
+
+    float songValue { 0.0f };         // Song In (6.7.12), as read (the arranger sends it two samples ahead)
+    bool songDriven { false };
+    double songPos { -1.0 };          // where the song had us on the last sample (< 0: no block)
 
     double activeEnd[128] {};         // beat the note ends; < 0 = not sounding
     int activeList[128] {};

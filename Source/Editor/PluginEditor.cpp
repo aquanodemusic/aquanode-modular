@@ -1,5 +1,6 @@
 // The editor: the top bar, the sidebar, the patch area and the keys put together,
 // Import / Export Patch, and adding the plugins.
+#include "../Platform/AndroidPerfHint.h"
 #include "PluginEditor.h"
 #include "../Engine/Mutation.h"
 #include "../Presets/EffectAdders.h"
@@ -130,6 +131,146 @@ private:
     juce::Point<int> lastNative;
 };
 
+//==============================================================================
+// Full screen for a card: the card itself, borrowed from the canvas, scaled to
+// fit (centred, black where the shapes differ), with Return to Patch
+class AquanodeModularAudioProcessorEditor::ModuleFullView final : public juce::Component,
+                                                                    private juce::Timer
+{
+public:
+    ModuleFullView (AquanodeModularAudioProcessor& p, PatchCanvas& c, ModuleComponent& cardToShow, std::function<void()> onClose)
+        : processor (p), canvas (c), instanceId (cardToShow.getInstanceId()), typeId (typeOf (instanceId)), close (std::move (onClose))
+    {
+        setOpaque (true);
+        setWantsKeyboardFocus (true);
+        addAndMakeVisible (stage);
+        borrow (cardToShow);
+        back.setButtonText ("Return to Patch");
+        back.setColour (juce::TextButton::buttonColourId, juce::Colour (0xb0141210));
+        back.setAlpha (0.9f);
+        back.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        back.onClick = [this] { if (close) close(); };
+        addAndMakeVisible (back);
+        startTimerHz (5);
+    }
+
+    ~ModuleFullView() override { giveBack(); }
+
+    int bottomReserve { 0 };   // kept clear at the bottom (the keyboard's grip)
+
+    // after the canvas made its cards anew (undo, a loaded preset ...): the
+    // module's new card, if it still has one, else back to the patch
+    void canvasRebuilt()
+    {
+        if (card.getComponent() != nullptr)
+            return;   // (still ours: it was not part of the canvas meanwhile)
+        // (the same module: an id a new patch gave to another one doesn't count)
+        auto* fresh = canvas.moduleCard (instanceId);
+        if (fresh != nullptr && typeOf (instanceId) == typeId)
+        {
+            borrow (*fresh);
+            resized();
+        }
+        else if (close)
+            close();
+    }
+
+    void giveBack()
+    {
+        if (auto* c = card.getComponent())
+        {
+            stage.removeChildComponent (c);
+            canvas.takeCardBack (*c);
+        }
+        card = nullptr;
+    }
+
+    juce::Point<int> nativeSize() const
+    {
+        if (auto* c = card.getComponent())
+            return { juce::jmax (1, c->getWidth()), juce::jmax (1, c->getHeight()) };
+        return { 1, 1 };
+    }
+
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colours::black); }
+
+    // Escape leads back; the rest (Undo, Redo ...) as on the patch
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        if (k.getKeyCode() == juce::KeyPress::escapeKey)
+        {
+            if (close) close();
+            return true;
+        }
+        return canvas.onShortcut != nullptr && canvas.onShortcut (k);
+    }
+
+    // the strip along the top that holds Return to Patch (clear of the card's
+    // own top row, where its full screen icon also leads back)
+    static int stripHeight()
+    {
+       #if JUCE_ANDROID
+        return 32;
+       #else
+        return 26;
+       #endif
+    }
+
+    void resized() override
+    {
+        const auto n = nativeSize();
+        const auto room = getLocalBounds().withTrimmedTop (stripHeight()).withTrimmedBottom (bottomReserve).reduced (2);
+        const float scale = juce::jmax (0.05f, juce::jmin ((float) room.getWidth() / (float) n.x, (float) room.getHeight() / (float) n.y));
+        stage.setBounds (0, 0, n.x, n.y);
+        stage.setTransform (juce::AffineTransform::scale (scale)
+                                .translated ((float) room.getX() + ((float) room.getWidth() - (float) n.x * scale) * 0.5f,
+                                             (float) room.getY() + ((float) room.getHeight() - (float) n.y * scale) * 0.5f));
+        lastNative = n;
+        const int bh = stripHeight() - 8, bw = bh * 5;
+        back.setBounds (getWidth() - bw - 6, 4, bw, bh);
+        back.toFront (false);
+    }
+
+private:
+    juce::String typeOf (int id) const
+    {
+        if (auto* inst = processor.getInstance (id))
+            return inst->descriptor().typeId;
+        return {};
+    }
+
+    void borrow (ModuleComponent& c)
+    {
+        card = &c;
+        c.setInFullView (true);
+        stage.addAndMakeVisible (c);
+        c.setTransform ({});
+        c.setTopLeftPosition (0, 0);
+    }
+
+    void timerCallback() override
+    {
+        auto* c = card.getComponent();
+        if (c == nullptr) { canvasRebuilt(); return; }   // its card was rebuilt or deleted
+        if (c->getTransform() != juce::AffineTransform() || c->getPosition() != juce::Point<int>())
+        {
+            c->setTransform ({});
+            c->setTopLeftPosition (0, 0);
+        }
+        if (nativeSize() != lastNative) resized();   // it opened, closed or grew
+    }
+
+    AquanodeModularAudioProcessor& processor;
+    PatchCanvas& canvas;
+    const int instanceId;
+    const juce::String typeId;
+    juce::Component::SafePointer<ModuleComponent> card;
+    std::function<void()> close;
+    juce::Component stage;
+    juce::TextButton back;
+    juce::Point<int> lastNative;
+};
+
 AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (AquanodeModularAudioProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p),
@@ -164,16 +305,66 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
               return;
           }
 
+          // Fruit Arranger (6.7.12): with every clean piano roll of the patch on it, its cables moved in
+          if (typeId == "util.fruitarranger")
+          {
+              extern int fruitArrangerAddWithLanes (AquanodeModularAudioProcessor&, juce::Point<int>);
+              const int id = fruitArrangerAddWithLanes (processor, spawnPosition());
+              canvas.rebuild();
+              canvas.selectModule (id);
+              return;
+          }
+
+          // Automation Lanes (6.7.11): alone, or with four effects on its lanes
+          if (typeId == "util.autolanes")
+          {
+              juce::PopupMenu menu;
+              menu.addSectionHeader ("Automation Lanes");
+              menu.addItem (1, "Only this module");
+              menu.addItem (2, "With four random effects on its lanes");
+              juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
+              menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&sidebar).withMousePosition(), [safe] (int r)
+              {
+                  if (safe == nullptr || r == 0) return;
+                  auto& ed = *safe;
+                  const auto at = ed.spawnPosition();
+                  int id;
+                  if (r == 2)
+                  {
+                      extern int autoLanesAddWithEffects (AquanodeModularAudioProcessor&, juce::Point<int>, juce::uint32);
+                      id = autoLanesAddWithEffects (ed.processor, at, (juce::uint32) juce::Random::getSystemRandom().nextInt());
+                  }
+                  else id = ed.processor.addModule ("util.autolanes", at);
+                  ed.canvas.rebuild();
+                  if (r == 2) ed.canvas.fitToContent();
+                  ed.canvas.selectModule (id);
+              });
+              return;
+          }
+
           // clicking a sidebar name opens one instance in the patch map,
           // near the top left of what is in view
           const auto pos = spawnPosition();
           const int newId = processor.addModule (typeId, pos);
+          wireNewSynthToOutput (newId);
           canvas.rebuild();
           canvas.selectModule (newId);
       }),
       canvas (p),
       mutatorPanel (p, canvas)
 {
+    // the first patch is made before the standalone app finishes setting up
+    // its device input: settle the input's mute for it now
+    processor.refreshStandaloneInputMute();
+
+    // "Don't slow down" (Android performance hint): the remembered switch,
+    // and the once-a-second keeper of its session
+    if (aquanode::perfhint::available())
+    {
+        aquanode::perfhint::switchedOn().store (juce::PropertiesFile (settingsOptions()).getBoolValue ("perf.hint", true));
+        aquanode::shutdownSafe<aquanode::perfhint::Updater>();
+    }
+
     // the colours chosen before (the app's settings), once per run
     static bool coloursLoaded = false;
     if (! coloursLoaded)
@@ -260,18 +451,24 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     addChildComponent (*midiKeyboard);
     midiKeyboard->setVisible (keyboardVisible);
 
-    for (auto* b : { &initButton, &regionButton, &moveOnlyButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton,
-                     &mutatorButton, &sidebarButton, &keysButton, &undoPatchButton, &redoPatchButton })
+    // the top bar: three menus, CPU (a menu too), Undo / Redo, the tempo, the
+    // zoom. (Initialize ... Mutator are pressed from the menus; Full Screen is
+    // the standalone window's own maximise button now, and F11)
+    // (6.7.7: Delete and Move Only back on the bar - pressed all the time;
+    // Undo / Redo in the Edit menu, the zoom in the View menu)
+    for (auto* b : { &patchMenuButton, &editMenuButton, &viewMenuButton, &pluginBlockButton, &deleteButton, &moveOnlyButton })
         toolbarStrip.content.addAndMakeVisible (b);
+    deleteButton.setButtonText ("Delete");
     toolbarStrip.content.addAndMakeVisible (bpmBox);
-    if (hasFullScreenButton())
-    {
-        toolbarStrip.content.addAndMakeVisible (fullScreenButton);
-        fullScreenButton.setTooltip ("The window over the whole screen, and back (F11)");
-        fullScreenButton.setClickingTogglesState (false);
-        fullScreenButton.onClick = [this] { toggleFullScreen(); };
-    }
+    patchMenuButton.setTooltip ("Initialize Patch, Import Patch, Export Patch, Render");
+    editMenuButton.setTooltip ("Clone Selected, Delete Selected, Region Select, Move Only");
+    viewMenuButton.setTooltip ("Keys, Sidebar, Mutator");
+    patchMenuButton.onClick = [this] { showPatchMenu(); };
+    editMenuButton.onClick = [this] { showEditMenu(); };
+    viewMenuButton.onClick = [this] { showViewMenu(); };
     canvas.onPluginFullSize = [this] (int id) { showPluginFullSize (id); };
+    canvas.onModuleFullScreen = [this] (int id) { toggleModuleFullScreen (id); };
+    canvas.onRebuilt = [this] { if (moduleFullView != nullptr) moduleFullView->canvasRebuilt(); };
 
     // Region Select: a drag on empty space draws a box and selects the modules
     // it touches, rather than moving the view
@@ -286,6 +483,7 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     {
         processor.uiRegionSelect = regionButton.getToggleState();
         canvas.setRegionSelect (processor.uiRegionSelect);
+        refreshEditMenuButton();
     };
     // Move Only: every drag, wheel and pinch moves and zooms the view, over
     // cards and plugins too (one zoomed up to fill the area keeps nothing back)
@@ -299,7 +497,9 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     {
         processor.uiMoveOnly = moveOnlyButton.getToggleState();
         canvas.setMoveOnly (processor.uiMoveOnly);
+        refreshEditMenuButton();
     };
+    refreshEditMenuButton();
     cloneButton.setTooltip ("A copy of the selected module (or of every module a Region Select box holds, with the cables between them)");
     deleteButton.setTooltip ("Delete the selected module (or every module a Region Select box holds) with its cables");
 
@@ -307,6 +507,28 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     renderButton.setTooltip ("Render the patch to a WAV or FLAC file: every Piano Roll with notes that is patched "
                              "somewhere, played through once from the start, and the tails after it");
     renderButton.onClick = [this] { showRenderPanel(); };
+    pluginBlockButton.setTooltip ("CPU: the Plugin Block (the block every plugin card runs in behind the patch, unless its "
+                                  "own Block pill says otherwise - larger blocks cost much less CPU for plugins with a lot of "
+                                  "work per block, like Vita, and add that much latency), CPU Sleep, and on Android the "
+                                  "performance hint");
+    pluginBlockButton.onClick = [this] { showPluginBlockMenu(); };
+
+    // CPU Sleep: app-wide, remembered (on unless switched off)
+    aquanode::cpuSleepEnabled().store (juce::PropertiesFile (settingsOptions()).getBoolValue ("cpu.sleep", true));
+    cpuSleepButton.setClickingTogglesState (true);
+    cpuSleepButton.setToggleState (aquanode::cpuSleepEnabled().load(), juce::dontSendNotification);
+    cpuSleepButton.setTooltip ("CPU Sleep: an effect or filter whose input has been silent for longer than it can still "
+                               "bring out (its longest delay, a plugin's tail) and whose output has been silent for a second "
+                               "is not run until sound comes in, MIDI reaches it or one of its knobs moves - spectral "
+                               "modules and plugin effects stop using CPU on silence");
+    cpuSleepButton.onClick = [this]
+    {
+        const bool on = cpuSleepButton.getToggleState();
+        aquanode::cpuSleepEnabled().store (on);
+        juce::PropertiesFile file (settingsOptions());
+        if (on) file.removeValue ("cpu.sleep"); else file.setValue ("cpu.sleep", false);
+        file.saveIfNeeded();
+    };
     renderButton.setEnabled (aquanode::render::canRender (processor));
 
     // Undo / Redo of the whole patch (32 steps, in memory only)
@@ -317,6 +539,12 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     canvas.onShortcut = [this] (const juce::KeyPress& k)
     {
         const auto mods = k.getModifiers();
+        if (k.getKeyCode() == juce::KeyPress::escapeKey && currentFullView() != nullptr)
+        {
+            closeModuleFullScreen();
+            closePluginFullSize();
+            return true;
+        }
         if (k.getKeyCode() == juce::KeyPress::F11Key && hasFullScreenButton())
         {
             toggleFullScreen();
@@ -348,20 +576,40 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
         resized();
     };
 
-    for (auto* b : { &zoomOutButton, &zoomInButton })
-        toolbarStrip.content.addAndMakeVisible (b);
+    // (the zoom buttons: in the View menu now, and kept off the bar)
     // the patch's name and the zoom are shown in the sidebar, under its title
     sidebarHeader.getPatchName = [this] { return processor.patchName; };
     sidebarHeader.onZoomClicked = [this] { canvas.resetView(); };
 
-    sidebarButton.onClick = [this]
+    sidebarButton.onClick = [this] { showSidebar (! sidebarVisible); };
+
+    // the sidebar's edge: slid out of view and back (see SidebarEdge)
+    addAndMakeVisible (sidebarEdge);
+    sidebarEdge.onDragStart = [this]
     {
-        sidebarVisible = ! sidebarVisible;
-        processor.uiSidebarVisible = sidebarVisible;
-        sidebarViewport.setVisible (sidebarVisible);
-        sidebarHeader.setVisible (sidebarVisible);
+        if (! sidebarVisible)
+        {
+            // (shown, but still all out of view: pulled in by the drag)
+            sidebarVisible = true;
+            processor.uiSidebarVisible = true;
+            sidebarShift = sidebarFullWidth;
+            sidebarViewport.setVisible (true);
+            sidebarHeader.setVisible (true);
+        }
+        sidebarShiftAtDrag = sidebarShift;
+    };
+    sidebarEdge.onDrag = [this] (int screenDx)
+    {
+        const int dx = juce::roundToInt ((float) screenDx / uiScale);
+        sidebarShift = juce::jlimit (0, sidebarFullWidth, sidebarShiftAtDrag - dx);   // (never wider than it is)
         resized();
     };
+    sidebarEdge.onDragEnd = [this]
+    {
+        if (sidebarShift >= sidebarFullWidth - 16)
+            showSidebar (false);   // (let go nearly out of view: hidden)
+    };
+    sidebarEdge.onTap = [this] { if (! sidebarVisible) showSidebar (true); };
 
     keysButton.onClick = [this]
     {
@@ -607,6 +855,7 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
 
 AquanodeModularAudioProcessorEditor::~AquanodeModularAudioProcessorEditor()
 {
+    moduleFullView = nullptr;   // a borrowed card back onto the canvas first
     pluginFullView = nullptr;   // the plugin's editor back onto its card first
     historyTimer.stopTimer();
     processor.removeChangeListener (this);
@@ -679,9 +928,9 @@ void AquanodeModularAudioProcessorEditor::applyBarColours()
 {
     // the top bar's and the mutator's buttons follow the colourway; on the
     // default colours they keep the look-and-feel's own
-    std::vector<juce::Button*> buttons { &fullScreenButton, &initButton, &regionButton, &moveOnlyButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton,
-                                         &bpmBox, &mutatorButton, &sidebarButton, &keysButton, &zoomOutButton, &zoomInButton,
-                                         &undoPatchButton, &redoPatchButton };
+    std::vector<juce::Button*> buttons { &patchMenuButton, &editMenuButton, &viewMenuButton, &pluginBlockButton,
+                                         &bpmBox, &zoomOutButton, &zoomInButton, &undoPatchButton, &redoPatchButton,
+                                         &deleteButton, &moveOnlyButton };
     for (auto* b : mutatorPanel.getButtons())
         buttons.push_back (b);
     const bool themed = aquanode::barsAreThemed();
@@ -742,6 +991,56 @@ void AquanodeModularAudioProcessorEditor::coloursChanged()
     }
 }
 
+// 6.7.6: a sound generator added to a patch that has no Audio Out (an empty
+// one, say) makes one and plays into it, as a plugin's card does - through a
+// Polyphony Sum where it plays per voice, as Initialize Patch has it (the
+// voices summed at a level that does not clip). With an Audio Out there, it is
+// left for the cables to decide.
+void AquanodeModularAudioProcessorEditor::wireNewSynthToOutput (int newId)
+{
+    auto* inst = processor.getInstance (newId);
+    // a new Tempo module (6.7.9) starts at the patch's tempo rather than moving it
+    if (inst != nullptr && inst->descriptor().typeId == "util.tempo")
+        inst->dsp->setParameter ("bpm", (float) processor.patchBpm.load());
+    if (inst == nullptr || inst->descriptor().section != aquanode::ModuleSection::Oscillator)
+        return;
+    for (int id : processor.getModuleIds())
+        if (auto* other = processor.getInstance (id); other != nullptr && other->descriptor().typeId == "io.audioOut")
+            return;
+    juce::String outSocket;
+    for (const auto& s : inst->descriptor().sockets)
+        if (s.direction == aquanode::SocketDirection::Output && s.kind == aquanode::SocketKind::Audio) { outSocket = s.id; break; }
+    if (outSocket.isEmpty())
+        return;
+    auto at = inst->position + juce::Point<int> (inst->dsp->preferredModuleWidth() + 50, 0);
+    int from = newId;
+    juce::String fromSocket = outSocket;
+    if (inst->dsp->voiceMode() == aquanode::VoiceMode::PerVoice)
+    {
+        const int sum = processor.addModule ("util.polysum", at);
+        if (sum >= 0)
+        {
+            processor.addCable (newId, outSocket, sum, "audioIn");
+            from = sum;
+            fromSocket = "audioOut";
+            at += juce::Point<int> (processor.getInstance (sum)->dsp->preferredModuleWidth() + 50, 0);
+        }
+    }
+    const int out = processor.addModule ("io.audioOut", at);
+    if (out >= 0)
+        processor.addCable (from, fromSocket, out, "audioIn");
+}
+
+void AquanodeModularAudioProcessorEditor::showSidebar (bool show)
+{
+    sidebarVisible = show;
+    sidebarShift = 0;   // (shown: all of it)
+    processor.uiSidebarVisible = show;
+    sidebarViewport.setVisible (show);
+    sidebarHeader.setVisible (show);
+    resized();
+}
+
 void AquanodeModularAudioProcessorEditor::resized()
 {
    #if ! JUCE_ANDROID
@@ -750,7 +1049,8 @@ void AquanodeModularAudioProcessorEditor::resized()
     // together - text included.
     uiScale = juce::jmax (0.1f, juce::jmin ((float) getWidth() / (float) kBaseWidth, (float) getHeight() / (float) kBaseHeight));
     for (auto* child : getChildren())
-        if (dynamic_cast<juce::ResizableCornerComponent*> (child) == nullptr && child != (juce::Component*) pluginFullView.get())
+        if (dynamic_cast<juce::ResizableCornerComponent*> (child) == nullptr && child != (juce::Component*) pluginFullView.get()
+            && child != (juce::Component*) moduleFullView.get())
             child->setTransform (juce::AffineTransform::scale (uiScale));
    #endif
     // the layout's own size: the window's, before the scale
@@ -761,7 +1061,10 @@ void AquanodeModularAudioProcessorEditor::resized()
     // Bottom on-screen keyboard, height scaled to the window (clamped sane):
     // finger-sized on a phone, a little more compact for a mouse.
    #if JUCE_ANDROID
-    const int kbH = juce::jlimit (110, 220, layoutH / 4);
+    // (6.7.2: the app turns with the phone - held upright, the keyboard takes a
+    // smaller share of the taller screen)
+    const bool portrait = layoutH > layoutW;
+    const int kbH = portrait ? juce::jlimit (100, 200, layoutH / 5) : juce::jlimit (110, 220, layoutH / 4);
     const float kbKeys = 30.0f, kbMinKey = 26.0f;
    #else
     const int kbH = juce::jlimit (90, 140, layoutH / 6);
@@ -805,19 +1108,26 @@ void AquanodeModularAudioProcessorEditor::resized()
     }
 
    #if JUCE_ANDROID
-    // Slightly wider sidebar and bigger buttons for touch.
-    const int sideW = juce::jlimit (200, 300, layoutW / 5);
+    // Slightly wider sidebar and bigger buttons for touch; upright, a share of
+    // the narrow screen that still fits the module names
+    const int sideW = portrait ? juce::jlimit (180, 300, (int) (layoutW * 0.46f))
+                               : juce::jlimit (200, 300, layoutW / 5);
     const int bh = 40, gap = 8, topY = 8;
    #else
     const int sideW = SidebarComponent::sidebarWidth;
     const int bh = 22, gap = 5, topY = 8;
    #endif
 
-    // Hidden sidebar gives its whole width back to the patch area.
+    // Hidden sidebar gives its whole width back to the patch area; slid partly
+    // out (its edge dragged), it keeps its width and goes out at the left
+    sidebarFullWidth = sideW;
+    sidebarShift = juce::jlimit (0, sideW, sidebarShift);
     {
-        auto side = area.removeFromLeft (sidebarVisible ? sideW : 0);
-        sidebarHeader.setBounds (side.removeFromTop (sidebarVisible ? SidebarHeader::preferredHeight() : 0));
-        sidebarViewport.setBounds (side);
+        const int shown = sidebarVisible ? sideW - sidebarShift : 0;
+        auto side = area.removeFromLeft (shown);
+        auto column = juce::Rectangle<int> (side.getRight() - sideW, side.getY(), sideW, side.getHeight());
+        sidebarHeader.setBounds (column.removeFromTop (sidebarVisible ? SidebarHeader::preferredHeight() : 0));
+        sidebarViewport.setBounds (column);
         sidebar.footerResized();   // the Modulation table as wide as the sidebar shows
     }
     canvas.setBounds (area);
@@ -830,6 +1140,24 @@ void AquanodeModularAudioProcessorEditor::resized()
     const auto strip = juce::Rectangle<int> (area.getX(), area.getY(), area.getWidth(), stripH);
     toolbarStrip.setBounds (strip);
 
+    // the sidebar's edge, below the top bar (clear of its buttons): on the edge
+    // while it shows, a tab at the left when it is hidden
+    {
+       #if JUCE_ANDROID
+        const int ew = 22;
+       #else
+        const int ew = 14;
+       #endif
+        sidebarEdge.tab = ! sidebarVisible;
+        const auto below = area.withTrimmedTop (stripH);
+        if (sidebarVisible)
+            sidebarEdge.setBounds (area.getX() - ew / 2, below.getY(), ew, below.getHeight());
+        else
+            sidebarEdge.setBounds (juce::Rectangle<int> (area.getX(), below.getY(), ew, below.getHeight()));
+        sidebarEdge.toFront (false);
+        sidebarEdge.repaint();
+    }
+
     // the mutator strip, when open, right below the top bar (clear of the
     // keyboard's grip at the bottom)
    #if JUCE_ANDROID
@@ -840,23 +1168,15 @@ void AquanodeModularAudioProcessorEditor::resized()
     mutatorPanel.setBounds (area.getX(), strip.getBottom(), area.getWidth(), mutH);
 
     {
-        // left to right on screen: Keys, Sidebar, Initialize ... Mutator, then [-][+]
-        // (the standalone app's Full Screen first: on a narrow window the bar
-        // scrolls, and a button at its far end was out of sight)
+        // left to right on screen: View, Delete, Move Only, Edit, Patch, CPU,
+        // the tempo (6.7.9; Undo / Redo in Edit, the zoom in View)
         std::vector<juce::TextButton*> buttons;
-        if (hasFullScreenButton())
-            buttons.push_back (&fullScreenButton);
-        for (juce::TextButton* b : std::initializer_list<juce::TextButton*> { &keysButton, &sidebarButton, &undoPatchButton, &redoPatchButton, &initButton,
-                         &regionButton, &moveOnlyButton, &cloneButton, &deleteButton, &exportButton, &importButton, &renderButton, &bpmBox, &mutatorButton })
+        for (juce::TextButton* b : std::initializer_list<juce::TextButton*> { &viewMenuButton, &deleteButton, &moveOnlyButton, &editMenuButton,
+                         &patchMenuButton, &pluginBlockButton, &bpmBox })
             buttons.push_back (b);
-       #if JUCE_ANDROID
-        const int zw = 30;
-       #else
-        const int zw = 25;
-       #endif
         // what each button's text needs
         std::vector<int> natural;
-        int needed = gap + 2 * zw + gap + gap;
+        int needed = gap + gap;
         for (auto* b : buttons)
         {
             const auto font = getLookAndFeel().getTextButtonFont (*b, bh);
@@ -870,11 +1190,6 @@ void AquanodeModularAudioProcessorEditor::resized()
         toolbarStrip.content.setSize (contentW, stripH);
 
         auto bar = juce::Rectangle<int> (0, 0, contentW, stripH).reduced (gap, topY);   // content coordinates
-        auto zoomArea = bar.removeFromRight (zw * 2 + gap);
-        zoomInButton.setBounds (zoomArea.removeFromRight (zw));
-        zoomArea.removeFromRight (gap);
-        zoomOutButton.setBounds (zoomArea);
-        bar.removeFromRight (gap);
 
         // spare room (a wide screen) is shared out evenly on top of what each needs
         const int n = (int) buttons.size();
@@ -916,7 +1231,7 @@ void AquanodeModularAudioProcessorEditor::resized()
     // Full Size: over everything but the on-screen keyboard, which lies over the
     // bottom of the plugin with its grip (so moving it never resizes the plugin;
     // hidden with it when the Keys button hides it)
-    if (pluginFullView != nullptr)
+    if (auto* fullView = currentFullView())
     {
         auto full = getLocalBounds();   // in real pixels
         if (midiKeyboard != nullptr && keyboardVisible)
@@ -941,8 +1256,12 @@ void AquanodeModularAudioProcessorEditor::resized()
             keyboardHandle.setBounds (kbArea.getCentreX() - 50, kbArea.getY() - gripH, 100, gripH);
             keyZoomToggle.setBounds (kbArea.getCentreX() + 28 + 8, kbArea.getY() - gripH, zoomPillW, gripH);
         }
-        pluginFullView->setBounds (full);
-        pluginFullView->toFront (false);
+        // a card, like a plugin, keeps its size: the keyboard lies over its
+        // bottom (6.7.4; moving the keyboard's grip never resizes it)
+        if (moduleFullView != nullptr)
+            moduleFullView->bottomReserve = 0;
+        fullView->setBounds (full);
+        fullView->toFront (false);
         if (midiKeyboard != nullptr && keyboardVisible)
         {
             midiKeyboard->toFront (false);
@@ -1211,14 +1530,75 @@ void AquanodeModularAudioProcessorEditor::toggleFullScreen()
     auto& desktop = juce::Desktop::getInstance();
     const bool goFull = desktop.getKioskModeComponent() != top;
     desktop.setKioskModeComponent (goFull ? top : nullptr, false);
-    fullScreenButton.setButtonText (goFull ? "Window" : "Full Screen");
     resized();
    #endif
 }
 
+juce::Component* AquanodeModularAudioProcessorEditor::currentFullView() const
+{
+    if (pluginFullView != nullptr) return pluginFullView.get();
+    return moduleFullView.get();
+}
+
+void AquanodeModularAudioProcessorEditor::toggleModuleFullScreen (int instanceId)
+{
+    if (moduleFullView != nullptr) { closeModuleFullScreen(); return; }
+    if (pluginFullView != nullptr) return;
+    auto* card = canvas.moduleCard (instanceId);
+    if (card == nullptr) return;
+    // a plugin card: its own window, at its own size (Full Size)
+    if (auto* lender = dynamic_cast<aquanode::plugins::PluginEditorLender*> (card->getExtraContent());
+        lender != nullptr && lender->wantsFullSizePill())
+    {
+        showPluginFullSize (instanceId);
+        return;
+    }
+    juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
+    moduleFullView = std::make_unique<ModuleFullView> (processor, canvas, *card, [safe]
+    {
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->closeModuleFullScreen(); });
+    });
+    addAndMakeVisible (*moduleFullView);
+    if (moduleFullView->isShowing())
+        moduleFullView->grabKeyboardFocus();   // (for Escape)
+
+   #if ! JUCE_ANDROID && ! JUCE_IOS
+    // the window takes the card's shape, as large as the screen allows (up to
+    // three times its size); the keyboard lies over its bottom, as on a plugin
+    sizeBeforeFullView = getLocalBounds();
+    const auto n = moduleFullView->nativeSize();
+    juce::Rectangle<int> screen (0, 0, 1600, 1000);
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds()))
+        screen = d->userArea;
+    const int kb = 0;
+    const int strip = ModuleFullView::stripHeight() + 4;
+    // (a card taller than the screen shrinks to fit it)
+    const float scale = juce::jlimit (0.5f, 3.0f, juce::jmin ((float) screen.getWidth() * 0.92f / (float) n.x,
+                                                              ((float) screen.getHeight() * 0.88f - (float) (kb + strip)) / (float) n.y));
+    const int w = juce::roundToInt ((float) n.x * scale) + 4, h = juce::roundToInt ((float) n.y * scale) + kb + strip;
+    setResizeLimits (160, 120, juce::jmax (kBaseWidth * 4, w), juce::jmax (kBaseHeight * 4, h));
+    setSize (w, h);
+   #endif
+    resized();
+}
+
+void AquanodeModularAudioProcessorEditor::closeModuleFullScreen()
+{
+    if (moduleFullView == nullptr)
+        return;
+    moduleFullView->giveBack();
+    moduleFullView = nullptr;
+   #if ! JUCE_ANDROID && ! JUCE_IOS
+    setResizeLimits (kBaseWidth / 2, kBaseHeight / 2, kBaseWidth * 4, kBaseHeight * 4);
+    if (! sizeBeforeFullView.isEmpty())
+        setSize (sizeBeforeFullView.getWidth(), sizeBeforeFullView.getHeight());
+   #endif
+    resized();
+}
+
 void AquanodeModularAudioProcessorEditor::showPluginFullSize (int instanceId)
 {
-    if (pluginFullView != nullptr)
+    if (pluginFullView != nullptr || moduleFullView != nullptr)
         return;
     auto* card = canvas.moduleCard (instanceId);
     auto* lender = card != nullptr ? dynamic_cast<aquanode::plugins::PluginEditorLender*> (card->getExtraContent()) : nullptr;
@@ -1262,19 +1642,59 @@ void AquanodeModularAudioProcessorEditor::closePluginFullSize()
 // the BPM box
 AquanodeModularAudioProcessorEditor::BpmBox::BpmBox (AquanodeModularAudioProcessor& p) : proc (p)
 {
-    setTooltip ("The patch's tempo, where no host gives one: drag up or down, or tap to type it");
     setClickingTogglesState (false);
     refresh();
-    startTimerHz (4);
+    startTimerHz (8);   // (an automated tempo, followed live)
+}
+
+// a Tempo module in the patch (6.7.9): the first one's id, -1 for none - and
+// whether something modulates its BPM (then the box only shows the tempo)
+int AquanodeModularAudioProcessorEditor::BpmBox::tempoModule (bool& modulated) const
+{
+    modulated = false;
+    for (int id : proc.getModuleIds())
+        if (auto* inst = proc.getInstance (id); inst != nullptr && inst->descriptor().typeId == "util.tempo")
+        {
+            for (const auto& pc : proc.getParamCables())
+                if (pc.toModule == id && pc.paramId == "bpm") modulated = true;
+            return id;
+        }
+    return -1;
+}
+
+bool AquanodeModularAudioProcessorEditor::BpmBox::locked() const
+{
+    bool modulated = false;
+    return proc.hostGivesBpm.load() || (tempoModule (modulated) >= 0 && modulated);
+}
+
+// a tempo set here: on a Tempo module's knob when there is one (it sets the
+// patch's tempo from there), else straight
+void AquanodeModularAudioProcessorEditor::BpmBox::setTempo (double bpm)
+{
+    bool modulated = false;
+    const int id = tempoModule (modulated);
+    if (id >= 0)
+        if (auto* inst = proc.getInstance (id))
+            inst->dsp->setParameter ("bpm", (float) bpm);
+    proc.patchBpm.store (bpm);
 }
 
 void AquanodeModularAudioProcessorEditor::BpmBox::refresh()
 {
     const bool host = proc.hostGivesBpm.load();
+    bool modulated = false;
+    const int tempo = tempoModule (modulated);
     const double bpm = host ? proc.currentBpm.load() : proc.patchBpm.load();
     const auto txt = (std::abs (bpm - std::round (bpm)) < 0.05 ? juce::String (juce::roundToInt (bpm)) : juce::String (bpm, 1)) + " BPM";
     if (txt != getButtonText()) setButtonText (txt);
-    setAlpha (host ? 0.6f : 1.0f);
+    const bool lock = host || (tempo >= 0 && modulated);
+    setAlpha (lock ? 0.6f : 1.0f);
+    const auto tip = host ? juce::String ("The host's tempo")
+                   : lock ? juce::String ("The tempo, automated by the patch's Tempo module (its BPM is modulated): shown here, set there")
+                   : tempo >= 0 ? juce::String ("The patch's tempo - it turns the Tempo module's knob: drag up or down, or tap to type it")
+                   : juce::String ("The patch's tempo, where no host gives one: drag up or down, or tap to type it");
+    if (tip != getTooltip()) setTooltip (tip);
 }
 
 void AquanodeModularAudioProcessorEditor::BpmBox::mouseDown (const juce::MouseEvent& e)
@@ -1286,20 +1706,19 @@ void AquanodeModularAudioProcessorEditor::BpmBox::mouseDown (const juce::MouseEv
 
 void AquanodeModularAudioProcessorEditor::BpmBox::mouseDrag (const juce::MouseEvent& e)
 {
-    if (proc.hostGivesBpm.load()) return;
+    if (locked()) return;
     const int d = e.getDistanceFromDragStartX() - e.getDistanceFromDragStartY();
     if (! dragged && std::abs (d) < 4) return;
     dragged = true;
     const double step = e.mods.isShiftDown() ? 0.05 : 0.25;
-    const double bpm = juce::jlimit (20.0, 400.0, std::round ((dragStart + d * step) * 10.0) / 10.0);
-    proc.patchBpm.store (bpm);
+    setTempo (juce::jlimit (20.0, 400.0, std::round ((dragStart + d * step) * 10.0) / 10.0));
     refresh();
 }
 
 void AquanodeModularAudioProcessorEditor::BpmBox::mouseUp (const juce::MouseEvent& e)
 {
     juce::TextButton::mouseUp (e);
-    if (dragged || proc.hostGivesBpm.load() || ! getLocalBounds().contains (e.getPosition()))
+    if (dragged || locked() || ! getLocalBounds().contains (e.getPosition()))
         return;
     entry = std::make_unique<juce::AlertWindow> ("Tempo", "Beats per minute (20 - 400):", juce::MessageBoxIconType::NoIcon);
     entry->addTextEditor ("bpm", juce::String (proc.patchBpm.load(), 1));
@@ -1313,9 +1732,178 @@ void AquanodeModularAudioProcessorEditor::BpmBox::mouseUp (const juce::MouseEven
         {
             const double v = safe->entry->getTextEditorContents ("bpm").getDoubleValue();
             if (v >= 20.0 && v <= 400.0)
-                safe->proc.patchBpm.store (std::round (v * 100.0) / 100.0);
+                safe->setTempo (std::round (v * 100.0) / 100.0);
         }
         safe->entry.reset();
         safe->refresh();
     }), false);
+}
+
+//==============================================================================
+// The top bar's menus (6.7.1). Each item presses the button that always did the
+// work; those buttons are no longer shown.
+void AquanodeModularAudioProcessorEditor::pressHidden (juce::TextButton& b)
+{
+    if (! b.isEnabled())
+        return;
+    if (b.getClickingTogglesState())
+        b.setToggleState (! b.getToggleState(), juce::dontSendNotification);
+    if (b.onClick)
+        b.onClick();
+}
+
+void AquanodeModularAudioProcessorEditor::refreshEditMenuButton()
+{
+    // (Move Only shows on its own button again)
+    const bool region = regionButton.getToggleState();
+    const juce::String text = region ? "Edit (Region)" : "Edit";
+    editMenuButton.setToggleState (region, juce::dontSendNotification);
+    if (editMenuButton.getButtonText() != text)
+    {
+        editMenuButton.setButtonText (text);
+        resized();
+    }
+}
+
+void AquanodeModularAudioProcessorEditor::showPatchMenu()
+{
+    juce::PopupMenu m;
+    m.addItem (5, "Clear Patch");
+    m.addItem (1, "Initialize Patch");
+    m.addSeparator();
+    m.addItem (2, "Import Patch ...");
+    m.addItem (3, "Export Patch ...");
+    m.addSeparator();
+    m.addItem (4, "Render to File ...", renderButton.isEnabled());
+    m.addSeparator();
+    // (6.7.12) parallel paths lined up where they meet; off by default, as live playing would wait for the slowest chain
+    m.addItem (6, "Latency Compensation", true, processor.getLatencyCompensation());
+    juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&patchMenuButton), [safe] (int r)
+    {
+        if (safe == nullptr) return;
+        if (r == 6)
+        {
+            safe->processor.setLatencyCompensation (! safe->processor.getLatencyCompensation());
+            return;
+        }
+        if (r == 5)
+        {
+            // an empty patch area (6.7.7) - nothing at all, not even Audio Out
+            safe->processor.generatePatch ([] (AquanodeModularAudioProcessor&) { return juce::String ("Empty"); });
+            safe->canvas.rebuild();
+        }
+        if (r == 1) safe->pressHidden (safe->initButton);
+        if (r == 2) safe->pressHidden (safe->importButton);
+        if (r == 3) safe->pressHidden (safe->exportButton);
+        if (r == 4) safe->pressHidden (safe->renderButton);
+    });
+}
+
+void AquanodeModularAudioProcessorEditor::showEditMenu()
+{
+    juce::PopupMenu m;
+    m.addItem (5, "Undo", processor.canUndoPatch());
+    m.addItem (6, "Redo", processor.canRedoPatch());
+    m.addSeparator();
+    m.addItem (1, "Clone Selected", cloneButton.isEnabled());
+    m.addItem (2, "Delete Selected", deleteButton.isEnabled());
+    m.addSeparator();
+    m.addItem (3, "Region Select (a drag on empty space draws a box)", true, regionButton.getToggleState());
+    m.addItem (4, "Move Only (every gesture moves the view)", true, moveOnlyButton.getToggleState());
+    juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&editMenuButton), [safe] (int r)
+    {
+        if (safe == nullptr) return;
+        if (r == 1) safe->pressHidden (safe->cloneButton);
+        if (r == 2) safe->pressHidden (safe->deleteButton);
+        if (r == 3) safe->pressHidden (safe->regionButton);
+        if (r == 4) safe->pressHidden (safe->moveOnlyButton);
+        if (r == 5) safe->undoRedo (false);
+        if (r == 6) safe->undoRedo (true);
+    });
+}
+
+void AquanodeModularAudioProcessorEditor::showViewMenu()
+{
+    juce::PopupMenu m;
+    m.addItem (1, "Keys", true, keyboardVisible);
+    m.addItem (2, "Sidebar", true, sidebarVisible);
+    m.addItem (3, "Mutator", true, mutatorButton.getToggleState());
+    m.addSeparator();
+    m.addItem (4, "Zoom In (+)");
+    m.addItem (5, "Zoom Out (-)");
+    juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&viewMenuButton), [safe] (int r)
+    {
+        if (safe == nullptr) return;
+        if (r == 1) safe->pressHidden (safe->keysButton);
+        if (r == 2) safe->pressHidden (safe->sidebarButton);
+        if (r == 3) safe->pressHidden (safe->mutatorButton);
+        if (r == 4) safe->canvas.zoomBy (1.25f);
+        if (r == 5) safe->canvas.zoomBy (1.0f / 1.25f);
+    });
+}
+
+// Full Screen in the standalone app on a desktop: the window's own maximise
+// button (JUCE's standalone window shows only minimise and close)
+void AquanodeModularAudioProcessorEditor::parentHierarchyChanged()
+{
+    AudioProcessorEditor::parentHierarchyChanged();
+   #if ! JUCE_ANDROID && ! JUCE_IOS
+    if (processor.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+        if (auto* w = findParentComponentOfClass<juce::DocumentWindow>())
+            w->setTitleBarButtonsRequired (juce::DocumentWindow::allButtons, false);
+   #endif
+}
+
+//==============================================================================
+// Plugin Block: the block every plugin card runs in (unless its own pill says otherwise)
+void AquanodeModularAudioProcessorEditor::showPluginBlockMenu()
+{
+    using HP = aquanode::plugins::HostedPluginModule;
+    const int current = HP::globalBlockSize().load();
+    juce::PopupMenu m;
+    m.addSectionHeader ("Plugin Block (every plugin card on Global)");
+    const int sizes[] = { 16, 32, 64, 128, 256, 512 };
+    for (int sz : sizes)
+        m.addItem (sz, juce::String (sz) + " samples" + (sz == 128 ? "  (default)" : ""), true, sz == current);
+    static constexpr int perfHintItem = 10000;
+    static constexpr int cpuSleepItem = 10001;
+    m.addSeparator();
+    m.addItem (cpuSleepItem, "CPU Sleep (effects and filters rest while silent)", true, aquanode::cpuSleepEnabled().load());
+    if (aquanode::perfhint::available())
+    {
+        m.addSeparator();
+        m.addSectionHeader ("Phone CPU");
+        m.addItem (perfHintItem, "Don't slow down while playing (Android performance hint)", true,
+                   aquanode::perfhint::switchedOn().load());
+    }
+    juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&pluginBlockButton),
+                     [safe] (int r)
+                     {
+                         if (safe == nullptr || r <= 0) return;
+                         if (r == cpuSleepItem)
+                         {
+                             safe->pressHidden (safe->cpuSleepButton);
+                             return;
+                         }
+                         if (r == perfHintItem)
+                         {
+                             const bool on = ! aquanode::perfhint::switchedOn().load();
+                             aquanode::perfhint::switchedOn().store (on);
+                             aquanode::perfhint::update();
+                             juce::PropertiesFile file (settingsOptions());
+                             if (on) file.removeValue ("perf.hint"); else file.setValue ("perf.hint", false);
+                             file.saveIfNeeded();
+                             return;
+                         }
+                         HP::globalBlockSize().store (r);
+                         juce::PropertiesFile file (settingsOptions());
+                         if (r == 128) file.removeValue ("plugins.block"); else file.setValue ("plugins.block", r);
+                         file.saveIfNeeded();
+                         safe->resized();
+                         safe->repaint();
+                     });
 }

@@ -1762,13 +1762,13 @@ float PhizmoAudioProcessor::modSource(int src, const PhizmoVoice& v, float lfoVa
     case 6:  return v.fenvLevel;                            // Envelope 2 (filter)
     case 7:  return v.envLevel;                             // Envelope 3 (amp)
     case 8:  return v.velocity;                             // Velocity (tch)
-    case 9:  return juce::jlimit(0.f, 1.f, v.velocity + chanPressure.load());   // tPrS
+    case 9:  return juce::jlimit(0.f, 1.f, v.velocity + pressureOf(v));        // tPrS
     case 10: return (float)v.midiNote / 127.f;              // MIDI note
     case 11: return ((float)v.midiNote - 60.f) / 60.f;      // Keyboard (BrD), bipolar at C4
-    case 12: return chanPressure.load();                    // Pressure
+    case 12: return pressureOf(v);                          // Pressure
     case 13: return bendNorm.load();                        // Pitch wheel
     case 14: return modWheel.load();                        // Mod wheel (CtL1)
-    case 15: return juce::jlimit(0.f, 1.f, modWheel.load() + chanPressure.load()); // CtPr
+    case 15: return juce::jlimit(0.f, 1.f, modWheel.load() + pressureOf(v));     // CtPr
     case 16: return footCtl.load();                         // Foot controller
     case 17: return sustainPed.load();                      // Sustain pedal
     case 18: return sostenutoPed.load();                    // Sostenuto pedal
@@ -2513,6 +2513,7 @@ void PhizmoAudioProcessor::startVoice(int note, float vel)
             && voices[si].active
             && voices[si].envStage != PhizmoVoice::Env::Release;
         voices[si].soundIndex = snd;
+        voices[si].channel = noteChannel;
         voices[si].noteOn(note, vel, isMono ? lastNoteFreq : 0.0,
                           isMono ? glideTime : 0.f, velAmt, carry, carryPh, legato);
         if (!legato) applyEvoStart(si, snd);   // RAND/LOCK/FIX start override
@@ -2529,7 +2530,8 @@ void PhizmoAudioProcessor::stopVoice(int note)
     // stages as programmed (manual, Envelope Modes).
     if (pEnvMode && (int)pEnvMode->load() == 1) return;
     for (auto& v : voices)
-        if (v.active && v.midiNote == note && v.envStage != PhizmoVoice::Env::Release)
+        if (v.active && v.midiNote == note && v.envStage != PhizmoVoice::Env::Release
+            && (noteChannel == 0 || v.channel == noteChannel))
             v.noteOff();
 }
 
@@ -2560,6 +2562,20 @@ void PhizmoAudioProcessor::handleMidiAndArp(juce::MidiBuffer& midiMessages, int 
         // arpeggiator or bypass it and sound the Preset directly.
         const bool toArp = arpActive
             && (pArpKeyboard == nullptr || pArpKeyboard->load() > 0.5f);
+
+        const int mch = mpeOn && ! toArp ? msg.getChannel() : 1;
+        const bool member = mch >= 2 && mch <= 16;
+        noteChannel = member ? mch : 0;
+        if (member && msg.isPitchWheel())
+        {
+            mpeBend[(size_t) mch] = ((float)msg.getPitchWheelValue() - 8192.f) / 8192.f * 48.f;
+            continue;
+        }
+        if (member && msg.isChannelPressure())
+        {
+            mpePress[(size_t) mch] = (float)msg.getChannelPressureValue() / 127.f;
+            continue;
+        }
 
         if (msg.isNoteOn())
         {
@@ -2684,6 +2700,13 @@ bool PhizmoAudioProcessor::renderVoiceBuses(int numSamples, float* outL, float* 
     const double vib = (double)globalLfo
                      * ((double)modWheel.load() + (double)chanPressure.load() * 0.5) * 0.5;
     double pitchMult = std::pow(2.0, ((double)(blockPitchLFO * pitchLFODep) + bendSemis + vib) / 12.0);
+    // MPE: a member channel's note adds its own bend, and its own pressure opens the vibrato
+    auto voicePitchMult = [&] (const PhizmoVoice& v) -> double
+    {
+        if (! isMember(v)) return pitchMult;
+        const double vibV = (double)globalLfo * ((double)modWheel.load() + (double)pressureOf(v) * 0.5) * 0.5;
+        return std::pow(2.0, ((double)(blockPitchLFO * pitchLFODep) + bendSemis + (double)mpeBend[(size_t) v.channel] + vibV) / 12.0);
+    };
 
     // Update display playhead from first active voice
     for (auto& v : voices)
@@ -2768,6 +2791,9 @@ bool PhizmoAudioProcessor::renderVoiceBuses(int numSamples, float* outL, float* 
             }
         };
 
+        double vPitchMult[MAX_VOICES];   // (MPE: each member channel's note its own)
+        for (int vi = 0; vi < MAX_VOICES; ++vi) vPitchMult[vi] = voicePitchMult(voices[vi]);
+
         for (int s = 0; s < N; ++s)
         {
             for (int snd = 0; snd < NUM_SOUNDS; ++snd)
@@ -2788,7 +2814,7 @@ bool PhizmoAudioProcessor::renderVoiceBuses(int numSamples, float* outL, float* 
                 float vL = 0.f, vR = 0.f, vBL = 0.f, vBR = 0.f;
                 const int sIdx = juce::jlimit(0, NUM_SOUNDS - 1, voices[vi].soundIndex);
                 if ((soundMask & (1u << sIdx)) == 0) continue;
-                synthesiseVoice(voices[vi], vi, blockPosLFO, pitchMult, vL, vR, vBL, vBR,
+                synthesiseVoice(voices[vi], vi, blockPosLFO, vPitchMult[vi], vL, vR, vBL, vBR,
                                 blkS[sIdx], soundParams[sIdx]);
                 const float lg = soundParams[sIdx].layerGain;
                 vL *= lg; vR *= lg; vBL *= lg; vBR *= lg;

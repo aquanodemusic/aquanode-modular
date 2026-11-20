@@ -362,7 +362,7 @@ void ExternalPluginModule::updatePlayHead()
     const int offset = samplesThisHostBlock - kBlockSize;
     bool fromHost = false;
     if (hostPlayHead != nullptr)
-        if (auto host = hostPlayHead->getPosition())
+        if (auto host = hostPlayHead->getPosition(); host && host->getBpm() && *host->getBpm() > 0.0)   // (one without a tempo - standalone, Android - does not count)
         {
             info = *host;
             fromHost = true;

@@ -7,7 +7,7 @@
 class DelayModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pTimeL = 0, pTimeR, pFeedback, pHighPass, pDryWet };
+    enum ParamIndex { pTimeL = 0, pTimeR, pFeedback, pHighPass, pDryWet, pSend };
 
     void prepare (double sr) override;
     void reset() override

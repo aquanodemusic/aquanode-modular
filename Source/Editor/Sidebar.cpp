@@ -61,44 +61,50 @@ namespace
             { "MIDI",            { "io.keyboardmidi", "io.midicontrols", "io.midilearn" } } };
         static const std::vector<ModuleGroup> oscillators {
             { "Oscillators",     { "osc.basic", "osc.additive", "osc.complex", "osc.drift", "osc.dualvco", "osc.dualvcoanalog", "osc.pd",
-                                   "osc.pwmosc", "osc.warp", "osc.unison", "osc.formant", "osc.acid303", "osc.randompreset" } },
+                                   "osc.pwmosc", "osc.warp", "osc.unison", "osc.formant", "osc.acid303", "osc.randompreset", "osc.presetcloud" } },
             { "Wavetables",      { "osc.wavetable", "osc.chordwavetable", "osc.transwave" } },
             { "FM",              { "osc.dxop" } },
-            { "Physical Models", { "osc.bowed", "osc.pluck", "osc.wind", "osc.droplets" } },
-            { "Piano",           { "osc.piano", "osc.resynthpiano", "osc.grand" } },
-            { "Drums",           { "osc.clap", "osc.snare", "osc.kick", "osc.hats", "osc.modaldrum" } },
+            { "Physical Models", { "osc.bowed", "osc.pluck", "osc.wind", "osc.droplets", "osc.strings", "osc.cello", "osc.clarinet",
+                                   "osc.guitaracoustic", "osc.guitarelectric" } },
+            { "Piano",           { "osc.piano", "osc.resynthpiano", "osc.grand", "osc.epiano" } },
+            { "Organ",           { "osc.drawbarorgan" } },
+            { "Ambient",         { "osc.softpad", "osc.summerwinds" } },
+            { "Drums",           { "osc.clap", "osc.snare", "osc.kick", "osc.hats", "osc.modaldrum", "osc.tr808", "osc.tr909", "osc.drumpads", "osc.drummorph" } },
             { "Samples",         { "osc.sampler", "osc.multisample", "osc.granulate", "osc.spectralresynth" } },
             { "Noise",           { "osc.noise" } } };
         static const std::vector<ModuleGroup> filters {
             { "Filters",         { "filter.lowpass", "filter.highpass", "filter.bandpass", "filter.notch", "filter.svf", "filter.warmladder", "filter.ladder",
                                    "filter.dualfilter", "filter.aquafilter", "filter.formant" } },
-            { "EQ",              { "filter.bell", "filter.belleq", "filter.shelfeq", "filter.programeq", "filter.resonance" } },
+            { "EQ",              { "filter.bell", "filter.belleq", "filter.shelfeq", "filter.programeq", "filter.resonance", "filter.filtertable" } },
             { "Combs & Pitch",   { "filter.combfilter", "fx.centercomb", "fx.pitcheq" } } };
         static const std::vector<ModuleGroup> effects {
-            { "Delays",          { "fx.delay", "fx.freedelay", "fx.echo", "fx.dubecho", "fx.crossdelay", "fx.adelaysr" } },
-            { "Reverbs",         { "fx.reverb", "fx.aquaton", "fx.smoothhall", "fx.springer", "fx.irforge", "fx.convolver" } },
+            { "Delays",          { "fx.delay", "fx.freedelay", "fx.echo", "fx.dubecho", "fx.crossdelay", "fx.adelaysr", "fx.multibanddelay" } },
+            { "Reverbs",         { "fx.reverb", "fx.aquaton", "fx.smoothhall", "fx.springer", "fx.irforge", "fx.convolver", "fx.bloomverb", "fx.shimmerverb" } },
             { "Grains",          { "fx.granulation" } },
             { "Modulation",      { "fx.chorus", "fx.liquidchor", "fx.ensemble", "fx.flanger", "fx.phaser", "fx.wah", "fx.stereophaser",
                                    "fx.tapewobble", "fx.anyfm", "fx.rotary", "fx.circulator" } },
             { "Pitch",           { "fx.pitchshift", "fx.spectrallock" } },
             { "Distortion",      { "fx.drive", "fx.clippreserve", "fx.bitcrush", "fx.srreduce", "fx.waveshaper", "fx.splinefold" } },
+            { "Exciters",        { "fx.noiseexciter" } },
             { "Dynamics",        { "fx.compress", "fx.opto", "fx.fet", "fx.sidechaincomp", "fx.threebandcomp", "fx.limiter", "fx.clipfold" } },
-            { "Resonators",      { "fx.resonate", "fx.resonate5", "fx.vocode" } },
+            { "Resonators",      { "fx.resonate", "fx.resonate5", "fx.vocode", "fx.modalbody" } },
+            { "Glitch",          { "fx.beatrepeat", "fx.stutter", "fx.reverser", "fx.tapestop" } },
             { "Stereo & Bands",  { "fx.stereowidth", "effect.bandsplitter", "fx.precision" } } };
         static const std::vector<ModuleGroup> utilities {
             { "Envelopes",       { "util.adsr", "util.analogeg", "util.curveenv", "util.dxenv", "util.dxpitcheg",
                                    "util.envfollow" } },
             { "LFOs",            { "util.multilfo", "util.randomlfo", "util.skewlfo", "util.drawlfo", "util.dxlfo",
                                    "util.lfo" } },
-            { "MIDI",            { "util.arp", "util.alwaysmidi", "util.discardmidi", "util.pianoroll", "util.velocity", "util.noterandom",
-                                   "util.midiadd", "util.graphicmidiadd", "util.keyboardmidi", "util.midicontrols", "util.mpe" } },
-            { "Sequencers & Clocks", { "util.clock", "util.euclid", "util.stepseq", "util.gate" } },
-            { "Control",         { "util.curvecv", "util.dcoffset", "util.samplehold", "util.slew", "util.quantize",
+            { "MIDI",            { "util.arp", "util.alwaysmidi", "util.discardmidi", "util.pianoroll", "util.mperoll", "util.velocity", "util.noterandom",
+                                   "util.midiadd", "util.graphicmidiadd", "util.keyboardmidi", "util.midicontrols", "util.mpe",
+                                   "util.midirain", "util.midibloom", "util.midistamp", "util.fruitarranger" } },
+            { "Sequencers & Clocks", { "util.clock", "util.tempo", "util.euclid", "util.stepseq", "util.gate" } },
+            { "Control",         { "util.curvecv", "util.autolanes", "util.dcoffset", "util.samplehold", "util.slew", "util.quantize",
                                    "util.dawmod", "util.keytrack", "util.logic", "util.vector" } },
             { "Audio Tools",     { "util.volume", "util.mixer", "util.panning", "util.crossfade", "util.abswitch", "util.latency",
                                    "util.ringmod", "util.splitter", "util.thru", "util.polysum", "util.record", "util.dcblock" } },
             { "Routing",         { "util.reroutesend", "util.reroutereturn", "util.macro" } },
-            { "Analysis",        { "util.spectrogram", "util.spectrumcompare", "util.waveform", "util.tuner", "util.inspector", "util.chordname" } },
+            { "Analysis",        { "util.spectrogram", "util.spectrumcompare", "util.waveform", "util.tuner", "util.cpuram", "util.inspector", "util.chordname" } },
             { "Notes",           { "util.text" } },
             { "VST3",            { "fx.externalplugin" } } };   // (6.2.1: here, as it hosts synths as well as effects)
         switch (section)
@@ -1034,7 +1040,7 @@ void SidebarComponent::paint (juce::Graphics& g)
 
             g.setColour (text);
             g.setFont (juce::Font (juce::FontOptions (12.5f)));
-            g.drawText (row.text, row.area.withTrimmedLeft (11).withTrimmedRight (88),
+            g.drawText (row.text, row.area.withTrimmedLeft (11).withTrimmedRight (row.pluginHasPatch ? 88 : 42),
                         juce::Justification::centredLeft);
 
             auto pill = [&g, &row, &text] (juce::Rectangle<int> area, const juce::String& label, bool enabled)
@@ -1049,7 +1055,8 @@ void SidebarComponent::paint (juce::Graphics& g)
                 g.drawText (label, area, juce::Justification::centred);
             };
             pill (pluginGuiPillArea (row), "GUI", true);
-            pill (pluginPatchPillArea (row), "Patch", row.pluginHasPatch);
+            if (row.pluginHasPatch)
+                pill (pluginPatchPillArea (row), "Patch", true);
             continue;
         }
 
@@ -1162,7 +1169,7 @@ void SidebarComponent::mouseUp (const juce::MouseEvent& e)
             // list, or a stray click, is too easy to make by accident.
             if (! row.isToggle)
             {
-                const juce::String part = row.isPlugin ? (pluginPatchPillArea (row).contains (e.getPosition()) ? "patch" : "gui")
+                const juce::String part = row.isPlugin ? (row.pluginHasPatch && pluginPatchPillArea (row).contains (e.getPosition()) ? "patch" : "gui")
                                         : (row.isGenerator && row.hasMenu && generatorMenuArea (row).contains (e.getPosition()) ? "menu" : "row");
                 const auto key = row.typeId + "|" + part;
                 const auto now = juce::Time::getMillisecondCounter();
@@ -1195,9 +1202,7 @@ void SidebarComponent::mouseUp (const juce::MouseEvent& e)
             if (row.isPlugin)
             {
                 const auto pluginId = row.typeId.fromFirstOccurrenceOf ("plugin.", false, false);
-                const bool patch = pluginPatchPillArea (row).contains (e.getPosition()) || e.mods.isPopupMenu();
-                if (patch && ! row.pluginHasPatch)
-                    return;
+                const bool patch = row.pluginHasPatch && (pluginPatchPillArea (row).contains (e.getPosition()) || e.mods.isPopupMenu());
                 if (moduleClicked != nullptr)
                     moduleClicked ((patch ? "pluginpatch:" : "plugingui:") + pluginId, patch);
                 return;

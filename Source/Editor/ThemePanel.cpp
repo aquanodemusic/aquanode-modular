@@ -393,8 +393,12 @@ void ThemePanel::SlotGrid::mouseUp (const juce::MouseEvent& e)
 }
 
 // the knob ring's two colours, one above the other, in the panel's top row
+// (or as two cells of the grid: then the same size and spacing as its chips)
 juce::Rectangle<int> ThemePanel::KnobChips::chip (int which) const
 {
+    if (gridStyle)
+        return juce::Rectangle<float> (0.0f, (float) which * getHeight() * 0.5f, (float) getWidth(), getHeight() * 0.5f)
+                   .reduced (3.0f).toNearestInt();
     return getLocalBounds().withHeight (getHeight() / 2).translated (0, which * (getHeight() / 2)).reduced (0, 1);
 }
 
@@ -404,6 +408,30 @@ void ThemePanel::KnobChips::paint (juce::Graphics& g)
     {
         const int slot = ThemeColours::KnobStart + k;
         auto r = chip (k).toFloat();
+        if (gridStyle)
+        {
+            // drawn as the grid draws its chips
+            const bool on = selected == slot;
+            g.setColour (juce::Colours::white.withAlpha (on ? 0.16f : 0.05f));
+            g.fillRoundedRectangle (r, 5.0f);
+            if (on)
+            {
+                g.setColour (juce::Colour (0xff4fc3f7));
+                g.drawRoundedRectangle (r.reduced (0.75f), 5.0f, 1.5f);
+            }
+            auto sw = r.reduced (6.0f);
+            const float side = juce::jmin (sw.getHeight(), 26.0f);
+            auto swatch = sw.removeFromLeft (side).withSizeKeepingCentre (side, side);
+            g.setColour (themeColours().edited (slot));
+            g.fillRoundedRectangle (swatch, 4.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.35f));
+            g.drawRoundedRectangle (swatch, 4.0f, 1.0f);
+            sw.removeFromLeft (8.0f);
+            g.setColour (juce::Colours::white.withAlpha (on ? 1.0f : 0.8f));
+            g.setFont (juce::Font (juce::FontOptions (juce::jlimit (11.0f, 15.0f, r.getHeight() * 0.42f))));
+            g.drawFittedText (themeColours().label (slot), sw.toNearestInt(), juce::Justification::centredLeft, 1, 0.8f);
+            continue;
+        }
         const bool on = selected == slot;
         g.setColour (juce::Colours::white.withAlpha (on ? 0.16f : 0.05f));
         g.fillRoundedRectangle (r, 4.0f);
@@ -463,11 +491,60 @@ void ThemePanel::resized()
    #endif
     auto r = getLocalBounds().reduced (12);
 
+    // wide (a phone on its side, a desktop window): the chips and buttons on the
+    // left, the selector on the right; tall: one above the other. Tall (a phone
+    // held upright) also changes the top row: Glass | Skeuomorphic | Cyan |
+    // Pink | Green with short names and room for them, the knob colours down
+    // in the grid, Reset View with the buttons below
+    const bool wide = r.getWidth() > (r.getHeight() - rowH - 8) * 1.15f;
+    knobChips.gridStyle = ! wide;
+    {
+        static const char* shortNames[numColourways] = { "Cyan", "Pink", "Green" };
+        for (int i = 0; i < numColourways; ++i)
+            colourwayButtons[i].setButtonText (wide ? juce::String (colourwayName (i)) : juce::String (shortNames[i]));
+    }
+
     // the top row: the title, Glass | Skeuomorphic and its knob colours |
     // the colourways, Reset View to Origin at the right. Where that would
     // squeeze the buttons (a phone held upright), the title gives way and Reset
     // View moves down to the Reset / Reset All / Done row.
     bool resetViewBelow = false;
+    if (! wide)
+    {
+        auto top = r.removeFromTop (rowH);
+        topRow = top;
+        r.removeFromTop (8);
+        titleArea = {};
+        resetViewBelow = true;
+        resetViewButton.setButtonText ("Reset View");
+        // each as wide as its name needs, the room left (or missing) shared out
+        juce::TextButton* row[] = { &glassButton, &skeuoButton, &colourwayButtons[0], &colourwayButtons[1], &colourwayButtons[2] };
+        constexpr int n = (int) (sizeof (row) / sizeof (row[0]));
+        const int gap = 8, divW = 2 * gap + 1;
+        int need[n], total = 0;
+        for (int i = 0; i < n; ++i)
+        {
+            const auto font = getLookAndFeel().getTextButtonFont (*row[i], rowH);
+            need[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (font, row[i]->getButtonText())) + 18;
+            total += need[i];
+        }
+        const int room = top.getWidth() - divW - (n - 2) * gap;
+        const int spare = juce::jmax (0, room - total) / n;
+        const float squeeze = total > room ? (float) room / (float) total : 1.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            const int w = i == n - 1 ? top.getWidth() : (int) ((float) need[i] * squeeze) + spare;
+            row[i]->setBounds (top.removeFromLeft (w));
+            if (i == 1)
+            {
+                dividerX = top.getX() + divW / 2;
+                top.removeFromLeft (divW);
+            }
+            else if (i < n - 1)
+                top.removeFromLeft (gap);
+        }
+    }
+    else
     {
         auto top = r.removeFromTop (rowH);
         topRow = top;
@@ -517,9 +594,6 @@ void ThemePanel::resized()
         }
     }
 
-    // wide (a phone on its side, a desktop window): the chips and buttons on the
-    // left, the selector on the right; tall: one above the other
-    const bool wide = r.getWidth() > r.getHeight() * 1.15f;
     juce::Rectangle<int> left, right;
     if (wide)
     {
@@ -529,32 +603,55 @@ void ThemePanel::resized()
     }
     else
     {
-        right = r.removeFromBottom (juce::jmax (r.getHeight() / 2, juce::jmin (r.getHeight() - 200, 420)));
+        // (the selector a little smaller than half: the grid has a row more)
+        right = r.removeFromBottom (juce::jmax ((int) (r.getHeight() * 0.44f), juce::jmin (r.getHeight() - 260, 380)));
         r.removeFromBottom (8);
         left = r;
     }
 
     auto buttons = left.removeFromBottom (rowH);
     left.removeFromBottom (6);
-    // Grid, Wire and Leaves side by side, on a row of their own under the
-    // chips (each as wide as its name wants, the room left shared out)
-    auto placeToggles = [this, rowH] (juce::Rectangle<int> row)
+    // Grid, Wire and Leaves side by side (each as wide as its name wants, the
+    // room left shared out): in the free cell to the right of the last chip
+    // (Random Preset) where they fit there, else on a row of their own under the chips
+    juce::ToggleButton* toggles[3] = { &gridToggle, &wireToggle, &leavesToggle };
+    const float toggleFontH = juce::jmin (15.0f, (float) rowH * 0.75f);
+    int toggleWant[3], toggleTotal = 0;
+    for (int i = 0; i < 3; ++i)
     {
-        juce::ToggleButton* t[3] = { &gridToggle, &wireToggle, &leavesToggle };
-        const float fontH = juce::jmin (15.0f, (float) rowH * 0.75f);
-        int want[3], total = 0;
+        toggleWant[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (juce::Font (juce::FontOptions (toggleFontH)), toggles[i]->getButtonText()))
+                      + (int) (toggleFontH * 1.1f) + 22;   // the tick box and room around it
+        toggleTotal += toggleWant[i];
+    }
+    // (in the cell they may come closer: each needs its tick box and name, and a little room)
+    const int toggleTight = toggleTotal - 3 * 12;
+    auto placeToggles = [&] (juce::Rectangle<int> row)
+    {
+        const int pad = row.getWidth() >= toggleTotal ? 0 : 12;
+        const int spare = juce::jmax (0, row.getWidth() - (toggleTotal - 3 * pad)) / 3;
         for (int i = 0; i < 3; ++i)
-        {
-            want[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (juce::Font (juce::FontOptions (fontH)), t[i]->getButtonText()))
-                    + (int) (fontH * 1.1f) + 22;   // the tick box and room around it
-            total += want[i];
-        }
-        const int spare = juce::jmax (0, row.getWidth() - total) / 3;
-        for (int i = 0; i < 3; ++i)
-            t[i]->setBounds (i == 2 ? row : row.removeFromLeft (want[i] + spare));
+            toggles[i]->setBounds (i == 2 ? row : row.removeFromLeft (toggleWant[i] - pad + spare));
     };
-    placeToggles (left.removeFromBottom (rowH).reduced (2, 0));
-    left.removeFromBottom (4);
+    auto chipsArea = left.withTrimmedBottom (8);
+    bool togglesInCell = false;
+    if (wide && ThemeColours::NumGridSlots % 2 == 1 && chipsArea.getWidth() >= 300)   // two columns, the last cell free
+                                                                                       // (tall: the knob colours go there)
+    {
+        const int rows = (ThemeColours::NumGridSlots + 1) / 2;
+        const float cellW = chipsArea.getWidth() / 2.0f, cellH = chipsArea.getHeight() / (float) rows;
+        auto cell = juce::Rectangle<float> (chipsArea.getX() + cellW, chipsArea.getY() + (rows - 1) * cellH, cellW, cellH)
+                        .reduced (3.0f).toNearestInt();
+        if (toggleTight <= cell.getWidth() - 4)
+        {
+            placeToggles (cell.withSizeKeepingCentre (cell.getWidth() - 4, juce::jmin (cell.getHeight(), rowH)));
+            togglesInCell = true;
+        }
+    }
+    if (! togglesInCell)
+    {
+        placeToggles (left.removeFromBottom (rowH).reduced (2, 0));
+        left.removeFromBottom (4);
+    }
     if (resetViewBelow)
     {
         const int rw = (buttons.getWidth() - 24) / 4;
@@ -568,7 +665,23 @@ void ThemePanel::resized()
     buttons.removeFromLeft (8);
     doneButton.setBounds (buttons);
     left.removeFromBottom (8);
-    slots.setBounds (left);
+    if (wide)
+        slots.setBounds (left);
+    else
+    {
+        // the grid with the two knob colours after it, in the right column under
+        // Plugin Titles (the cell beside Random Preset and the one below it) -
+        // or, in one column, two rows of their own at the end
+        const int cols = left.getWidth() >= 300 ? 2 : 1;
+        const int gridRows = (ThemeColours::NumGridSlots + cols - 1) / cols;
+        const bool freeCell = cols == 2 && ThemeColours::NumGridSlots % 2 == 1;
+        const int rows = gridRows + (freeCell ? 1 : 2);
+        const float cellH = (float) left.getHeight() / (float) rows;
+        const float cellW = (float) left.getWidth() / (float) cols;
+        slots.setBounds (left.withHeight (juce::roundToInt (cellH * (float) gridRows)));
+        const float y = (float) left.getY() + cellH * (float) (freeCell ? gridRows - 1 : gridRows);
+        knobChips.setBounds (juce::Rectangle<float> ((float) left.getX() + cellW * (float) (cols - 1), y, cellW, cellH * 2.0f).toNearestInt());
+    }
 
     selector.setBounds (right);
 }

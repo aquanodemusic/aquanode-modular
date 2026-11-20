@@ -8,7 +8,7 @@ static aquanode::ModuleDescriptor macroDescriptor()
     d.displayName = "Macro";
     d.description =
         "One knob that turns many: patch Macro Out into any knobs of any modules. Each follows the Macro across "
-        "its whole range (0 % = the knob's minimum, 100 % = its maximum); the cable's depth blends between the "
+        "its whole range (0 % = the knob's lowest setting, 100 % = its highest); the cable's depth blends between the "
         "knob's own setting and the Macro, a negative depth turns it the other way.";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 6;

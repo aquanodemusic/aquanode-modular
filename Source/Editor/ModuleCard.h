@@ -84,6 +84,10 @@ public:
     // PluginFullView), with a small Return to Patch button
     juce::Rectangle<int> fullSizePillArea() const;
     bool showsFullSizePill() const;
+    // a plugin card's Block pill: the block the plugin runs in (Global or its own)
+    juce::Rectangle<int> blockPillArea() const;
+    bool showsBlockPill() const;
+    void showBlockMenu();
     juce::Component* getExtraContent() const { return extraContent.get(); }
 
     // the filters' live graph: a "Graph" pill at the right of the top row
@@ -93,6 +97,14 @@ public:
     juce::Rectangle<int> graphPillArea() const;
     void toggleGraph();
     std::unique_ptr<juce::Component> makeGraph (aquanode::SynthModule& dsp);
+
+    // Full screen (every card, 6.7.2): the icon at the right of the top row
+    // (left of a Graph pill). The editor borrows the card itself into its full
+    // view; there it can't be moved or cabled, only played.
+    juce::Rectangle<int> fullScreenIconArea() const;
+    bool showsFullScreenIcon() const;
+    void setInFullView (bool b) { inFullView = b; repaint(); }
+    bool isInFullView() const { return inFullView; }
 
     // false while collapsed, or when the knob is hidden by a visibleWhen rule.
     // The canvas asks before drawing (or hit-testing) a param cable.
@@ -152,6 +164,7 @@ private:
     bool handleRapidClick (const juce::MouseEvent& e);   // true = self cables were deleted
     juce::int64 lastClickTimeMs { 0 };
     juce::Point<int> lastClickScreenPos;
+    bool inFullView { false };
     int rapidClickCount { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ModuleComponent)

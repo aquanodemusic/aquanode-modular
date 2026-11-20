@@ -12,7 +12,8 @@ public:
     // NB: these indices must match the order of d.params in the descriptor.
     // voices/glide are read through voiceLimit()/glideMillis(), but they still
     // occupy slots 2 and 3, so the new params start at 4.
-    enum ParamIndex { pVolume = 0, pLoadSample, pVoices, pGlide, pStart, pEnd, pCycle };
+    enum ParamIndex { pVolume = 0, pLoadSample, pVoices, pGlide, pStart, pEnd, pCycle, pViewZoom, pViewPos,
+                      pSaveSample, pSaveAs, pSaveFormat };   // (6.7.12: Save Sample, Save As, Format)
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::PerVoice; }
 
@@ -36,7 +37,20 @@ public:
     {
         if (paramId == "loadSample")
             openSampleChooser();
+        else if (paramId == "saveSample")
+            saveInterval();
     }
+
+    // Save Sample (6.7.12): Start..End, played as the key Save As semitones
+    // from C4 plays it - pitch and speed together, as the keys do (+12: an
+    // octave up, twice as fast) - written as FLAC (smaller, lossless) or WAV
+    void saveInterval();
+    // the interval as it would be saved (message thread; tests too); empty: no sample
+    juce::AudioBuffer<float> renderInterval (double& rate) const;
+    // a windowed-sinc resampler: src[a..b] read speed times as fast, low-passed
+    // below the new Nyquist when it speeds up (no aliasing at +36)
+    static juce::AudioBuffer<float> resample (const juce::AudioBuffer<float>& src, int a, int b, double speed);
+    static juce::MemoryBlock encode (const juce::AudioBuffer<float>& audio, double rate, bool flac);
 
     std::unique_ptr<juce::Component> createExtraContentComponent() override;
     int extraContentHeight() const override { return 84; }
@@ -61,6 +75,7 @@ private:
     bool   gateOn   [aquanode::kMaxVoices] {};
     float  vel      [aquanode::kMaxVoices] {};
 
+    std::unique_ptr<juce::FileChooser> saveChooser;
     std::shared_ptr<const juce::AudioBuffer<float>> latchedSample;
     double latchedSourceRate { 44100.0 };
 
