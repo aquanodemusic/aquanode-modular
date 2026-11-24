@@ -29,6 +29,7 @@ namespace vital {
         kMidi,
         kActiveVoices,
         kNoteCount,
+        kAqSlide,   // (Aquanode, 6.9.12)
         kNumInputs
       };
 
@@ -63,6 +64,8 @@ namespace vital {
       Wavetable* getWavetable(int index) {
         return oscillators_[index]->getWavetable();
       }
+      void setAqSlideDepth(int index, float frames) { oscillators_[index]->setAqSlideDepth(frames); }
+      float aqSlideShown(int index) const { return oscillators_[index]->aqSlideShown(); }
 
       Sample* getSample() { return sampler_->getSample(); }
       Output* samplePhaseOutput() { return sampler_->getPhaseOutput(); }

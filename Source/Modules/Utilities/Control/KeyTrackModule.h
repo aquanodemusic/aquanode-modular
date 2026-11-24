@@ -16,19 +16,25 @@ public:
 
     void reset() override
     {
-        for (auto& n : noteOfVoice) n = 60;
+        for (auto& n : noteOfVoice) n = 60.0f;
     }
 
-    void voiceReset (int v) override { noteOfVoice[v] = 60; }
-    void voiceNoteOn (int v, int note, bool) override { noteOfVoice[v] = note; }
+    void voiceReset (int v) override { noteOfVoice[v] = 60.0f; }
+    // (6.9.14) the note's pitch as tuned: a Microtuning (Global) or an MTS-ESP master moves it
+    // too, so a filter keeps tracking what sounds (in 12-TET at A4 = 440 it is the key itself)
+    void voiceNoteOn (int v, int note, bool) override
+    {
+        const double hz = aquanode::tuning::noteToHz ((double) note);
+        noteOfVoice[v] = hz > 0.0 ? (float) (69.0 + 12.0 * std::log2 (hz / 440.0)) : (float) note;
+    }
 
     void processVoiceSample (int v, const aquanode::StereoFrame*, aquanode::StereoFrame* outputs) override
     {
-        const float out = ((float) noteOfVoice[v] - param (pCenter)) / 60.0f;
+        const float out = (noteOfVoice[v] - param (pCenter)) / 60.0f;
         outputs[0][0] = out;
         outputs[0][1] = out;
     }
 
 private:
-    int noteOfVoice [aquanode::kMaxVoices] { };
+    float noteOfVoice [aquanode::kMaxVoices] { };
 };

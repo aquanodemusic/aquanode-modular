@@ -15,7 +15,7 @@
 class AquaFilterModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pCutoff = 0, pResonance, pDrive, pModDepth, pType, pResCurve };
+    enum ParamIndex { pCutoff = 0, pResonance, pDrive, pModDepth, pType, pResCurve, pDriveRange };
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Flexible; }
 

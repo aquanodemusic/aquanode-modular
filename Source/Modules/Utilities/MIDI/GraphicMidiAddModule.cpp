@@ -1,17 +1,21 @@
 //==============================================================================
-// Graphic Midi Add - Midi Add with a keyboard to see the chord on
+// MIDI Add (6.9.10: Midi Add and Graphic Midi Add are one card, the type id is
+// Graphic Midi Add's; an old Midi Add loads as this, see ProcessorState.cpp)
 //
 // For every note it hears it plays that note plus up to seven more, each Note
 // knob an interval of -48..+48 semitones (0 = that slot off). A note that
-// lands outside the MIDI range (C-1 .. G9) is not played. The card's keyboard
-// shows the chord built on one note - the one the Visual (Reference Only)
-// knob picks, which changes nothing in the sound - with the reference note in
-// the brightest colour, the added notes paler, and how many of them would
-// fall off the keyboard from there.
+// lands outside the MIDI range (C-1 .. G9) is not played. Under a line, "Show
+// Visuals" opens a keyboard that shows the chord built on one note - the one
+// the Visual (Reference Only) knob picks, which changes nothing in the sound -
+// with the reference note in the brightest colour, the added notes paler, and
+// how many of them would fall off the keyboard from there.
 //
-// As in Midi Add the intervals are read at note-on (so a cable into a Note
-// knob revoices the next chord while sounding notes keep their pitch), and a
-// note-off releases exactly the notes its note-on played.
+// As before the intervals are read at note-on (so a cable into a Note knob
+// revoices the next chord while sounding notes keep their pitch), and only a
+// note-off releases exactly the notes its note-on played. MPE: an MPE note
+// (an MPE controller's finger, the MPE Piano Roll) gives every added note its
+// bend, pressure and slide, and every later change of them, so the whole chord
+// slides with the finger.
 //==============================================================================
 #include "../../Core/ModuleCore.h"
 
@@ -20,7 +24,7 @@ using namespace aquanode;
 namespace
 {
     constexpr int kSlots = 7;
-    enum P { pVisual, pChord, pNote1 };
+    enum P { pVisual, pChord, pNote1, pVisuals = pNote1 + 7 };
 
     // the Chord menu: ready chords over the played note (0 = slot off), and
     // Custom, which it shows by itself once a Note knob is turned by hand
@@ -63,18 +67,23 @@ public:
     {
         ModuleDescriptor d;
         d.typeId = "util.graphicmidiadd";
-        d.displayName = "Graphic Midi Add";
-        d.searchKeywords = "chord chords";
+        d.displayName = "MIDI Add";
+        d.searchKeywords = "chord chords graphic midi add keyboard mpe";
         d.description = "For every note it hears it plays that note plus up to seven more, -48..+48 semitones "
-                        "away (0 = off); notes that would fall off the keyboard (outside C-1..G9) are left out. "
-                        "The keyboard shows the chord built on the Visual (Reference Only) note, which changes "
-                        "nothing in the sound. The intervals are read at note-on, so a cable into a Note knob "
-                        "revoices the next chord while sounding notes keep their pitch.";
+                        "away (0 = off) - instant chords from single keys; notes that would fall off the keyboard "
+                        "(outside C-1..G9) are left out. Its MIDI Out goes into a generator's MIDI In or Add MIDI In, "
+                        "or into another MIDI module; its MIDI In takes any stream (Piano Roll, Always MIDI, Arp...) "
+                        "and chords that instead of the played keys. The intervals are read at note-on, so a cable "
+                        "into a Note knob revoices the next chord while sounding notes keep their pitch. With MPE, "
+                        "every added note follows the played note's bend, pressure and slide. The Visuals pill (top right) opens a "
+                        "keyboard with the chord built on the Visual (Reference Only) note, which changes nothing in "
+                        "the sound.";
         d.section = ModuleSection::Utility;
         d.sidebarOrder = 20;
-        d.sockets = { midiIn ("midiIn", "Midi In"), midiOut ("midiOut", "Midi Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), midiOut ("midiOut", "MIDI Out") };
 
-        auto visual = makeRotary ("visual", "Visual (Reference Only)", 0.0f, 127.0f, 60.0f, 0, {}, false, 1.0f).noMod();
+        auto visual = makeRotary ("visual", "Visual (Reference Only)", 0.0f, 127.0f, 60.0f, 0, {}, false, 1.0f).noMod()
+                          .visibleWhen ("visuals", 1.0f);
         visual.widthUnits = 3;
         visual.textFromValue = [] (double v) { return noteName (juce::jlimit (0, 127, (int) std::lround (v))); };
         visual.valueFromText = [] (const juce::String& t)
@@ -97,6 +106,8 @@ public:
         for (int i = 0; i < kSlots; ++i)
             d.params.push_back (makeRotary ("note" + juce::String (i + 1), "Note " + juce::String (i + 1),
                                             -48.0f, 48.0f, kChords[0][i], 1 + i / 4, "st", false, 1.0f));
+        // the keyboard under the line: shown or not (an older Graphic Midi Add always showed it)
+        d.params.push_back (makeCombo ("visuals", "Show Visuals", { "Off", "On" }, 0, 0, 1).hide().noMod().whenMissing (1.0f));
         return d;
     }
 
@@ -132,16 +143,40 @@ public:
     }
 
     bool isMidiProcessor() const override { return true; }
+    bool acceptsMpeEvents() const override { return true; }
 
     int processMidiEvent (const MidiDriverEvent& in, MidiDriverEvent* out, int maxOut) override
     {
         const int key = juce::jlimit (0, 127, in.note);
         int n = 0;
+        auto& c = played[key];
 
-        // what this key played last time is released, whatever the knobs say now
-        for (int i = 0; i < played[key].size && n < maxOut; ++i)
-            out[n++] = { played[key].notes[i], 0.0f, false };
-        played[key].size = 0;
+        // an MPE note's expression: the same bend, pressure and slide on every
+        // note of its chord (nothing is released)
+        if (in.isExpression)
+        {
+            for (int i = 0; i < c.size && n < maxOut; ++i)
+            {
+                auto e = in;
+                e.note = c.notes[i];
+                e.mpe = true;
+                out[n++] = e;
+            }
+            return n;
+        }
+
+        // only a note-on or a real note-off gets here: what this key played
+        // last time is released, whatever the knobs say now
+        for (int i = 0; i < c.size && n < maxOut; ++i)
+        {
+            MidiDriverEvent off;
+            off.note = c.notes[i];
+            off.velocity = 0.0f;
+            off.isOn = false;
+            off.mpe = c.mpe;
+            out[n++] = off;
+        }
+        c.size = 0;
 
         if (! in.isOn)
             return n;
@@ -149,10 +184,14 @@ public:
         int offsets[kSlots], off = 0;
         for (int s = 0; s < kSlots; ++s)
             offsets[s] = (int) std::lround (param (pNote1 + s));
-        auto& c = played[key];
         c.size = chordOn (key, offsets, c.notes, off);
+        c.mpe = in.mpe;
         for (int i = 0; i < c.size && n < maxOut; ++i)
-            out[n++] = { c.notes[i], in.velocity, true };
+        {
+            auto e = in;           // velocity, and an MPE note's bend, pressure and slide
+            e.note = c.notes[i];
+            out[n++] = e;
+        }
         return n;
     }
 
@@ -162,12 +201,18 @@ public:
     // for the keyboard (message thread): the knob settings
     int visualNote() const { return juce::jlimit (0, 127, (int) std::lround (getParameterBase (pVisual))); }
     int offset (int slot) const { return (int) std::lround (getParameterBase (pNote1 + slot)); }
+    bool visualsShown() const { return getParameterBase (pVisuals) > 0.5f; }
 
     std::unique_ptr<juce::Component> createExtraContentComponent() override;
-    int extraContentHeight() const override { return 96; }
+    // (6.9.15) the Visuals pill in the card's top row shows or hides the keyboard
+    int extraContentHeight() const override { return visualsShown() ? 96 + kButtonStrip : 0; }
+    static constexpr int kButtonStrip = 4;
+    juce::String titlePillName() const override { return "Visuals"; }
+    bool titlePillOn() const override { return visualsShown(); }
+    void titlePillPressed() override { setParameter ("visuals", visualsShown() ? 0.0f : 1.0f); }
 
 private:
-    struct Chord { int notes[kSlots + 1] {}; int size { 0 }; };
+    struct Chord { int notes[kSlots + 1] {}; int size { 0 }; bool mpe { false }; };
     Chord played[128];
     bool applyingChord { false };
 };
@@ -182,15 +227,37 @@ namespace
                                 private juce::Timer
     {
     public:
-        explicit ChordKeyboard (GraphicMidiAddModule& m) : module (&m) { timerCallback(); startTimerHz (15); }
+        explicit ChordKeyboard (GraphicMidiAddModule& m) : module (&m)
+        {
+            addChildComponent (toggle);   // (6.9.15: the card's Visuals pill instead)
+            toggle.onClick = [this]
+            {
+                if (auto* mm = module.get())
+                {
+                    mm->setParameter ("visuals", mm->getParameter ("visuals") > 0.5f ? 0.0f : 1.0f);
+                    updateToggleText();
+                    if (paramsChangedByContent != nullptr)
+                        paramsChangedByContent();   // the card grows or shrinks
+                }
+            };
+            updateToggleText();
+            timerCallback();
+            startTimerHz (15);
+        }
+
+        void resized() override
+        {
+            toggle.setBounds (getLocalBounds().removeFromTop (GraphicMidiAddModule::kButtonStrip)
+                                  .withTrimmedTop (6).withSizeKeepingCentre (juce::jmin (getWidth(), 130), 22));
+        }
 
         void paint (juce::Graphics& g) override
         {
             auto* m = dynamic_cast<GraphicMidiAddModule*> (module.get());
-            auto r = getLocalBounds().toFloat();
+            if (m == nullptr || ! m->visualsShown()) return;
+            auto r = getLocalBounds().toFloat().withTrimmedTop ((float) GraphicMidiAddModule::kButtonStrip);
             g.setColour (juce::Colour (0xff141414));
             g.fillRoundedRectangle (r, 3.0f);
-            if (m == nullptr) return;
 
             const int root = shown.root;
             int notes[kSlots + 1], off = 0;
@@ -287,10 +354,25 @@ namespace
             bool operator!= (const Shown& o) const { return root != o.root || offsets != o.offsets; }
         };
 
+        void updateToggleText()
+        {
+            auto* m = dynamic_cast<GraphicMidiAddModule*> (module.get());
+            shownVisuals = m != nullptr && m->visualsShown();
+            toggle.setButtonText (shownVisuals ? "Hide Visuals" : "Show Visuals");
+        }
+
         void timerCallback() override
         {
             auto* m = dynamic_cast<GraphicMidiAddModule*> (module.get());
             if (m == nullptr) return;
+            if (m->visualsShown() != shownVisuals)
+            {
+                // (undo, a patch loaded into the card)
+                updateToggleText();
+                repaint();
+                if (paramsChangedByContent != nullptr)
+                    paramsChangedByContent();
+            }
             Shown now;
             now.root = m->visualNote();
             for (int s = 0; s < kSlots; ++s) now.offsets[(size_t) s] = m->offset (s);
@@ -307,6 +389,8 @@ namespace
 
         juce::WeakReference<SynthModule> module;
         Shown shown;
+        juce::TextButton toggle;
+        bool shownVisuals { false };
     };
 }
 

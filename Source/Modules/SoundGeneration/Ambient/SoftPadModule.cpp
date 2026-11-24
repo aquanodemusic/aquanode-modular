@@ -118,7 +118,7 @@ public:
                 n.driftPhase += n.driftRate * 32.0f / (float) sr;
                 if (n.driftPhase > 1.0f) n.driftPhase -= 1.0f;
                 const float wob = drift * std::sin (6.2831853f * n.driftPhase);
-                const double f0 = 440.0 * std::pow (2.0, ((double) k.notes[i] - 69.0 + bend) / 12.0);
+                const double f0 = aquanode::midiNoteToHz ((double) k.notes[i] + bend);   // (patch tuning, 6.9.10)
                 const double w0 = juce::MathConstants<double>::twoPi * f0 / sr;
                 auto cents = [] (double c) { return std::pow (2.0, c / 1200.0); };
                 n.ph[0].set (w0 * cents (-det + wob));
@@ -239,7 +239,7 @@ public:
             "keyboard shows the chord each key plays: the key and up to five more notes (Note 1-5), ready-made in Chord, "
             "leaning on stacked fourths and the pentatonic. Visual (Reference Only) picks the note the keyboard shows it on.";
         d.section = ModuleSection::Oscillator;
-        d.sockets = { midiIn ("addMidiIn", "Add Midi In"), modIn ("envIn", "Env In"), audioOut ("out", "Audio Out") };
+        d.sockets = { midiIn ("addMidiIn", "Add MIDI In"), modIn ("envIn", "Env In"), audioOut ("out", "Audio Out") };
         d.params.push_back (makeCombo ("chord", "Chord", softpad::kChordNames, 0, 0, 3).noMod());
         auto visual = makeRotary ("visual", "Visual (Reference Only)", 24.0f, 96.0f, 60.0f, 0, {}, false, 1.0f).noMod();
         visual.widthUnits = 3;

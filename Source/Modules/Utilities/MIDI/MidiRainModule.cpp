@@ -22,6 +22,7 @@
 // Inputs: Midi In (the played keys when empty). Output: Midi Out.
 //==============================================================================
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/MpeFollow.h"
 #include "../../Shared/MidiTake.h"
 
 using namespace aquanode;
@@ -51,11 +52,19 @@ public:
         numHeld = 0; numDrops = 0; lastStep = -1.0e18;
     }
 
-    void blockStart() override { clock.blockStart (tempoBpm, sampleRate, hostPlayHead); }
+    void blockStart() override { clock.blockStart (tempoBpm, sampleRate, tempoFromLane() ? nullptr : hostPlayHead); }
 
     //=== the played keys (audio thread) =======================================
+    bool acceptsMpeEvents() const override { return true; }   // (6.9.11: its notes follow the leading finger)
+    aquanode::MpeFollow mpeFollow;
     int processMidiEvent (const MidiDriverEvent& in, MidiDriverEvent* out, int maxOut) override
     {
+        mpeFollow.heard (in);
+        if (in.isExpression)
+        {
+            if (param (pThrough) > 0.5f && maxOut > 0) { out[0] = in; return 1; }   // (the keys passed through keep theirs)
+            return 0;
+        }
         if (in.isOn) addHeld (in.note); else removeHeld (in.note);
         if (param (pThrough) > 0.5f && maxOut > 0)
         {
@@ -71,7 +80,12 @@ public:
     void midiAllNotesOff() override { numHeld = 0; numDrops = 0; }
 
     //=== the rain (audio thread, every sample) =================================
-    int midiDriverAdvanceEvents (double, MidiDriverEvent* events, int maxEvents) override
+    // (6.9.11) its notes, then the leading finger's MPE on them
+    int midiDriverAdvanceEvents (double sr, MidiDriverEvent* events, int maxEvents) override
+    {
+        return mpeFollow.decorate (events, advanceNotes (sr, events, maxEvents), maxEvents);
+    }
+    int advanceNotes (double, MidiDriverEvent* events, int maxEvents)
     {
         clock.tick();
         int n = 0;
@@ -149,9 +163,9 @@ public:
             "Seed changes the weather), Smooth Random, Sine, Triangle, Saw Up / Down (rising or falling over Cycle steps), "
             "Steps Up / Down (walking the allowed notes). Lock keeps it on the Major or Minor Pentatonic of the lowest held "
             "key, the Held Notes, chosen Notes (the strip on the card) or every semitone. Rain From: every held note, or "
-            "the newest. Through passes the played notes on. Rec on the card saves what it plays as a .mid file.";
+            "the newest. Through passes the played notes on. Rec on the card saves what it plays as a .mid file. With MPE, the notes it plays take the bend, pressure and slide of the finger that leads (the latest pressed) and follow them while they sound; what it records and saves is plain MIDI.";
         d.section = ModuleSection::Utility;
-        d.sockets = { midiIn ("midiIn", "Midi In"), midiOut ("midiOut", "Midi Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), midiOut ("midiOut", "MIDI Out"), tempoIn() };
         d.params = {
             makeSteppedList ("speed", "Speed", kRainSpeeds, 7, 0),
             makeCombo  ("shape", "Shape", { "Random", "Smooth Random", "Sine", "Triangle", "Saw Up", "Saw Down", "Steps Up", "Steps Down" }, 0, 0, 2),

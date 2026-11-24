@@ -200,7 +200,7 @@ static ModuleDescriptor beatRepeatDescriptor()
     d.section = ModuleSection::Effect;
     d.sidebarOrder = 44;
     d.searchKeywords = "stutter glitch repeat slice roll";
-    d.sockets = { audioIn ("audioIn", "Audio In"), modIn ("trigIn", "Trig In"), audioOut ("audioOut", "Audio Out") };
+    d.sockets = { audioIn ("audioIn", "Audio In"), modIn ("trigIn", "Trig In"), audioOut ("audioOut", "Audio Out"), tempoIn() };
     auto offset = makeRotary ("offset", "Offset", 0.0f, 15.0f, 8.0f, 0, "/16", false, 1.0f);
     auto gate = makeRotary ("gate", "Gate", 1.0f, 16.0f, 4.0f, 1, "/16", false, 1.0f);
     d.params = {

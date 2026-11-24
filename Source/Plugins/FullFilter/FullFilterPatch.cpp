@@ -112,7 +112,7 @@ public:
         d.section = ModuleSection::Filter;
         d.accent = kit::accentOf (kPlugin);
         d.sidebarOrder = 400;
-        d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
         d.params = {
             makeRotary ("root", "Root", 20.0f, 2000.0f, 110.0f, 0, "Hz", true),
             makeRotary ("level", "Level", -24.0f, 48.0f, 12.0f, 0, "dB"),

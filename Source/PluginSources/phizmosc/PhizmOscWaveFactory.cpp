@@ -905,8 +905,46 @@ bool TranswaveAudioProcessor::rerollSlot(int slot, juce::String& statusOut)
         return ok;
     }
 
+    if (origin == 3)
+    {
+        statusOut = "Nothing to re-roll: " + name + " is a built-in transwave";
+        return false;
+    }
+
     statusOut = "Nothing to re-roll: " + name + " was loaded from a file";
     return false;
+}
+
+//==============================================================================
+void TranswaveAudioProcessor::restoreBuiltins(const juce::XmlElement& xml)
+{
+    for (int s = 0; s < 2; ++s)
+    {
+        const juce::String sfx(s == 0 ? "A" : "B");
+        if (xml.getIntAttribute("origin" + sfx, 0) != 3) continue;
+        const int idx = ::twremake::indexOf(xml.getStringAttribute("builtin" + sfx));
+        juce::String st;
+        if (idx >= 0) loadBuiltinTranswave(s, idx, st);
+    }
+}
+
+//==============================================================================
+// 7.0.0: a built-in transwave. It is rebuilt from the bank, so presets only
+// need to carry its name.
+bool TranswaveAudioProcessor::loadBuiltinTranswave(int slot, int index, juce::String& statusOut)
+{
+    if (slot < 0 || slot >= 2) { statusOut = "Bad slot"; return false; }
+    std::vector<std::vector<float>> frames;
+    if (!::twremake::render(index, frames))
+    {
+        statusOut = "Built-in transwave not found";
+        return false;
+    }
+    const juce::String nm = ::twremake::name(index);
+    const int n = (int)frames.size();
+    statusOut = "Built-in: " + nm + " (" + juce::String(n) + " frames)";
+    return installGeneratedFrames(slot, std::move(frames), ::twremake::kFrameSize, nm,
+        3, (juce::int64)index, n, false, statusOut);
 }
 
 //==============================================================================

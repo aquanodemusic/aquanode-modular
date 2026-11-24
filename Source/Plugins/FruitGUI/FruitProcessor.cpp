@@ -162,6 +162,9 @@ void FruitProcessor::connectSynth (int s)
     const auto mi = midiInOf (d), out = mainOut (d);
     if (mi.isNotEmpty() && slot.feedId >= 0) engine->addCable (slot.feedId, "midiOut", slot.synthId, mi);
     if (out.isNotEmpty()) engine->addCable (slot.synthId, out, inserts[(size_t) s].inId, "audioIn");
+    if (auto* fi = engine->getInstance (slot.feedId))   // (6.9.14) MPE from the keys, for a synth that plays it
+        if (auto* feed = dynamic_cast<FruitNoteFeed*> (fi->dsp.get()))
+            feed->mpeOk.store (aquanode::typeAcceptsMpe (d.typeId));
 }
 
 void FruitProcessor::rewire (int i)
@@ -1113,6 +1116,44 @@ void FruitProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
                 recFifo.prepareToWrite (1, i1, n1, i2, n2);
                 if (n1 > 0) { recBuf[(size_t) i1] = { recStart[(size_t) p], len, p, recVel[(size_t) p] }; recFifo.finishedWrite (1); }
                 recStart[(size_t) p] = -1.0;
+            }
+        }
+        // (6.9.14) MPE: a member channel's note carries its own bend (48 semitones), pressure and
+        // Slide, and their changes reach it while it sounds - when the keys' synth plays MPE
+        const int ch = m.getChannel();
+        if (ch >= 2 && ch <= 16)
+        {
+            auto* lf = feeds[(size_t) liveSlot].load();
+            const bool mpe = lf != nullptr && lf->mpeOk.load (std::memory_order_relaxed);
+            const auto c = (size_t) ch;
+            bool expression = false;
+            if (m.isPitchWheel())             { mpeBend[c] = (float) (m.getPitchWheelValue() - 8192) / 8192.0f * 48.0f; expression = true; }
+            else if (m.isChannelPressure())   { mpePress[c] = (float) m.getChannelPressureValue() / 127.0f; expression = true; }
+            else if (m.isControllerOfType (74)) { mpeSlide[c] = (float) m.getControllerValue() / 127.0f; expression = true; }
+            if (expression)
+            {
+                if (mpe && mpeNote[c] >= 0)
+                {
+                    aquanode::MidiDriverEvent e;
+                    e.note = mpeNote[c]; e.mpe = true; e.isExpression = true;
+                    e.bend = mpeBend[c]; e.pressure = mpePress[c]; e.slide = mpeSlide[c];
+                    lf->pushEvent (off, e);
+                }
+                continue;
+            }
+            if (m.isNoteOn() && mpe)
+            {
+                aquanode::MidiDriverEvent e;
+                e.note = m.getNoteNumber(); e.velocity = m.getFloatVelocity(); e.isOn = true; e.mpe = true;
+                e.bend = mpeBend[c]; e.pressure = mpePress[c]; e.slide = mpeSlide[c];
+                lf->pushEvent (off, e);
+                mpeNote[c] = m.getNoteNumber();
+                liveHeld[(size_t) liveSlot][(size_t) m.getNoteNumber()] = true;
+                continue;
+            }
+            if (m.isNoteOff() && mpeNote[c] == m.getNoteNumber())
+            {
+                mpeNote[c] = -1; mpeBend[c] = 0.0f; mpePress[c] = -1.0f; mpeSlide[c] = -1.0f;
             }
         }
         if (m.isNoteOn()) { pushNote (liveSlot, off, m.getNoteNumber(), m.getFloatVelocity(), true); liveHeld[(size_t) liveSlot][(size_t) m.getNoteNumber()] = true; }

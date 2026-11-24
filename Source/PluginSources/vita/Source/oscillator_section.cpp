@@ -15,6 +15,7 @@
  */
 
 #include "oscillator_section.h"
+#include "vita_wavetables.h"
 #include "vita_file_chooser.h"
 
 #include "bar_renderer.h"
@@ -830,6 +831,51 @@ void OscillatorSection::textMouseDown(const MouseEvent& e) {
   [this] {
     FullInterface* parent = findParentComponentOfClass<FullInterface>();
     return parent ? parent->getWavetableJson(index_) : json();
+  },
+  // (Aquanode, 6.9.12) Vita's own tables: the default set, Aqua Massif's, and the generator
+  {
+    { "Aquanode Tables...", [this] { showTableList(0); } },
+    { "Massif Tables...", [this] { showTableList(1); } },
+    { "Generate...", [this] { showTableList(2); } },
+  });
+}
+
+// (Aquanode, 6.9.12) one of the three lists of Vita's own tables, and what a pick loads
+void OscillatorSection::showTableList(int which) {
+  PopupItems options;
+  if (which == 0) {
+    const auto& names = VitaWavetables::defaultNames();
+    for (int i = 0; i < (int)names.size(); ++i)
+      options.addItem(i, names[(size_t)i], names[(size_t)i] == preset_selector_->getText().toStdString());
+  }
+  else if (which == 1) {
+    for (int i = 0; i < VitaWavetables::massifCount(); ++i)
+      options.addItem(i, VitaWavetables::massifName(i), VitaWavetables::massifName(i) == preset_selector_->getText().toStdString());
+  }
+  else {
+    const auto& kinds = VitaWavetables::generatorKinds();
+    for (int i = 0; i < (int)kinds.size(); ++i)
+      options.addItem(i, kinds[(size_t)i]);
+  }
+  Component::SafePointer<OscillatorSection> safe(this);
+  showPopupSelector(preset_selector_.get(), Point<int>(0, preset_selector_->getHeight()), options, [safe, which](int id) {
+    if (safe == nullptr || id < 0)
+      return;
+    json table;
+    if (which == 0)
+      table = VitaWavetables::defaultTable(id);
+    else if (which == 1) {
+      File own = VitaWavetables::massifFile(id);
+      if (own.existsAsFile()) {
+        safe->loadFile(own);
+        safe->preset_selector_->setText(VitaWavetables::massifName(id));
+        return;
+      }
+      table = VitaWavetables::massifStandIn(id);
+    }
+    else
+      table = VitaWavetables::generate(id, (uint32_t)Random::getSystemRandom().nextInt() | 1u);
+    safe->loadWavetable(table);
   });
 }
 

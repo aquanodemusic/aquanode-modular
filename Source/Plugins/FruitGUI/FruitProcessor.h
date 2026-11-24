@@ -257,6 +257,10 @@ private:
     std::array<Active, 512> active;
     int numActive = 0;
     std::array<std::array<bool, 128>, fruit::kSlots> liveHeld {};
+    // (6.9.14) MPE from the keys: each member channel's note and expression
+    std::array<int, 17> mpeNote { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+    std::array<float, 17> mpeBend {}, mpePress { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 },
+                          mpeSlide { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
     int liveSlot = 1;
     // the playlist's samples: one stereo bus per mixer insert that has any
     void resolveSamples();                           // message thread, under processLock

@@ -1173,12 +1173,12 @@ static ModuleDescriptor drumMorphDescriptor()
         "level envelopes and transients carried over. Tap one of the four panels to load a sound (the first 10 s, "
         "silent start cut off) or let Random Kit fill them from a built-in kit, drag the start / end marks, and shape each sound's volume between "
         "them with its curve (tap to add a point, drag it, double-tap or long-press to remove it). An 8 x 8 grid of morphs is made in the background; X and Y move freely "
-        "while it plays. Plays like a sampler from Midi In or the keys (Root plays it as it is); Trig In plays it at Root. "
+        "while it plays. Plays like a sampler from MIDI In or the keys (Root plays it as it is); Trig In plays it at Root. "
         "Cepstral blends the morph with a plain crossfade, Transient lifts or tames the attack, Decay shortens it.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 186;
     d.searchKeywords = "drum morph sample xy pad cepstral blend kick snare";
-    d.sockets = { modIn ("trigIn", "Trig In"), midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+    d.sockets = { modIn ("trigIn", "Trig In"), midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
     auto fft = makeCombo ("fft", "FFT Size", { "512", "1024", "2048", "4096" }, 2, 2, 2);
     fft.modulatable = false;
     auto root = makeRotary ("root", "Root", 24.0f, 96.0f, 60.0f, 1, {}, false, 1.0f);

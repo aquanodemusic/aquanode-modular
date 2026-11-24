@@ -151,7 +151,8 @@ int MpePianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* eve
 {
     int n = 0;
     const bool hostAvailable = hostTransport.hasBpm && hostTransport.bpm > 0.0;
-    const double bpm = juce::jlimit (10.0, 999.0, param (pSync) > 0.5f && hostAvailable ? hostTransport.bpm : (double) param (pTempo));
+    const double bpm = juce::jlimit (10.0, 999.0, tempoFromLane() ? tempoBpm   // (6.9.10: a lane's tempo wins)
+                                                  : param (pSync) > 0.5f && hostAvailable ? hostTransport.bpm : (double) param (pTempo));
     const double loopLen = juce::jlimit (1, kMaxBars, (int) std::lround (param (pBars))) * kBeatsPerBar;
 
     if (rollCommandPending)
@@ -1170,7 +1171,7 @@ static ModuleDescriptor mpePianoRollDescriptor()
         "notes without MPE.";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 26;
-    d.sockets = { midiOut ("midiOut", "MPE Out") };
+    d.sockets = { midiOut ("midiOut", "MPE Out"), tempoIn() };   // (6.9.10: tempo per lane)
     d.params = {
         makeRotary ("tempo", "Tempo", 20.0f, 300.0f, 120.0f, 9, {}, false, 1.0f).hide().noMod(),
         makeRotary ("bars", "Bars", 1.0f, (float) MpePianoRollModule::kMaxBars, 4.0f, 9, {}, false, 1.0f).hide().noMod(),

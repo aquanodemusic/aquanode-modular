@@ -51,7 +51,8 @@ static ModuleDescriptor clockDescriptor()
     d.sidebarOrder = 13;
     d.sockets = {
         modIn  ("resetIn", "Reset In"),
-        unipolarOut ("gateOut", "Gate Out")
+        unipolarOut ("gateOut", "Gate Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     d.params = {
         makeSteppedList ("division", "Division", seqDivisionChoices(), 8, 0),

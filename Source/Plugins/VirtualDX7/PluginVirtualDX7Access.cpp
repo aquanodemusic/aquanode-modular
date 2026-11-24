@@ -40,6 +40,13 @@ namespace
             aquanode::plugins::randompreset::Lists l;
             l.kinds.add ("Anything");
             l.kinds.addArray (aquanode::dx7::categories());
+            // then Aquanode's own banks: a voice of any of them, or of one
+            while (l.kindHeadings.size() < l.kinds.size()) l.kindHeadings.add ({});
+            l.kindHeadings.add ("Aquanode Banks");
+            l.kinds.add ("Any Aquanode Bank");
+            for (int b = 0; b < aqp_virtualdx7::vdx7::kNumAquanodeBanks; ++b)
+                l.kinds.add (juce::String ("Bank ") + aqp_virtualdx7::vdx7::factoryBankName (
+                                 aqp_virtualdx7::vdx7::RomStore{}, aqp_virtualdx7::vdx7::kFirstAquanodeBank + b));
             l.defaultKind = 0;
             return l;
         };
@@ -50,6 +57,31 @@ namespace
                 return {};
             if (vdx->usingEmulator())
                 vdx->unloadFirmware();
+            namespace v7 = aqp_virtualdx7::vdx7;
+            const int bankKinds = 1 + (int) aquanode::dx7::categories().size();
+            if (kind >= bankKinds)
+            {
+                // an Aquanode bank voice (kind bankKinds: of any bank)
+                juce::Random rng ((juce::int64) seed);
+                const int b = kind == bankKinds ? rng.nextInt (v7::kNumAquanodeBanks)
+                                                : juce::jlimit (0, v7::kNumAquanodeBanks - 1, kind - bankKinds - 1);
+                const auto bank = v7::factoryBank (vdx->roms(), v7::kFirstAquanodeBank + b);
+                // (the banks' empty places - "Init", "Default" - left out)
+                auto isEmptyPlace = [] (const juce::String& n)
+                {
+                    return n.isEmpty() || n == "-" || n.equalsIgnoreCase ("Init") || n.equalsIgnoreCase ("Default")
+                        || n.equalsIgnoreCase ("Init Voice");
+                };
+                std::vector<int> pool;
+                for (int i = 0; i < 32; ++i)
+                    if (! isEmptyPlace (juce::String (bank.voiceName (i)).trim()))
+                        pool.push_back (i);
+                if (pool.empty())
+                    return {};
+                const int idx = pool[(size_t) rng.nextInt ((int) pool.size())];
+                vdx->setVoice (bank.voice (idx), true);
+                return juce::String (bank.voiceName (idx)).trim();
+            }
             const int category = kind - 1;      // -1: any
             std::vector<const aquanode::dx7::FactoryVoice*> pool;
             for (const auto& fv : aquanode::dx7::factoryVoices())

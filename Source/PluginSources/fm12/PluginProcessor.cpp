@@ -1,4 +1,5 @@
 ﻿#include "PluginProcessor.h"
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "PluginEditor.h"
 
 using namespace juce;
@@ -265,7 +266,7 @@ void FM12Voice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer,
     // ─── Per-block constants ──────────────────────────────────────────────────
     const float  masterVol = *pMasterVol;
     const float  nyquist = *pNyquist;
-    const double noteFreq = juce::MidiMessage::getMidiNoteInHertz(noteMidi)
+    const double noteFreq = ::aquanode::tuning::noteToHz((double) noteMidi)
                           * std::exp2((double)pitchBendSemis / 12.0);
 
     // FM engine mode:

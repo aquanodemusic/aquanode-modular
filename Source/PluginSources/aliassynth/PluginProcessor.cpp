@@ -1,3 +1,4 @@
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
@@ -104,7 +105,7 @@ struct AliasVoice : public juce::SynthesiserVoice
         // Downsampling (Sample & Hold) factor
         int holdFactor = juce::jmax(1, (int)std::round(voiceSampleRate / (nyquistLimit * 2.0f)));
 
-        float noteFreq = (float) juce::MidiMessage::getMidiNoteInHertz(getCurrentlyPlayingNote()) * std::exp2(bendSemis / 12.0f);
+        float noteFreq = (float) ::aquanode::tuning::noteToHz((double) getCurrentlyPlayingNote()) * std::exp2(bendSemis / 12.0f);
         float transposeTarget = *parameters.getRawParameterValue("transpose");
 
         // --- ONLY update target each block ---

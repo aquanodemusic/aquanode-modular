@@ -272,7 +272,7 @@ ThemePanel::ThemePanel (std::function<void()> onColoursChanged) : changed (std::
 
     resetViewButton.setTooltip ("The patch area back to its origin, at 100 %");
     resetViewButton.onClick = [this] { if (onResetView) onResetView(); };
-    addAndMakeVisible (resetViewButton);
+    addChildComponent (resetViewButton);   // (6.9.15: Reset View is in the View menu now - kept hidden)
 
     gridToggle.setToggleState (themeColours().showGrid, juce::dontSendNotification);
     gridToggle.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
@@ -515,7 +515,7 @@ void ThemePanel::resized()
         topRow = top;
         r.removeFromTop (8);
         titleArea = {};
-        resetViewBelow = true;
+        resetViewBelow = false;   // (6.9.15: in the View menu)
         resetViewButton.setButtonText ("Reset View");
         // each as wide as its name needs, the room left (or missing) shared out
         juce::TextButton* row[] = { &glassButton, &skeuoButton, &colourwayButtons[0], &colourwayButtons[1], &colourwayButtons[2] };
@@ -558,11 +558,10 @@ void ThemePanel::resized()
             return juce::jmin (eachMax, (int) ((float) (top.getWidth() - used) / units));
         };
         int titleW = 84;   // (the same in every look: nothing in the row moves when the look changes)
-        int resetW = juce::jlimit (96, 150, (top.getWidth() - titleW) / 7);
+        int resetW = 0;    // (6.9.15: Reset View is in the View menu)
         if (eachFor (titleW, resetW) < eachMin) titleW = 0;
-        if (eachFor (titleW, resetW) < eachMin) resetW = 0;
         const int each = eachFor (titleW, resetW);
-        resetViewBelow = resetW == 0;
+        resetViewBelow = false;
 
         titleArea = top.removeFromLeft (titleW);
         if (titleW > 0) top.removeFromLeft (gap);
@@ -644,6 +643,53 @@ void ThemePanel::resized()
         if (toggleTight <= cell.getWidth() - 4)
         {
             placeToggles (cell.withSizeKeepingCentre (cell.getWidth() - 4, juce::jmin (cell.getHeight(), rowH)));
+            togglesInCell = true;
+        }
+        // (7.0.0) where the platform's font measures wider (Windows), the text and tick
+        // boxes get smaller until the three fit the cell, rather than dropping to a row of their own
+        for (float fh = toggleFontH - 0.5f; fh >= 9.0f && ! togglesInCell; fh -= 0.5f)
+        {
+            int want[3], total = 0;
+            for (int i = 0; i < 3; ++i)
+            {
+                want[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (juce::Font (juce::FontOptions (fh)), toggles[i]->getButtonText()))
+                        + (int) std::ceil (fh * 1.1f) + 12;   // the tick box, a little room around it
+                total += want[i];
+            }
+            if (total > cell.getWidth() - 4 && fh > 9.0f) continue;   // (at the smallest size they go in anyway)
+            const int h = juce::jmin (cell.getHeight(), (int) std::ceil (fh / 0.75f));
+            auto row = cell.withSizeKeepingCentre (cell.getWidth() - 4, h);
+            const int spare = juce::jmax (0, row.getWidth() - total) / 3;
+            for (int i = 0; i < 3; ++i)
+                toggles[i]->setBounds (i == 2 ? row : row.removeFromLeft (want[i] + spare));
+            togglesInCell = true;
+        }
+    }
+    // (6.9.15) tall (a phone held upright): the free cell under Random Preset, left of the knob colours
+    if (! wide && ! togglesInCell && ThemeColours::NumGridSlots % 2 == 1 && left.getWidth() >= 300)
+    {
+        const auto area = left.withTrimmedBottom (8);
+        const int gridRows = (ThemeColours::NumGridSlots + 1) / 2;
+        const float cellH = (float) area.getHeight() / (float) (gridRows + 1), cellW = (float) area.getWidth() / 2.0f;
+        auto cell = juce::Rectangle<float> ((float) area.getX(), (float) area.getY() + cellH * (float) gridRows, cellW, cellH)
+                        .reduced (3.0f).toNearestInt();
+        // (6.9.16) the text (and tick box) smaller, the padding tiny, until the three fit
+        // there: the toggles' font follows their height (three quarters of it, up to 15)
+        for (float fh = toggleFontH; fh >= 7.0f && ! togglesInCell; fh -= 0.5f)
+        {
+            int want[3], total = 0;
+            for (int i = 0; i < 3; ++i)
+            {
+                want[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (juce::Font (juce::FontOptions (fh)), toggles[i]->getButtonText()))
+                        + (int) std::ceil (fh * 1.1f) + 10;   // the tick box, a little room around it
+                total += want[i];
+            }
+            if (total > cell.getWidth() - 2) continue;
+            const int h = juce::jmin (cell.getHeight(), (int) std::ceil (fh / 0.75f));
+            auto row = cell.withSizeKeepingCentre (cell.getWidth() - 2, h);
+            const int spare = (row.getWidth() - total) / 3;
+            for (int i = 0; i < 3; ++i)
+                toggles[i]->setBounds (i == 2 ? row : row.removeFromLeft (want[i] + spare));
             togglesInCell = true;
         }
     }

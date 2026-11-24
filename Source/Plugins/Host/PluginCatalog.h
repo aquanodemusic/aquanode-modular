@@ -106,6 +106,14 @@ namespace aquanode::plugins
     // from Audio In for the effects); returns its instance id or -1.
     int addGuiVersion (AquanodeModularAudioProcessor& patch, const juce::String& id, juce::Point<int> where);
 
+    // (6.9.17) a patch version in more than one kind (FM12: its engine with section cards, or two
+    // operator modules): registerPatchVersion gives the first, this the others. The Patch pills
+    // ask which when there is more than one; building uses patchKind() (0: the first).
+    bool registerPatchKind (const juce::String& id, const juce::String& firstName,
+                            const juce::String& name, PatchBuildFn build);
+    juce::StringArray patchKinds (const juce::String& id);   // every kind's name; empty: one kind only
+    int& patchKind();
+
     // Builds the patch version - from the plugin's default sound when file is
     // empty, else from that preset file - into the existing patch (replace =
     // false) or a cleared one. Returns the display name, empty on failure.

@@ -38,6 +38,7 @@
 */
 #pragma once
 
+#include "../../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include <cstdint>
 #include <cstring>
 #include <cmath>
@@ -418,12 +419,18 @@ public:
 
     bool shouldFilterNote (int note) const
     {
+        if (const auto* t = ::aquanode::tuning::current())   // (Aquanode: its keyboard map)
+            return note >= 0 && note < 128 && ! t->mapped[note];
         return filter_ && filter_ (note);
     }
 
     float noteToHz (int note) const
     {
         note = std::clamp (note, 0, 127);
+
+        // (Aquanode: a Microtuning in the patch - its table first)
+        if (const auto* t = ::aquanode::tuning::current())
+            return (float) t->hz[note];
 
         if (provider_)
         {

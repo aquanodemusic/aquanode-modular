@@ -3,7 +3,6 @@
 #include "PluginProcessor.h"
 #include "../Editor/PluginEditor.h"
 #include "../Modules/Core/ModuleRegistry.h"
-#include "../Modules/Utilities/MIDI/MidiAddModule.h"
 #include "../Modules/Utilities/MIDI/DiscardMidiModule.h"
 #include "../Modules/Utilities/Control/DawModModule.h"
 #include "../Modules/Utilities/MIDI/PianoRollModule.h"
@@ -102,6 +101,20 @@ static ModuleMigration migrateModuleType (const juce::String& typeId, const juce
                  { { "range", "_eqRange" }, { "speed", "_eqSpeed" }, { "peak", "_eqPeak" }, { "fft", "_eqFft" }, { "reassign", "_eqReassign" } } };
     }
 
+    // 6.9.19: the SVF Filter's Filter Mode is its Type knob (Lowpass 0, Bandpass 50, Highpass 100 %)
+    if (typeId == "filter.svf")
+    {
+        bool hasMorph = false;
+        float morph = 0.0f;
+        for (auto* pe : moduleXml.getChildWithTagNameIterator ("Param"))
+        {
+            const auto id = pe->getStringAttribute ("id"), v = pe->getStringAttribute ("value");
+            if (id == "morph") hasMorph = true;
+            if (id == "mode") morph = v == "Bandpass" || v == "1" ? 50.0f : v == "Highpass" || v == "2" ? 100.0f : 0.0f;
+        }
+        if (! hasMorph) return { typeId, { { "morph", morph } } };
+    }
+
     // 5.19.3: the Spectrogram's Max Shift (bins) is Accuracy (%, higher is stricter)
     if (typeId == "util.spectrogram")
     {
@@ -141,6 +154,10 @@ static ModuleMigration migrateModuleType (const juce::String& typeId, const juce
         if (! hasEngine)
             return { typeId, { { "engine", 0.0f }, { "preset", hasPreset && preset >= 0.0f ? preset + 1.0f : (hasPreset ? preset : 1.0f) } } };
     }
+    // 6.9.10: Midi Add and Graphic Midi Add are one card, MIDI Add (the Graphic
+    // one's type): the old Midi Add's four Notes as they were, the other three off
+    if (typeId == "util.midiadd")
+        return { "util.graphicmidiadd", { { "note5", 0.0f }, { "note6", 0.0f }, { "note7", 0.0f }, { "visuals", 0.0f } } };
     if (typeId == "osc.midpiano")  return { "osc.piano", { { "model", 1.0f } } };
     if (typeId == "osc.hardpiano") return { "osc.piano", { { "model", 2.0f } } };
 
@@ -450,7 +467,11 @@ void AquanodeModularAudioProcessor::applyPatchXml (const juce::XmlElement& xml,
 
                 if ((spec->type == ParamType::Combo || spec->type == ParamType::RotarySteppedList))
                 {
-                    const int idx = spec->choices.indexOf (text);
+                    int idx = spec->choices.indexOf (text);
+                    if (idx < 0)
+                        idx = spec->choices.indexOf (text, true);   // a choice whose case changed ("Midi" -> "MIDI", 6.9.10)
+                    if (idx < 0 && text.startsWith ("Just Intonation"))
+                        idx = spec->choices.indexOf (text.replace ("Just Intonation", "Pure Intonation"));   // (renamed in 6.9.10)
                     if (idx >= 0)
                         value = (float) idx;
                     else if (const int old = renamedChoice (typeId, paramId, text); old >= 0)
@@ -519,6 +540,22 @@ void AquanodeModularAudioProcessor::applyPatchXml (const juce::XmlElement& xml,
         {
             CableInfo c { ce->getIntAttribute ("fromModule"), ce->getStringAttribute ("fromSocket"),
                           ce->getIntAttribute ("toModule"), ce->getStringAttribute ("toSocket") };
+
+            // an input that was renamed when its module type was merged into another
+            if (auto* dst = getInstance (c.toModule))
+                if (dst->descriptor().typeId == "util.graphicmidiadd" && c.toSocket == "alwaysMidiIn")
+                    c.toSocket = "midiIn";   // the old Midi Add's (6.9.10)
+
+            // (6.9.19) the Dual Filter's MG inputs went: a cable into one comes into
+            // the filter's CV input, which takes the MG depth if it had none of its own
+            if (auto* dst = getInstance (c.toModule))
+                if (dst->descriptor().typeId == "filter.dualfilter" && (c.toSocket == "hpfMg" || c.toSocket == "lpfMg"))
+                {
+                    const juce::String cvIn = c.toSocket == "hpfMg" ? "hpfExt" : "lpfExt";
+                    if (dst->dsp->getParameter (cvIn) < 0.001f)
+                        dst->dsp->setParameter (cvIn, dst->dsp->getParameter (c.toSocket));
+                    c.toSocket = cvIn;
+                }
 
             // into an input that is a knob cable now (patches saved before it was removed)
             if (auto* dst = getInstance (c.toModule))

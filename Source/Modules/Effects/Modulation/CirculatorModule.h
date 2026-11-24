@@ -18,7 +18,7 @@
 class CirculatorModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pMode = 0, pFreq, pNote, pFine, pFocus, pDepth, pFeedback, pSpread, pStagger, pMix };
+    enum ParamIndex { pMode = 0, pFreq, pNote, pFine, pFocus, pDepth, pFeedback, pSpread, pStagger, pMix, pEngine };
 
     static constexpr int kMaxStages = 64;
     static constexpr int kCtrl = 16;   // coefficients are worked out every kCtrl samples, glided between
@@ -36,6 +36,17 @@ private:
     struct Coef { float g { 0.05f }, k { 0.5f }, d { 1.0f }; };
 
     void updateCoefficients();
+    double centreHz() const;
+    void processOriginal (const aquanode::StereoFrame* inputs, aquanode::StereoFrame* outputs);
+
+    // Engine Original: GullDSP's Circulate as it is (double precision, per-sample smoothing)
+    struct OrigStage { double s1 { 0 }, s2 { 0 }; };
+    OrigStage ost[2][kMaxStages];
+    double oG { 0.0 }, oK { 0.5 }, oCoefSmooth { 0.001 }, oParamSmooth20 { 0.01 }, oParamSmooth10 { 0.02 };
+    double oCentreNorm { 0.5 }, oFocus { 0.5 }, oFeedback { 0.0 };
+    float oCurrent[2] {};
+    int oStages { 32 };
+    bool oSnap { true };
 
     Stage st[2][kMaxStages];
     Coef cur[2][kMaxStages], target[2][kMaxStages], step[2][kMaxStages];

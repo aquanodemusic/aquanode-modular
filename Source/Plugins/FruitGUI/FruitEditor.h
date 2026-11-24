@@ -81,6 +81,7 @@ private:
         int index = -1;
         int visIndex = -1;          // shown only while this parameter equals visEquals (visibleWhen)
         float visEquals = 0.0f;
+        bool visFrom = false;      // (shown from visEquals on, not only at it)
         bool shown = true;
         std::unique_ptr<juce::Slider> slider;
         std::unique_ptr<juce::ComboBox> combo;

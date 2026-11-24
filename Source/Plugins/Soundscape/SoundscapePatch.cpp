@@ -119,9 +119,9 @@ public:
         d.description = "One of Soundscape Ecology's three slots, played by the plugin's own engine: a field of "
                         "individuals of one model (insects, frogs, birds; rain, wind, water; engines, bells...) "
                         "with its physics (P1..P8), its rhythm, its population and space, the acoustic niche "
-                        "and the weather. Midi In opens its gate (and transposes it in Gated + Pitch). Its "
+                        "and the weather. MIDI In opens its gate (and transposes it in Gated + Pitch). Its "
                         "output goes to the Soundscape Habitat. The drawn curves come with the module.";
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
         d.params = {
             makeSteppedList ("slot", "Slot", { "1", "2", "3" }, 0, 0).noMod(),
             makeCombo ("phony", "Class", { "Biophony", "Geophony", "Anthrophony" }, 0, 0, 2),
@@ -344,7 +344,7 @@ public:
                         "the fields' sum, gated. Trig Out restarts the fields when a note opens a silent gate, Gate "
                         "Out stops them while it is shut, Pitch Out transposes them (Gated + Pitch: semitones from "
                         "Root, times Pitch Amt).";
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out"),
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out"),
                       modOut ("gateOut", "Gate Out"), modOut ("trigOut", "Trig Out"), modOut ("pitchOut", "Pitch Out") };
         d.params = {
             makeCombo ("midimode", "MIDI", { "Free Run", "Gated", "Gated + Pitch" }, 1, 0, 2).noMod(),

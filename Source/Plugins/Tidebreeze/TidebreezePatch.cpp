@@ -108,7 +108,7 @@ public:
                         "by semitones / 60. Load Wave puts an audio file into the High wave's user slot (or the next "
                         "free one), Roll Wave a new wave of the Roll type; both play on High and Low. The user waves "
                         "are saved with the patch.";
-        d.sockets = { midiIn ("midiIn", "Midi In"), modIn ("pitchIn", "Pitch In"), modIn ("pegIn", "Pitch Env"),
+        d.sockets = { midiIn ("midiIn", "MIDI In"), modIn ("pitchIn", "Pitch In"), modIn ("pegIn", "Pitch Env"),
                       modIn ("lfo1In", "LFO 1"), modIn ("lfo2In", "LFO 2"), audioOut ("audioOut", "Audio Out") };
         const int saw = tb::factoryWaveIndex ("Saw");
         d.params = {
@@ -935,11 +935,11 @@ public:
     static ModuleDescriptor descriptor()
     {
         auto d = base ("arp", "Arp", ModuleSection::Utility, 5);
-        d.description = "Tidebreeze's arpeggiator: holds the keys (or the stream on its Midi In) and steps through them - "
+        d.description = "Tidebreeze's arpeggiator: holds the keys (or the stream on its MIDI In) and steps through them - "
                         "Up, Down, Up & Down, Random, As Played, Chord - or plays the rhythm patterns (Bossa, 3+3+2, Gallop, "
                         "Rise & Fall, Echo Steps) with their own accents and rests. Velocity 0 keeps the played velocity. "
-                        "It runs from the host's tempo, or Tempo without one. Its Midi Out replaces the keys for what it feeds.";
-        d.sockets = { midiIn ("midiIn", "Midi In"), midiOut ("midiOut", "Midi Out") };
+                        "It runs from the host's tempo, or Tempo without one. Its MIDI Out replaces the keys for what it feeds.";
+        d.sockets = { midiIn ("midiIn", "MIDI In"), midiOut ("midiOut", "MIDI Out") };
         d.params = {
             makeCombo ("arpPat", "Pattern", tb::arpPatternNames(), 0, 0, 2).noMod(),
             makeCombo ("arpRes", "Rate", tb::arpResNames(), 2, 0, 1).noMod(),
@@ -981,7 +981,7 @@ public:
         const tb::Arp::Settings s { (int) std::lround (param (pPat)), (int) std::lround (param (pRes)), (int) std::lround (param (pOct)),
                                     (int) std::lround (param (pGate)), (int) std::lround (param (pVel)), (int) std::lround (param (pSwing)),
                                     param (pLatch) >= 0.5f };
-        const double bpm = hostTransport.hasBpm ? tempoBpm : (double) param (pTempo);
+        const double bpm = hostTransport.hasBpm || tempoFromLane() ? tempoBpm : (double) param (pTempo);   // (6.9.10: a lane's tempo too)
         buf.clear();
         arp.process (s, bpm, sr, 1, buf);
         for (const auto meta : buf)

@@ -113,6 +113,7 @@ class OscillatorSection : public SynthSection, public PresetSelector::Listener,
     bool loadAudioAsWavetable(String name, InputStream* audio_stream,
                               WavetableCreator::AudioFileLoadStyle style) override;
     void loadWavetable(json& wavetable_data) override;
+    void showTableList(int which);   // (Aquanode, 6.9.12) 0 the default set, 1 Massif's, 2 Generate
     void loadDefaultWavetable() override;
     void resynthesizeToWavetable() override;
     void saveWavetable() override;

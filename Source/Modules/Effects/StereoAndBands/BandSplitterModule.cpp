@@ -2,88 +2,74 @@
 
 using namespace aquanode;
 
-// RBJ cookbook, Q = 1/sqrt(2) (Butterworth). Two of these in series = LR4:
-// at the crossover frequency each leg sits at -6 dB, and low+high sum back
-// to a flat 0 dB with a smooth, symmetric phase rotation - no passband
-// ripple, no pre-ringing, no block latency.
-void BandSplitterModule::setButterworthLowpass (BiquadStage& s, double freq, double sr)
+// RBJ cookbook, Q = 1/sqrt(2) (Butterworth). Two in series make an LR4 leg (24 dB/oct); at the
+// crossover each leg sits at -6 dB and low + high add up to the allpass of the same poles - which
+// is why every lower band goes through the allpasses of the crossovers above it: then all the bands
+// together are one allpass, flat at every frequency. No latency, no pre-ringing.
+BandSplitterModule::Coef BandSplitterModule::butterworth (double freq, double sr, int kind)
 {
     const double w0 = juce::MathConstants<double>::twoPi * freq / sr;
-    const double cosw0 = std::cos (w0);
-    const double alpha = std::sin (w0) / (2.0 * 0.70710678118654752);   // Q = 1/sqrt(2)
-
-    const double b0 = (1.0 - cosw0) * 0.5;
-    const double b1 =  1.0 - cosw0;
-    const double b2 = (1.0 - cosw0) * 0.5;
-    const double a0 =  1.0 + alpha;
-    const double a1 = -2.0 * cosw0;
-    const double a2 =  1.0 - alpha;
-
-    s.b0 = (float) (b0 / a0); s.b1 = (float) (b1 / a0); s.b2 = (float) (b2 / a0);
-    s.a1 = (float) (a1 / a0); s.a2 = (float) (a2 / a0);
+    const double c = std::cos (w0), alpha = std::sin (w0) / (2.0 * 0.70710678118654752);
+    const double a0 = 1.0 + alpha;
+    double b0, b1, b2;
+    if (kind == 0)      { b0 = (1.0 - c) * 0.5; b1 = 1.0 - c; b2 = b0; }
+    else if (kind == 1) { b0 = (1.0 + c) * 0.5; b1 = -(1.0 + c); b2 = b0; }
+    else                { b0 = 1.0 - alpha; b1 = -2.0 * c; b2 = 1.0 + alpha; }
+    Coef k;
+    k.b0 = (float) (b0 / a0); k.b1 = (float) (b1 / a0); k.b2 = (float) (b2 / a0);
+    k.a1 = (float) (-2.0 * c / a0); k.a2 = (float) ((1.0 - alpha) / a0);
+    return k;
 }
 
-void BandSplitterModule::setButterworthHighpass (BiquadStage& s, double freq, double sr)
+void BandSplitterModule::updateCoefficients (int bands)
 {
-    const double w0 = juce::MathConstants<double>::twoPi * freq / sr;
-    const double cosw0 = std::cos (w0);
-    const double alpha = std::sin (w0) / (2.0 * 0.70710678118654752);
-
-    const double b0 =  (1.0 + cosw0) * 0.5;
-    const double b1 = -(1.0 + cosw0);
-    const double b2 =  (1.0 + cosw0) * 0.5;
-    const double a0 =  1.0 + alpha;
-    const double a1 = -2.0 * cosw0;
-    const double a2 =  1.0 - alpha;
-
-    s.b0 = (float) (b0 / a0); s.b1 = (float) (b1 / a0); s.b2 = (float) (b2 / a0);
-    s.a1 = (float) (a1 / a0); s.a2 = (float) (a2 / a0);
+    const double guard = sampleRate * 0.49;   // clear of the pole at Nyquist
+    static const int ids[kMaxSplits] = { pSplit1, pSplit2, pSplit3, pSplit4, pSplit5, pSplit6 };
+    bool changed = last[kMaxSplits] != (double) bands;
+    double prev = 0.0;
+    for (int k = 0; k < bands - 1; ++k)
+    {
+        // each split kept a little above the one under it, so no band collapses
+        double f = juce::jlimit (20.0, guard, (double) param (ids[k]));
+        if (k > 0) f = juce::jlimit (juce::jmin (guard, prev * 1.05), guard, f);
+        prev = f;
+        if (f != last[k]) { last[k] = f; changed = true; }
+    }
+    if (! changed) return;
+    last[kMaxSplits] = (double) bands;
+    for (int k = 0; k < bands - 1; ++k)
+    {
+        splits[k] = last[k];
+        lpC[k] = butterworth (splits[k], sampleRate, 0);
+        hpC[k] = butterworth (splits[k], sampleRate, 1);
+        apC[k] = butterworth (splits[k], sampleRate, 2);
+    }
 }
 
 void BandSplitterModule::processVoiceSample (int v, const StereoFrame* inputs, StereoFrame* outputs)
 {
-    const double nyquistGuard = sampleRate * 0.49;   // stay clear of the coefficient's pole at Nyquist
-
-    const double split1 = juce::jlimit (20.0, nyquistGuard, (double) param (pSplit1));
-    // keep Split 2 a fixed ratio above Split 1 so the two crossovers can't
-    // collide (which would make Band 2 collapse to nothing and destabilise
-    // the cascade)
-    const double split2 = juce::jlimit (split1 * 1.05, nyquistGuard, (double) param (pSplit2));
-
-    BiquadStage lpCoef1, hpCoef1, lpCoef2, hpCoef2;
-    setButterworthLowpass  (lpCoef1, split1, sampleRate);
-    setButterworthHighpass (hpCoef1, split1, sampleRate);
-    setButterworthLowpass  (lpCoef2, split2, sampleRate);
-    setButterworthHighpass (hpCoef2, split2, sampleRate);
+    const int bands = juce::jlimit (2, kMaxBands, (int) std::lround (param (pBands)));
+    updateCoefficients (bands);
+    const int nSplits = bands - 1;
 
     for (int c = 0; c < 2; ++c)
     {
-        const float in = inputs[0][(size_t) c];
-
-        lp1[v][c].a.b0 = lp1[v][c].b.b0 = lpCoef1.b0; lp1[v][c].a.b1 = lp1[v][c].b.b1 = lpCoef1.b1;
-        lp1[v][c].a.b2 = lp1[v][c].b.b2 = lpCoef1.b2; lp1[v][c].a.a1 = lp1[v][c].b.a1 = lpCoef1.a1;
-        lp1[v][c].a.a2 = lp1[v][c].b.a2 = lpCoef1.a2;
-
-        hp1[v][c].a.b0 = hp1[v][c].b.b0 = hpCoef1.b0; hp1[v][c].a.b1 = hp1[v][c].b.b1 = hpCoef1.b1;
-        hp1[v][c].a.b2 = hp1[v][c].b.b2 = hpCoef1.b2; hp1[v][c].a.a1 = hp1[v][c].b.a1 = hpCoef1.a1;
-        hp1[v][c].a.a2 = hp1[v][c].b.a2 = hpCoef1.a2;
-
-        lp2[v][c].a.b0 = lp2[v][c].b.b0 = lpCoef2.b0; lp2[v][c].a.b1 = lp2[v][c].b.b1 = lpCoef2.b1;
-        lp2[v][c].a.b2 = lp2[v][c].b.b2 = lpCoef2.b2; lp2[v][c].a.a1 = lp2[v][c].b.a1 = lpCoef2.a1;
-        lp2[v][c].a.a2 = lp2[v][c].b.a2 = lpCoef2.a2;
-
-        hp2[v][c].a.b0 = hp2[v][c].b.b0 = hpCoef2.b0; hp2[v][c].a.b1 = hp2[v][c].b.b1 = hpCoef2.b1;
-        hp2[v][c].a.b2 = hp2[v][c].b.b2 = hpCoef2.b2; hp2[v][c].a.a1 = hp2[v][c].b.a1 = hpCoef2.a1;
-        hp2[v][c].a.a2 = hp2[v][c].b.a2 = hpCoef2.a2;
-
-        const float band1 = lp1[v][c].process (in);
-        const float aboveSplit1 = hp1[v][c].process (in);
-        const float band2 = lp2[v][c].process (aboveSplit1);
-        const float band3 = hp2[v][c].process (aboveSplit1);
-
-        outputs[0][(size_t) c] = band1;
-        outputs[1][(size_t) c] = band2;
-        outputs[2][(size_t) c] = band3;
+        auto& s = state[v][c];
+        float band[kMaxBands] {};
+        float rest = inputs[0][(size_t) c];
+        for (int k = 0; k < nSplits; ++k)
+        {
+            band[k] = s.lp[k][1].process (lpC[k], s.lp[k][0].process (lpC[k], rest));
+            rest = s.hp[k][1].process (hpC[k], s.hp[k][0].process (hpC[k], rest));
+        }
+        band[nSplits] = rest;
+        // the lower bands through the allpasses of the crossovers above them
+        int a = 0;
+        for (int k = 0; k + 1 < nSplits; ++k)
+            for (int j = k + 1; j < nSplits; ++j)
+                band[k] = s.ap[a++].process (apC[j], band[k]);
+        for (int k = 0; k < kMaxBands; ++k)
+            outputs[k][(size_t) c] = band[k];
     }
 }
 
@@ -93,22 +79,31 @@ static ModuleDescriptor bandSplitterDescriptor()
     d.typeId = "effect.bandsplitter";
     d.displayName = "Band Splitter";
     d.description =
-        "Splits one signal into 3 frequency bands using two cascaded Linkwitz-Riley "
-        "4th-order crossovers - the same clean, phase-coherent splitting family that "
-        "professional multiband tools use, so each band can be processed separately "
-        "and summed back together without ripple. Split 2 is always kept above Split 1. "
-        "Outputs: Band 1 (Low), Band 2 (Mid), Band 3 (High).";
+        "Splits one signal into 2 to 7 frequency bands (Bands) with Linkwitz-Riley 4th-order crossovers - the "
+        "clean, phase-coherent splitting that multiband tools use - in a tree where each lower band also goes "
+        "through the phase turn of the crossovers above it, so all the bands summed back give the input's level "
+        "at every frequency. Each split is kept above the one under it. Band 1 is the lowest; the highest band "
+        "is the one numbered Bands, the outputs above it stay silent.";
     d.section = ModuleSection::Effect;
     d.sidebarOrder = 26;
     d.sockets = {
         audioIn  ("audioIn",  "Audio In"),
         audioOut ("band1Out", "Band 1 (Low)"),
-        audioOut ("band2Out", "Band 2 (Mid)"),
-        audioOut ("band3Out", "Band 3 (High)")
+        audioOut ("band2Out", "Band 2"),
+        audioOut ("band3Out", "Band 3"),
+        audioOut ("band4Out", "Band 4"),
+        audioOut ("band5Out", "Band 5"),
+        audioOut ("band6Out", "Band 6"),
+        audioOut ("band7Out", "Band 7")
     };
     d.params = {
-        makeRotary ("split1", "Split 1", 20.0f,   2000.0f,  200.0f,  0, "Hz", true),
-        makeRotary ("split2", "Split 2", 200.0f,  20000.0f, 2000.0f, 0, "Hz", true)
+        makeRotary ("split1", "Split 1", 20.0f,   2000.0f,  200.0f,  1, "Hz", true),
+        makeRotary ("split2", "Split 2", 200.0f,  20000.0f, 2000.0f, 1, "Hz", true).visibleFrom ("bands", 3.0f),
+        makeRotary ("bands",  "Bands",   2.0f,    7.0f,     3.0f,    0, {}, false, 1.0f).noMod(),
+        makeRotary ("split3", "Split 3", 20.0f,   20000.0f, 5000.0f, 1, "Hz", true).visibleFrom ("bands", 4.0f),
+        makeRotary ("split4", "Split 4", 20.0f,   20000.0f, 9000.0f, 2, "Hz", true).visibleFrom ("bands", 5.0f),
+        makeRotary ("split5", "Split 5", 20.0f,   20000.0f, 13000.0f, 2, "Hz", true).visibleFrom ("bands", 6.0f),
+        makeRotary ("split6", "Split 6", 20.0f,   20000.0f, 17000.0f, 2, "Hz", true).visibleFrom ("bands", 7.0f)
     };
     return d;
 }

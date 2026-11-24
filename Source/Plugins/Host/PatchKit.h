@@ -79,6 +79,68 @@ namespace aquanode::plugins::kit
         SynthModule* dsp (int module) const;
     };
 
+    //=== (6.9.14) section cards =================================================
+    // The engine's side: which of its knobs a card holds. set() on the message
+    // thread (graph build); the audio thread reads under a try-lock.
+    struct CardReceiver
+    {
+        struct Hit { const SynthModule::CardLink* link { nullptr }; int idx { 0 }; };
+        void set (const ModuleDescriptor& d, std::vector<std::shared_ptr<SynthModule::CardLink>> links);
+        // the knob's value from its card (base: as set), mirroring the card's
+        // setting into the engine's own knob; false: no card holds it
+        bool read (SynthModule& engine, int knob, bool base, float& value) const;
+
+        juce::SpinLock lock;
+        std::vector<std::shared_ptr<SynthModule::CardLink>> held;
+        std::vector<Hit> byKnob;
+    };
+
+    // A section card: some of an engine's knobs (the same ids), on a smaller card.
+    // Link In / Link Out chain the cards; the last goes into the engine's Cards In.
+    struct CardDef
+    {
+        juce::String pluginId, id, kind, description;
+        std::vector<juce::String> ids;       // its knobs, in order ("" starts a new row)
+        // the knobs' specs, by id (a fresh spec, any row: the card numbers the rows)
+        std::function<ParamSpec (const juce::String& id)> spec;
+        // a picture on the card instead of knobs (the knobs then hidden), its height
+        std::function<std::unique_ptr<juce::Component> (SynthModule&)> extra;
+        int extraHeight { 0 }, width { 0 };
+        std::function<bool (const juce::String& id)> drawn;   // the knobs the picture shows (hidden as knobs); none: all
+        bool isDrawn (const juce::String& id) const { return extra != nullptr && (drawn == nullptr || drawn (id)); }
+        juce::String typeId() const { return "plugin." + pluginId + "." + id; }
+        std::vector<juce::String> knobIds() const;   // ids without the row breaks
+        int rows() const;
+    };
+    ModuleDescriptor cardBaseDescriptor (const CardDef& def);
+    void completeCardDescriptor (const CardDef& def, ModuleDescriptor& d);
+    // registers the card's module (def must live for the program: a static)
+    bool registerCard (const CardDef& def);
+
+    class CardModule : public SynthModule
+    {
+    public:
+        explicit CardModule (const CardDef& d);
+        VoiceMode voiceMode() const override { return VoiceMode::Global; }
+        void prepare (double sr) override;
+        void processSample (const StereoFrame* in, StereoFrame* out) override;
+        void setParameter (const juce::String& id, float value) override;
+        std::shared_ptr<CardLink> cardLink() const override { return link; }
+        std::unique_ptr<juce::Component> createExtraContentComponent() override { return def.extra ? def.extra (*this) : nullptr; }
+        int extraContentHeight() const override { return def.extra ? def.extraHeight : 0; }
+        int preferredModuleWidth() const override { return def.width; }
+    private:
+        void write();
+        const CardDef& def;
+        std::shared_ptr<CardLink> link;
+        std::vector<int> index;
+        int counter { 0 };
+    };
+
+    // where the builder puts a row of cards: x, y of each, columns of cards stacked
+    // (heights from their rows), left to right, starting at (x0, y0)
+    std::vector<juce::Point<int>> cardPlaces (const std::vector<const CardDef*>& cards, int x0, int y0, int columns);
+
     //=== a module that runs the original plugin itself ======================
     // The patch module for a plugin (or one stage of it) that is best left to
     // its own engine: a whole instance of the original plugin - the same code
@@ -110,6 +172,10 @@ namespace aquanode::plugins::kit
         void loadCustomState (const juce::String& state) override;
 
         juce::AudioProcessor* instance() const { return plugin.get(); }
+
+        // (6.9.14) section cards into Cards In (a descriptor with that socket)
+        bool takesCardLinks() const override { return getDescriptor().inputIndexOf ("cardsIn") >= 0; }
+        void setCardLinks (std::vector<std::shared_ptr<CardLink>> l) override { cards.set (getDescriptor(), std::move (l)); }
 
         // the plugin's state in one go (a builder copying a GUI card's or a
         // preset's whole sound in); the knobs then send theirs again
@@ -146,6 +212,7 @@ namespace aquanode::plugins::kit
         void runBlock();
 
         const bool midi;
+        CardReceiver cards;
         std::vector<Link> links;
         juce::AudioBuffer<float> io;
         juce::MidiBuffer midiQueue;

@@ -273,11 +273,32 @@ void DualVcoAnalogModule::processVoiceSample (int v, const StereoFrame* inputs, 
 
     // ---- the oscillators: the second subtracted from the first
     const double dt1 = hz1 / sr, dt2 = hz2 / sr;
+    const double prev1 = phase1[v], prev2 = phase2[v];
     phase1[v] += dt1; if (phase1[v] >= 1.0) phase1[v] -= 1.0;
     phase2[v] += dt2; if (phase2[v] >= 1.0) phase2[v] -= 1.0;
     const float mix = param (pOscMix) * 0.01f;
-    float x = oscillator ((int) std::lround (param (pWave1)), phase1[v], dt1)
-            - mix * oscillator ((int) std::lround (param (pWave2)), phase2[v], dt2);
+    float x;
+    if (aquanode::antiAliasOn())
+    {
+        // (6.9.21) Anti-alias: both oscillators at the half step and at the step, band-limited at twice
+        // the rate (the triangle's corners too), brought back down
+        if (! aaWasOn[v]) { aaDown[v].reset(); aaWasOn[v] = true; }
+        const int w1 = (int) std::lround (param (pWave1)), w2 = (int) std::lround (param (pWave2));
+        auto osc = [] (int wave, double p, double dt)
+        {
+            if (wave == 1) return std::sin (juce::MathConstants<double>::twoPi * p);
+            if (wave == 2) return aquanode::blTriangle (p, dt);
+            return aquanode::blSaw (p, dt);
+        };
+        auto both = [&] (double p1, double p2) { return (float) (osc (w1, p1, dt1 * 0.5) - mix * osc (w2, p2, dt2 * 0.5)); };
+        x = aaDown[v].process (both (aquanode::wrap01 (prev1 + 0.5 * dt1), aquanode::wrap01 (prev2 + 0.5 * dt2)), both (phase1[v], phase2[v]));
+    }
+    else
+    {
+        aaWasOn[v] = false;
+        x = oscillator ((int) std::lround (param (pWave1)), phase1[v], dt1)
+          - mix * oscillator ((int) std::lround (param (pWave2)), phase2[v], dt2);
+    }
     const float noiseAmt = param (pNoise) * 0.01f;
     x += noiseAmt * noiseAmt * 0.9f * xorshiftNoise (noiseSeed[v]);
 
@@ -378,7 +399,7 @@ static ModuleDescriptor dualVcoAnalogDescriptor()
     d.sidebarOrder = 40;
     d.sockets = {
         modIn    ("pitchIn",   "Pitch In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     const juce::StringArray waves { "Saw", "Sine", "Triangle" };
@@ -444,3 +465,11 @@ static ModuleDescriptor dualVcoAnalogDescriptor()
 }
 
 AQUANODE_REGISTER_MODULE (DualVcoAnalogModule, dualVcoAnalogDescriptor)
+
+#if AQUANODE_TEST_HARNESS
+// (test harness, 6.9.21) a fixed seed for the start phases and the drift, so two runs can be compared
+void dualVcoAnalogSeedForTest (aquanode::SynthModule& m, juce::int64 seed)
+{
+    if (auto* d = dynamic_cast<DualVcoAnalogModule*> (&m)) d->seedForTest (seed);
+}
+#endif

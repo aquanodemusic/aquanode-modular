@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "synth_module.h"
 #include "synth_oscillator.h"
 
@@ -29,6 +31,7 @@ namespace vital {
         kRetrigger,
         kMidi,
         kActiveVoices,
+        kAqSlide,   // (Aquanode, 6.9.12) the voices' Slide for the default MPE map
         kNumInputs
       };
 
@@ -56,6 +59,13 @@ namespace vital {
       std::string prefix_;
       std::shared_ptr<Wavetable> wavetable_;
       std::shared_ptr<bool> was_on_;
+      std::shared_ptr<std::atomic<float>> aq_slide_depth_;   // (Aquanode, 6.9.12)
+    public:
+      void setAqSlideDepth(float frames) { aq_slide_depth_->store(frames, std::memory_order_relaxed); }
+      // (Aquanode, 6.9.15) how far the latest note's Slide moves the frame now - for the display
+      float aqSlideShown() const { return aq_slide_shown_->load(std::memory_order_relaxed); }
+      std::shared_ptr<std::atomic<float>> aq_slide_shown_;
+    protected:
 
       Value* on_;
       SynthOscillator* oscillator_;

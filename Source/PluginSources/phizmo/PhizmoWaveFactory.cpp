@@ -507,27 +507,16 @@ namespace
 }
 
 //==============================================================================
-bool PhizmoAudioProcessor::generateRandomWavetable(int slot, juce::int64 seed, int numFrames,
-    int cycleSamples, juce::String& statusOut,
-    int archetypeOverride)
+//==============================================================================
+// (Aquanode, 6.9.12) the generator's frames on their own - for Phizmo's slots
+// below, and for Vita's Generate menu (the same tables, played by Vita)
+int phizmoArchetypeCount() { return (int)Archetype::NumArchetypes; }
+const char* phizmoArchetypeName(int i) { return archetypeName(i); }
+
+bool phizmoBuildTranswave(int archIdx, juce::int64 seed, juce::Random& rng, int numFrames, int cycleSamples,
+    std::vector<std::vector<float>>& frames, juce::String& label, juce::String& statusOut)
 {
-    if (slot < 0 || slot >= NUM_SOUNDS * 2) { statusOut = "Bad slot"; return false; }
-
-    cycleSamples = juce::jlimit(16, 4096, cycleSamples);
-    if (seed == 0) seed = juce::Random::getSystemRandom().nextInt64();
-
-    juce::Random rng(seed);
-
-    // Archetype: taken from the parameter, or rolled if it is set to Auto.
-    int archIdx = archetypeOverride;
-    if (archIdx < 0)
-    {
-        if (auto* p = apvts.getRawParameterValue("genArchetype"))
-            archIdx = (int)p->load() - 1;                   // 0 in the choice list = Auto
-    }
-    if (archIdx < 0 || archIdx >= (int)Archetype::NumArchetypes)
-        archIdx = rng.nextInt((int)Archetype::NumArchetypes);
-
+    if (archIdx < 0 || archIdx >= (int)Archetype::NumArchetypes) return false;
     const ArchSpec& A = kArchetypes[archIdx];
 
     // numFrames <= 0 means "let the archetype decide" - the measured tables run
@@ -624,7 +613,7 @@ bool PhizmoAudioProcessor::generateRandomWavetable(int slot, juce::int64 seed, i
         }
     }
 
-    std::vector<std::vector<float>> frames((size_t)numFrames);
+    frames.assign((size_t)numFrames, {});
     std::vector<float> amp ((size_t)maxH + 1, 0.0f), sa, sb;
 
     for (int f = 0; f < numFrames; ++f)
@@ -669,7 +658,7 @@ bool PhizmoAudioProcessor::generateRandomWavetable(int slot, juce::int64 seed, i
         normaliseFrame(frames[(size_t)f]);
     }
 
-    const juce::String label = juce::String(archetypeName(archIdx)).substring(0, 10)
+    label = juce::String(archetypeName(archIdx)).substring(0, 10)
         + " " + juce::String::toHexString(seed)
         .getLastCharacters(4).toUpperCase();
 
@@ -677,6 +666,36 @@ bool PhizmoAudioProcessor::generateRandomWavetable(int slot, juce::int64 seed, i
         + ": " + juce::String(numFrames) + " frames x " + juce::String(cycleSamples)
         + ", " + juce::String(numKeys) + " keyframes, seed "
         + juce::String::toHexString(seed).getLastCharacters(8).toUpperCase();
+
+    return true;
+}
+
+bool PhizmoAudioProcessor::generateRandomWavetable(int slot, juce::int64 seed, int numFrames,
+    int cycleSamples, juce::String& statusOut,
+    int archetypeOverride)
+{
+    if (slot < 0 || slot >= NUM_SOUNDS * 2) { statusOut = "Bad slot"; return false; }
+
+    cycleSamples = juce::jlimit(16, 4096, cycleSamples);
+    if (seed == 0) seed = juce::Random::getSystemRandom().nextInt64();
+
+    juce::Random rng(seed);
+
+    // Archetype: taken from the parameter, or rolled if it is set to Auto.
+    int archIdx = archetypeOverride;
+    if (archIdx < 0)
+    {
+        if (auto* p = apvts.getRawParameterValue("genArchetype"))
+            archIdx = (int)p->load() - 1;                   // 0 in the choice list = Auto
+    }
+    if (archIdx < 0 || archIdx >= (int)Archetype::NumArchetypes)
+        archIdx = rng.nextInt((int)Archetype::NumArchetypes);
+
+    std::vector<std::vector<float>> frames;
+    juce::String label;
+    if (!phizmoBuildTranswave(archIdx, seed, rng, numFrames, cycleSamples, frames, label, statusOut))
+        return false;
+    numFrames = (int)frames.size();
 
     if (!installGeneratedFrames(slot, std::move(frames), cycleSamples, label,
         1, seed, numFrames, false, statusOut))
@@ -900,8 +919,32 @@ bool PhizmoAudioProcessor::rerollSlot(int slot, juce::String& statusOut)
         return ok;
     }
 
+    if (origin == 3)
+    {
+        statusOut = "Nothing to re-roll: " + name + " is a built-in transwave";
+        return false;
+    }
+
     statusOut = "Nothing to re-roll: " + name + " was loaded from a file";
     return false;
+}
+
+//==============================================================================
+// 7.0.0: a built-in transwave, rebuilt from the bank.
+bool PhizmoAudioProcessor::loadBuiltinTranswave(int slot, int index, juce::String& statusOut)
+{
+    if (slot < 0 || slot >= NUM_SOUNDS * 2) { statusOut = "Bad slot"; return false; }
+    std::vector<std::vector<float>> frames;
+    if (!::twremake::render(index, frames))
+    {
+        statusOut = "Built-in transwave not found";
+        return false;
+    }
+    const juce::String nm = ::twremake::name(index);
+    const int n = (int)frames.size();
+    statusOut = "Built-in: " + nm + " (" + juce::String(n) + " frames)";
+    return installGeneratedFrames(slot, std::move(frames), ::twremake::kFrameSize, nm,
+        3, (juce::int64)index, n, false, statusOut);
 }
 
 //==============================================================================

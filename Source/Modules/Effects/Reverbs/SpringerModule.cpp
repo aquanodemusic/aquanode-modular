@@ -226,30 +226,53 @@ void SpringerModule::processTank (const StereoFrame* inputs, StereoFrame* output
     const float x = (inputs[0][0] + inputs[0][1]) * 0.5f;
     float out[kMaxSprings] {}, outHf[kMaxSprings] {};
 
+    // ---- the chirps: each spring's loop through its stretched all-pass cascade -
+    // (6.9.11) the springs stepped side by side, stage by stage (the same sums
+    // per spring as one after another; independent chains the CPU overlaps)
+    float uOf[kMaxSprings] {};
+    {
+        int rp = apPos - springs[0].readN;
+        const float* rowR[kMaxSprings] {};
+        float* rowW[kMaxSprings] {};
+        float* fxs[kMaxSprings] {};
+        float* fys[kMaxSprings] {};
+        float etas[kMaxSprings] {}, ais[kMaxSprings] {};
+        for (int i = 0; i < n; ++i)
+        {
+            auto& s = springs[i];
+            uOf[i] = 0.6f * x + tankFb[i] * s.loopOut;
+            ais[i] = juce::jlimit (0.1f, 0.92f, a * kSpringDisp[i]);
+            rp = apPos - s.readN;
+            if (rp < 0) rp += L;
+            // (the lines kept position-major: a sample's stages side by side in memory)
+            rowR[i] = s.ap.data() + (size_t) rp * (size_t) maxTankStages;
+            rowW[i] = s.ap.data() + (size_t) apPos * (size_t) maxTankStages;
+            fxs[i] = s.fx1.data();
+            fys[i] = s.fy1.data();
+            etas[i] = s.eta;
+        }
+        auto stage = [&] (int i, int j)
+        {
+            const float d = rowR[i][j];                                // w[n - N] ...
+            const float v = etas[i] * (d - fys[i][j]) + fxs[i][j];     // ... and the rest of K (fractional all-pass)
+            fxs[i][j] = d;
+            fys[i][j] = v;
+            const float w = uOf[i] - ais[i] * v;
+            uOf[i] = ais[i] * w + v;
+            rowW[i][j] = w;
+        };
+        if (n == 4)
+            for (int j = 0; j < m; ++j) { stage (0, j); stage (1, j); stage (2, j); stage (3, j); }
+        else
+            for (int j = 0; j < m; ++j)
+                for (int i = 0; i < n; ++i)
+                    stage (i, j);
+    }
+
     for (int i = 0; i < n; ++i)
     {
         auto& s = springs[i];
-
-        // ---- the chirps: the loop through the stretched all-pass cascade
-        float u = 0.6f * x + tankFb[i] * s.loopOut;
-        const float ai = juce::jlimit (0.1f, 0.92f, a * kSpringDisp[i]);
-        int rp = apPos - s.readN;
-        if (rp < 0) rp += L;
-        float* line = s.ap.data();
-        float* fx = s.fx1.data();
-        float* fy = s.fy1.data();
-        const float eta = s.eta;
-        for (int j = 0; j < m; ++j)
-        {
-            float* base = line + j * L;
-            const float d = base[rp];                      // w[n - N] ...
-            const float v = eta * (d - fy[j]) + fx[j];     // ... and the rest of K (fractional all-pass)
-            fx[j] = d;
-            fy[j] = v;
-            const float w = u - ai * v;
-            u = ai * w + v;
-            base[apPos] = w;
-        }
+        float u = uOf[i];
         u = s.shelf.process (u);
 
         // the scattering: each pass smears a little more

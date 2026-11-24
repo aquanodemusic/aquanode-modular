@@ -150,7 +150,7 @@ public:
         d.section = ModuleSection::Oscillator;
         d.sockets = {
             modIn ("fmIn", "FM In"),
-            midiIn ("addMidiIn", "Add Midi In"),
+            midiIn ("addMidiIn", "Add MIDI In"),
             audioOut ("audioOut", "Audio Out")
         };
         d.params = {
@@ -297,7 +297,7 @@ private:
         vc.B = std::exp (logB / juce::jmax (1.0e-6f, wsum));
         vc.key = key;
         vc.note = note;
-        vc.f0 = 440.0f * std::pow (2.0f, (key - 69.0f) / 12.0f + (cents + param (pTune)) / 1200.0f);
+        vc.f0 = (float) aquanode::midiNoteToHz ((double) key) * std::pow (2.0f, (cents + param (pTune)) / 1200.0f);   // (patch tuning, 6.9.10)
         const float nyq = (float) sampleRate * 0.45f;
         const float stretchB = vc.B * param (pStretch);
         K = juce::jmin (K, (int) param (pPartials));

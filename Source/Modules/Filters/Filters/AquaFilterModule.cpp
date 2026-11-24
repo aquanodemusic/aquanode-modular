@@ -62,11 +62,19 @@ void AquaFilterModule::processVoiceSample (int v, const StereoFrame* inputs, Ste
     const int   type  = (int) param (pType);       // 0=LP12 1=LP24 2=LP24+ 3=BP 4=HP
     const int   curve = (int) param (pResCurve);   // 0=Quadratic 1=Cubic
     const float r     = shapeResonance (param (pResonance), curve);
-    const float drive = param (pDrive);
+    const float drive = param (pDrive) * (param (pDriveRange) > 0.5f ? 4.0f : 1.0f);
 
-    // pre-filter saturation with gain compensation, exactly as in the plugin
-    const float driveGain = 1.0f + drive * 6.0f;
-    const float driveComp = 1.0f / (1.0f + drive * 0.6f);
+    // pre-filter saturation with gain compensation, exactly as in the plugin up to 1;
+    // (6.9.19) above 1 the gain keeps rising (x2.8 per unit, up to about +44 dB at 4),
+    // the saturator held to its bounded range so it stays a clean clip into fuzz
+    const bool hot = drive > 1.0f;
+    const float driveGain = hot ? 7.0f * std::exp2 (1.5f * (drive - 1.0f)) : 1.0f + drive * 6.0f;
+    const float driveComp = hot ? 0.625f / (1.0f + 0.15f * (drive - 1.0f)) : 1.0f / (1.0f + drive * 0.6f);
+    auto driveIn = [hot, driveGain, driveComp] (float x)
+    {
+        x *= driveGain;
+        return tanhA (hot ? juce::jlimit (-3.0f, 3.0f, x) : x) * driveComp;
+    };
 
     const float sr = (float) sampleRate;
 
@@ -83,7 +91,7 @@ void AquaFilterModule::processVoiceSample (int v, const StereoFrame* inputs, Ste
 
         for (int c = 0; c < 2; ++c)
         {
-            const float in = tanhA (inputs[0][(size_t) c] * driveGain) * driveComp;
+            const float in = driveIn (inputs[0][(size_t) c]);
             auto& s = ladder[v][c];
             float y;
 
@@ -117,7 +125,7 @@ void AquaFilterModule::processVoiceSample (int v, const StereoFrame* inputs, Ste
 
         for (int c = 0; c < 2; ++c)
         {
-            const float in = tanhA (inputs[0][(size_t) c] * driveGain) * driveComp;
+            const float in = driveIn (inputs[0][(size_t) c]);
             auto& s = svf[v][c];
 
             const float v3 = in - s.ic2;
@@ -143,7 +151,8 @@ static ModuleDescriptor aquaFilterDescriptor()
         "plus an extra-saturated 24+ mode, and an SVF for bandpass and highpass, with Drive "
         "saturating before the filter. Mod In sweeps the cutoff - an ADSR, LFO or Env Follow. "
         "Res Curve reshapes the resonance knob rather than the sound: Quadratic bites earlier, "
-        "Cubic keeps the lower half tamer.";
+        "Cubic keeps the lower half tamer. Drive Range Hot gives Drive four times the push (into fuzz), "
+        "Classic the gentler range of earlier versions.";
     d.section = ModuleSection::Filter;
     d.sidebarOrder = 7;
     d.sockets = {
@@ -157,7 +166,9 @@ static ModuleDescriptor aquaFilterDescriptor()
         makeRotary ("drive",     "Drive",     0.0f, 1.0f, 0.0f, 0),
         makeRotary ("modDepth",  "Mod Depth", -100.0f, 100.0f, 0.0f, 0, "%"),
         makeCombo  ("type",     "Filter Type", { "LP12", "LP24", "LP24+", "BP", "HP" }, 1, 1, 2),
-        makeCombo  ("resCurve", "Res Curve",   { "Quadratic", "Cubic" }, 1, 1, 2)
+        makeCombo  ("resCurve", "Res Curve",   { "Quadratic", "Cubic" }, 1, 1, 2),
+        // (6.9.19) Hot: Drive's full turn is four times the Classic one (patches from before: Classic)
+        makeCombo  ("driveRange", "Drive Range", { "Classic", "Hot" }, 1, 1, 2).noMod().whenMissing (0.0f)
     };
     return d;
 }

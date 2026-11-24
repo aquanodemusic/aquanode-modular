@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <atomic>
 #include "JuceHeader.h"
 #include "concurrentqueue/concurrentqueue.h"
 #include "line_generator.h"
@@ -93,6 +94,13 @@ class SynthBase : public MidiManager::Listener {
     VitaLibrary& getLibrary() { return library_; }
     // plays the library's preset at index; the preset playing now keeps its edits in its entry
     bool loadLibraryPreset(int index, std::string& error);
+    // plays one of the built-in Aquanode Soundscapes (vita_soundscapes.h); -1: none playing
+    bool loadSoundscape(int index, std::string& error);
+    int currentSoundscape() const { return current_soundscape_; }
+    // a new growl from the Growl recipe (vita_soundscapes.h)
+    // (seed 0: a new random one each time)
+    void generateGrowl(uint32_t seed = 0);
+    void generateKind(const std::string& kind, uint32_t seed = 0);   // (6.9.11) learned from the soundscapes
     // a preset file into the library, played at once
     bool openPresetFile(const File& preset, std::string& error);
     // the preset playing now into its library entry (when it changed), so the library is up to date
@@ -107,6 +115,10 @@ class SynthBase : public MidiManager::Listener {
     File getActiveFile() { return active_file_; }
 
     void setMpeEnabled(bool enabled);
+    bool isMpeEnabled() const;   // (Aquanode, 6.9.12)
+    // (Aquanode, 6.9.12) the default MPE map: Slide moves a frame nothing modulates
+    void aqUpdateFrameFree();
+    bool aqFrameFree(int osc) const { return aq_frame_free_[osc].load(std::memory_order_relaxed); }
     virtual void beginChangeGesture(const std::string& name) { }
     virtual void endChangeGesture(const std::string& name) { }
     virtual void setValueNotifyHost(const std::string& name, vital::mono_float value) { }
@@ -128,6 +140,15 @@ class SynthBase : public MidiManager::Listener {
     String getMacroName(int index);
 
     vital::control_map& getControls() { return controls_; }
+
+    // (Aquanode, 6.9.10) after a preset is loaded: its "MPE Enabled" is applied
+    // in the engine (before, only Vita's panel button did); the plugin may
+    // choose otherwise (the card's MPE: Follow Aquanode)
+    virtual void presetMpeLoaded() {
+      auto it = controls_.find("mpe_enabled");
+      if (it != controls_.end())
+        setMpeEnabled(it->second->value() >= 0.5f);
+    }
     vital::SoundEngine* getEngine() { return engine_.get(); }
     MidiKeyboardState* getKeyboardState() { return keyboard_state_.get(); }
     const vital::poly_float* getOscilloscopeMemory() { return oscilloscope_memory_; }
@@ -205,12 +226,14 @@ class SynthBase : public MidiManager::Listener {
     std::map<std::string, String> save_info_;
     vital::control_map controls_;
     vital::CircularQueue<vital::ModulationConnection*> mod_connections_;
+    std::atomic<bool> aq_frame_free_[vital::kNumOscillators] = { {true}, {true}, {true} };
     moodycamel::ConcurrentQueue<vital::control_change> value_change_queue_;
     moodycamel::ConcurrentQueue<vital::modulation_change> modulation_change_queue_;
     Tuning tuning_;
     int random_seeds_[vital::kNumOscillators];
     std::unique_ptr<LineGenerator> custom_warps_[vital::kNumOscillators];
     VitaLibrary library_;
+    int current_soundscape_ = -1;
     size_t unchanged_state_hash_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SynthBase)

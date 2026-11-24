@@ -82,7 +82,6 @@
     X (CepstralMorphModule) \
     X (BitcrushModule) \
     X (SRReduceModule) \
-    X (MidiAddModule) \
     X (GraphicMidiAddModule) \
     X (DCOffsetModule) \
     X (DawModModule) \
@@ -214,7 +213,33 @@
     X (TapeStopModule) \
     X (NoiseExciterModule) \
     X (FruitArrangerModule) \
-    X (DrawbarOrganModule)
+    X (DrawbarOrganModule) \
+    X (FormantFMModule) \
+    X (SupersawModule) \
+    X (PlayableEQModule) \
+    X (TapeEchoModule) \
+    X (GrowlModule) \
+    X (SitarModule) \
+    X (SpringTankModule) \
+    X (MicrotuningModule) \
+    X (XYModule) \
+    X (AquaDrumkitModule) \
+    X (SyncOscModule) \
+    X (SuperMidiModule) \
+    X (SpecDiffModule) \
+    X (FM12OperatorModule) \
+    X (NyquistFolderModule) \
+    X (PhaseInvertModule) \
+    X (EqualLoudnessModule) \
+    X (QuadratureModule) \
+    X (AudioLFOModule) \
+    X (RandomSweepModule) \
+    X (RippleEQModule) \
+    X (FMFilterModule) \
+    X (AudioToFilterModule) \
+    X (TiltEQModule) \
+    X (Graphic7EQModule) \
+    X (PanFilterModule)
 
 // The GUI versions of the plugins merged into Aquanode Modular (src/Plugins)
 #define AQUANODE_PLUGIN_GUI_MODULES(X) \
@@ -248,6 +273,8 @@
     X (AutoMorphEQGuiModule) \
     X (FullFilterGuiModule) \
     X (SpringerGuiModule) \
+    X (GranulateGuiModule) \
+    X (GranulateFXGuiModule) \
     X (PhorestGuiModule) \
     X (AliasSynthGuiModule) \
     X (PrecisionUtilityGuiModule) \
@@ -267,13 +294,19 @@
 
 // The patch versions' modules ("PluginName - Kind", src/Plugins/<Name>)
 #define AQUANODE_PLUGIN_PATCH_MODULES(X) \
-    X (AM20WholeModule) \
+    X (AM20Cards) \
     X (AdditiveKeysWholeModule) \
-    X (FM12WholeModule) \
+    X (GranulateWholeModule) \
+    X (GranulateFXWholeModule) \
+    X (FM12Cards) \
+    X (FM12TwoOperators) \
     X (BandpassModulatorWholeModule) \
     X (AudioStretcherWholeModule) \
     X (SpectralStereoizeWholeModule) \
     X (SpectralFilterWholeModule) \
+    X (SpectralCompareWholeModule) \
+    X (SpectralCompressWholeModule) \
+    X (EcoSeeWholeModule) \
     X (ChorusVerbChorusModule) \
     X (ChorusVerbDelayModule) \
     X (ChorusVerbPhaserModule) \
@@ -339,6 +372,7 @@
     X (PhizmoFilterModule) \
     X (PhizmoRingModule) \
     X (AquaMassifVoiceModule) \
+    X (AquaMassifEngineModule) \
     X (AquaMassifEffectsModule) \
     X (ReflexVoiceModule) \
     X (ReflexEffectsModule) \

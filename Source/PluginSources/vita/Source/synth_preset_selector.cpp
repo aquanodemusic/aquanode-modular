@@ -15,6 +15,7 @@
  */
 
 #include "synth_preset_selector.h"
+#include "vita_soundscapes.h"
 #include "vita_file_chooser.h"
 
 #include "paths.h"
@@ -30,11 +31,23 @@
 
 namespace {
   constexpr int kLibraryPresetOffset = 1000;
+  constexpr int kSoundscapeOffset = 100000;
+  constexpr int kSoundscapes = 99999;
+  constexpr int kGenerateGrowl = 99998;
+  constexpr int kGenerateKind = 99900;   // (6.9.11) + the kind's index: Generate: Pads, Basses ...
 
   void menuCallback(int result, SynthPresetSelector* preset_selector) {
     if (preset_selector == nullptr)
       return;
-    if (result >= kLibraryPresetOffset)
+    if (result >= kSoundscapeOffset)
+      preset_selector->loadSoundscape(result - kSoundscapeOffset);
+    else if (result == kSoundscapes)
+      preset_selector->showSoundscapes();
+    else if (result == kGenerateGrowl)
+      preset_selector->generateGrowl();
+    else if (result >= kGenerateKind && result < kGenerateKind + 50)
+      preset_selector->generateKind(result - kGenerateKind);
+    else if (result >= kLibraryPresetOffset)
       preset_selector->loadLibraryPreset(result - kLibraryPresetOffset);
     else if (result == SynthPresetSelector::kInitPreset)
       preset_selector->initPreset();
@@ -143,6 +156,11 @@ void SynthPresetSelector::prevClicked() {
     return;
   VitaLibrary& library = synth->getLibrary();
   int count = library.size(VitaLibrary::kPreset);
+  if ((count == 0 || library.currentPreset() < 0) && synth->currentSoundscape() >= 0) {
+    int n = VitaSoundscapes::count();
+    loadSoundscape((synth->currentSoundscape() + n - 1) % n);
+    return;
+  }
   if (count == 0)
     return;
   int current = library.currentPreset();
@@ -155,6 +173,10 @@ void SynthPresetSelector::nextClicked() {
     return;
   VitaLibrary& library = synth->getLibrary();
   int count = library.size(VitaLibrary::kPreset);
+  if ((count == 0 || library.currentPreset() < 0) && synth->currentSoundscape() >= 0) {
+    loadSoundscape((synth->currentSoundscape() + 1) % VitaSoundscapes::count());
+    return;
+  }
   if (count == 0)
     return;
   int current = library.currentPreset();
@@ -174,6 +196,14 @@ void SynthPresetSelector::showLibraryMenu(Component* anchor) {
     return;
 
   PopupItems options;
+  options.addItem(kSoundscapes, "Aquanode Soundscapes...");
+  // (6.9.11) new presets of a kind, learned from the Aquanode Soundscapes
+  {
+    const auto kinds = VitaSoundscapes::generatorKinds();
+    for (int k = 0; k < (int)kinds.size(); ++k)
+      if (VitaSoundscapes::kindSize(kinds[(size_t)k]) > 0)
+        options.addItem(kGenerateKind + k, "Generate: " + kinds[(size_t)k]);
+  }
   options.addItem(kOpenPreset, "Open Preset...");
   options.addItem(kImportBank, "Import Bank...");
 
@@ -243,6 +273,53 @@ void SynthPresetSelector::loadLibraryPreset(int index) {
   std::string error;
   if (!synth->loadLibraryPreset(index, error) && !error.empty())
     showError("Error opening preset", "There was an error opening the preset. " + error);
+  resetText();
+}
+
+void SynthPresetSelector::loadSoundscape(int index) {
+  SynthBase* synth = getSynth();
+  if (synth == nullptr)
+    return;
+  std::string error;
+  if (!synth->loadSoundscape(index, error) && !error.empty())
+    showError("Error opening preset", "There was an error opening the preset. " + error);
+  resetText();
+}
+
+// the built-in presets: categories on the left, their presets on the right
+void SynthPresetSelector::showSoundscapes() {
+  SynthBase* synth = getSynth();
+  if (synth == nullptr)
+    return;
+  PopupItems options;
+  for (const std::string& category : VitaSoundscapes::categories()) {
+    PopupItems sub(category);
+    for (int i = 0; i < VitaSoundscapes::count(); ++i)
+      if (VitaSoundscapes::category(i) == category) {
+        sub.addItem(kSoundscapeOffset + i, VitaSoundscapes::name(i), i == synth->currentSoundscape());
+        if (i == synth->currentSoundscape()) sub.selected = true;
+      }
+    options.addItem(sub);
+  }
+  showDualPopupSelector(this, Point<int>(selector_->getX(), selector_->getBottom()), 500 * size_ratio_,
+                        options, [=](int selection) { menuCallback(selection, this); });
+}
+
+void SynthPresetSelector::generateKind(int kind) {
+  SynthBase* synth = getSynth();
+  if (synth == nullptr)
+    return;
+  const auto kinds = VitaSoundscapes::generatorKinds();
+  if (kind >= 0 && kind < (int)kinds.size())
+    synth->generateKind(kinds[(size_t)kind]);
+  resetText();
+}
+
+void SynthPresetSelector::generateGrowl() {
+  SynthBase* synth = getSynth();
+  if (synth == nullptr)
+    return;
+  synth->generateGrowl();
   resetText();
 }
 

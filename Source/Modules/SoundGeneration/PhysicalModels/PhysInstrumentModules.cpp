@@ -194,10 +194,10 @@ namespace
             s.brightness = p ("bright") * 0.01;
             s.decay = p ("decay") * 0.001;
             s.sustain = p ("sustainLvl") * 0.01;
-            // Articulation: Arco, Pizzicato, Arco Studio, Pizz Studio, Pizz Mellow
+            // Articulation: Arco, Pizzicato, Arco Studio, Pizz Studio, Pizz Mellow, Pizz Modal
             const int artic = (int) std::lround (p ("artic"));
-            s.pizzicato = artic == 1 || artic == 3 || artic == 4;
-            s.studio = artic == 2 ? 1 : (artic == 3 ? 2 : (artic == 4 ? 3 : 0));
+            s.pizzicato = artic == 1 || artic == 3 || artic == 4 || artic == 5;
+            s.studio = artic == 2 ? 1 : (artic == 3 ? 2 : (artic == 4 ? 3 : (artic == 5 ? 4 : 0)));
             s.breathAmount = breathAmount();
             engine.setSettings (s);
         }
@@ -234,13 +234,14 @@ namespace
                             "biting in at the start of a stroke) on strings fitted to recordings. Section: the whole section "
                             "(violins from C4, violas from C3, celli from C2, basses below) or one of them. Pressure presses the "
                             "bow (airy to pressed), Bow Position moves it toward the bridge (brighter) or the fingerboard. "
-                            "Pizzicato plucks instead. Breath: 0 % plays from the keys, 100 % from a breath controller (Breath "
+                            "Pizzicato plucks instead; Pizz Modal plays a pizzicato rebuilt partial by partial from a measured "
+                            "cello (each partial's level and course, the body's low bloom, the finger leaving the string). Breath: 0 % plays from the keys, 100 % from a breath controller (Breath "
                             "Source) - the bows' speed follows it; the mod wheel adds vibrato, the sustain pedal holds. With MPE every note bends on its own (and, Breath Source on Pressure, follows its own pressure).";
-            d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("out", "Audio Out") };
+            d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("out", "Audio Out") };
             d.params.push_back (makeCombo ("section", "Section", { "Full Section", "Violins", "Violas", "Celli", "Basses" }, 0, 0, 2).noMod());
             d.params.push_back (makeRotary ("players", "Players", 1.0f, 8.0f, 4.0f, 0, {}, false, 1.0f).noMod());
             d.params.push_back (makeRotary ("spread", "Spread", 0.0f, 100.0f, 80.0f, 0, "%", false, 1.0f));
-            d.params.push_back (makeCombo ("artic", "Articulation", { "Arco", "Pizzicato", "Arco Studio", "Pizz Studio", "Pizz Mellow" }, 0, 0, 2).noMod());
+            d.params.push_back (makeCombo ("artic", "Articulation", { "Arco", "Pizzicato", "Arco Studio", "Pizz Studio", "Pizz Mellow", "Pizz Modal" }, 0, 0, 2).noMod());
             addBowParams (d, 1);
             addBreathParams (d, 3);
             d.params.push_back (makeRotary ("level", "Level", 0.0f, 1.0f, 0.7f, 3));
@@ -263,13 +264,15 @@ namespace
                             "torsion, the bow biting in at the start of a stroke) fitted to recordings, through a cello body "
                             "of 157 measured modes. Pressure presses the bow (airy to pressed), Bow Position moves it toward "
                             "the bridge (brighter) or the fingerboard, Vibrato comes in after the attack. Legato plays one "
-                            "line: a key held over the last one glides there on the same bow (Glide). Pizzicato plucks. "
+                            "line: a key held over the last one glides there on the same bow (Glide). Pizzicato plucks; Pizz Modal "
+                            "plays a pizzicato rebuilt partial by partial from a measured cello (each partial's level and course, "
+                            "the body's low bloom, the finger leaving the string). "
                             "Breath: 0 % plays from the keys, 100 % from a breath controller (Breath Source) - the bow's speed "
                             "follows it; the mod wheel adds vibrato, the sustain pedal holds. With MPE every note bends on its own (and, Breath Source on Pressure, follows its own pressure).";
-            d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("out", "Audio Out") };
+            d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("out", "Audio Out") };
             d.params.push_back (makeCombo ("mode", "Mode", { "Poly", "Legato" }, 0, 0, 2).noMod());
             d.params.push_back (makeRotary ("glide", "Glide", 10.0f, 500.0f, 60.0f, 0, "ms", true, 1.0f));
-            d.params.push_back (makeCombo ("artic", "Articulation", { "Arco", "Pizzicato", "Arco Studio", "Pizz Studio", "Pizz Mellow" }, 0, 0, 2).noMod());
+            d.params.push_back (makeCombo ("artic", "Articulation", { "Arco", "Pizzicato", "Arco Studio", "Pizz Studio", "Pizz Mellow", "Pizz Modal" }, 0, 0, 2).noMod());
             addBowParams (d, 1);
             addBreathParams (d, 3);
             d.params.push_back (makeRotary ("level", "Level", 0.0f, 1.0f, 0.7f, 3));
@@ -297,7 +300,7 @@ namespace
                             "note to note without a new attack; Poly plays up to four. Attack is the tongue, Breath Noise the "
                             "air in the tone. Breath: 0 % plays from the keys, 100 % from a breath controller (Breath Source) - "
                             "the blowing pressure itself, so the tone darkens and brightens with it; the mod wheel adds vibrato. With MPE every note bends on its own (and, Breath Source on Pressure, follows its own pressure).";
-            d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("out", "Audio Out") };
+            d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("out", "Audio Out") };
             d.params.push_back (makeCombo ("version", "Voicing", { "Refined", "Original", "Studio" }, 0, 0, 2).noMod());
             d.params.push_back (makeCombo ("mode", "Mode", { "Legato", "Poly" }, 0, 0, 2).noMod());
             d.params.push_back (makeRotary ("glide", "Glide", 10.0f, 300.0f, 40.0f, 0, "ms", true, 1.0f));
@@ -422,7 +425,7 @@ namespace
                             "amp from there, Pickup the pickup toward the neck (darker) or the bridge. Keys that come together "
                             "are strummed (Strum); a key let go mutes its string (Release), Palm Mute damps them all. Breath: "
                             "0 % plays from the keys, 100 % from a breath controller (Breath Source) as a volume swell. With MPE every note bends on its own.";
-            d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("out", "Audio Out") };
+            d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("out", "Audio Out") };
             juce::StringArray styles;
             for (int i = 0; i < pi::GuitarEngine::numStyles (true); ++i) styles.add (pi::GuitarEngine::styleName (true, i));
             d.params.push_back (makeCombo ("style", "Style", styles, 0, 0, 2).noMod());
@@ -456,7 +459,7 @@ namespace
                             "resonances, Brightness the upper body. Keys that come together are strummed (Strum); a key let go "
                             "mutes its string (Release), Palm Mute damps them all. Breath: 0 % plays from the keys, 100 % from a "
                             "breath controller (Breath Source) as a volume swell. With MPE every note bends on its own.";
-            d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("out", "Audio Out") };
+            d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("out", "Audio Out") };
             juce::StringArray styles;
             for (int i = 0; i < pi::GuitarEngine::numStyles (false); ++i) styles.add (pi::GuitarEngine::styleName (false, i));
             d.params.push_back (makeCombo ("style", "Style", styles, 0, 0, 2).noMod());

@@ -333,12 +333,12 @@ static ModuleDescriptor chordNameDescriptor()
     d.typeId = "util.chordname";
     d.displayName = "Chord Name";
     d.description =
-        "Names what is being played: the keys held - or, patched, the notes on its Midi In (a Piano Roll, an Arp, "
-        "Midi Add...) - as a chord, Cmaj7, F#m7b5, Gsus4/D, with its notes and bass below. Two notes read as their "
+        "Names what is being played: the keys held - or, patched, the notes on its MIDI In (a Piano Roll, an Arp, "
+        "MIDI Add...) - as a chord, Cmaj7, F#m7b5, Gsus4/D, with its notes and bass below. Two notes read as their "
         "interval. Makes no sound.";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 991;
-    d.sockets = { midiIn ("midiIn", "Midi In") };
+    d.sockets = { midiIn ("midiIn", "MIDI In") };
     d.params = {};
     return d;
 }

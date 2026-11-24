@@ -34,7 +34,12 @@ public:
     // the processor takes it once a block: into the patch's tempo (or on to a host Aquanode)
     double takeTempoRequest() override { return pending.exchange (0.0, std::memory_order_relaxed); }
 
-    void processSample (const StereoFrame*, StereoFrame*) override {}
+    // Tempo Out (6.9.10): the tempo as a signal (BPM / 1000) for the Tempo Ins of a lane
+    void processSample (const StereoFrame*, StereoFrame* outputs) override
+    {
+        const float v = (float) (juce::jlimit (20.0, 400.0, (double) param (0)) / kTempoSignalScale);
+        outputs[0] = { v, v };
+    }
 
     static ModuleDescriptor descriptor()
     {
@@ -47,8 +52,10 @@ public:
             "The patch's tempo as a knob, so it can be automated: an LFO, an envelope, a Curve CV, a DAW Mod or a MIDI "
             "Learn on BPM moves the tempo of everything in the patch - clocks, sequencers, arps, synced delays. The top "
             "bar's BPM always shows it, and while the module is in the patch the top bar turns its knob; while something "
-            "modulates the knob, the top bar only shows the tempo. In a DAW that gives a tempo, the DAW's stays.";
-        d.sockets = {};
+            "modulates the knob, the top bar only shows the tempo. In a DAW that gives a tempo, the DAW's stays. "
+            "Tempo Out gives a lane its own tempo: patched into the Tempo In of modules (sequencers, arps, LFOs, "
+            "delays, plugins), they follow this Tempo instead, and this one no longer sets the patch's tempo.";
+        d.sockets = { modOut ("tempoOut", "Tempo Out") };
         d.params = { makeRotary ("bpm", "BPM", 20.0f, 400.0f, 120.0f, 0, "", false, 0.1f) };
         return d;
     }

@@ -254,7 +254,15 @@ class VoiceSettings : public SynthSection {
     
     void setAllValues(vital::control_map& controls) override {
       SynthSection::setAllValues(controls);
-      setMpeEnabled(mpe_enabled_->getToggleState());
+      // (Aquanode, 6.9.12) a preset shown: MPE as the card's choice says (Follow
+      // Aquanode or the preset's own), not the preset's button forced on the synth
+      SynthGuiInterface* parent = findParentComponentOfClass<SynthGuiInterface>();
+      if (parent) {
+        parent->getSynth()->presetMpeLoaded();
+        mpe_enabled_->setToggleState(parent->getSynth()->isMpeEnabled(), NotificationType::dontSendNotification);
+      }
+      else
+        setMpeEnabled(mpe_enabled_->getToggleState());
     }
 
   private:

@@ -70,7 +70,7 @@ public:
                         "(Both Ways). Out-of-range partials are dropped (Regular) or folded back (Wrap, Mirror); "
                         "Note Lock snaps every partial to the nearest note. Five voices, attack / release, a "
                         "high-pass on the bank. Patch both banks into the CombWeave Output.";
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
         d.params = {
             makeRotary ("amount", "Partials", 0.0f, 128.0f, 7.0f, 0, {}, false, 1.0f),
             makeCombo ("spreadMode", "Spread", { "Linear", "Exponential", "Harmonics" }, 0, 0, 2),

@@ -75,6 +75,10 @@ class SynthPresetSelector : public SynthSection, public PresetSelector::Listener
     void clearLibrary();
     void toggleKeepLibraryInPatch();
     void loadLibraryPreset(int index);
+    void loadSoundscape(int index);
+    void showSoundscapes();
+    void generateGrowl();
+    void generateKind(int kind);   // (6.9.11) Generate: Pads, Basses ...
     void loadTuningFile();
     void clearTuning();
     std::string getTuningName();

@@ -150,7 +150,7 @@ public:
         const bool run = clock.host || getParameterBase (pRun) >= 0.5f;
         if (run && ! wasRunning && ! clock.host) { clock.ownPos16 = 0.0; seq.reset(); }
         wasRunning = run;
-        const double bpm = juce::jlimit (20.0, 400.0, (double) (getParameterBase (pClock) >= 0.5f ? tempoBpm : param (pTempo)));
+        const double bpm = juce::jlimit (20.0, 400.0, (double) (getParameterBase (pClock) >= 0.5f || tempoFromLane() ? tempoBpm : param (pTempo)));
         clock.inc16 = bpm / 60.0 * 4.0 / sampleRate;
         seq.swing = param (pSwing) * 0.01f;
 
@@ -769,7 +769,7 @@ public:
         d.typeId = juce::String ("plugin.covegroove.") + ids[Lane];
         d.displayName = kit::moduleName (kPlugin, Lane == Fx ? juce::String ("FX Hits") : juce::String (laneName (Lane)));
         d.description = juce::String ("Cove Groove's ") + laneName (Lane) + " voice. Trig In takes the Sequencer's gate (or any gate), "
-                        "Choke In cuts it short, Midi In / the keys play it on its own key (" + juce::MidiMessage::getMidiNoteName (36 + Lane, true, true, 4)
+                        "Choke In cuts it short, MIDI In / the keys play it on its own key (" + juce::MidiMessage::getMidiNoteName (36 + Lane, true, true, 4)
                         + "; an octave up for its second note). Audio Out at Level and Pan, Send Out for the delay. "
                         "Sound: Sample plays a file of your own (LOAD on the card, up to 10 s), shaped by the volume curve "
                         "drawn over it; the sample is saved with the patch. Sound: 808, 909, Classic Kit, Electro Kit, Large Drums, Metal Kit, "
@@ -778,7 +778,7 @@ public:
         d.section = ModuleSection::Oscillator;
         d.accent = kit::accentOf (kPlugin);
         d.sidebarOrder = 401 + Lane;
-        d.sockets = { modIn ("trigIn", "Trig In"), modIn ("chokeIn", "Choke In"), midiIn ("midiIn", "Midi In"),
+        d.sockets = { modIn ("trigIn", "Trig In"), modIn ("chokeIn", "Choke In"), midiIn ("midiIn", "MIDI In"),
                       audioOut ("audioOut", "Audio Out"), audioOut ("sendOut", "Send Out") };
         d.params = {
             makeCombo ("model", "Sound", modelNames (Lane), 0, 0, 2).noMod(),
@@ -991,7 +991,7 @@ public:
             bus.drive.tone = param (pDriveTone) * 0.01f;
             bus.drive.mix = param (pDriveMix) * 0.01f;
             bus.volume = param (pVolume) * 0.01f;
-            bpm = juce::jlimit (20.0, 400.0, (double) (getParameterBase (pClock) >= 0.5f ? tempoBpm : param (pTempo)));
+            bpm = juce::jlimit (20.0, 400.0, (double) (getParameterBase (pClock) >= 0.5f || tempoFromLane() ? tempoBpm : param (pTempo)));
             clock.inc16 = bpm / 60.0 * 4.0 / sampleRate;
         }
         LaneOut o;

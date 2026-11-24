@@ -102,6 +102,7 @@ namespace vital {
         kReset,
         kRetrigger,
         kSpectralMorphPhase,
+        kAqSlideFrame,   // (Aquanode, 6.9.12) a note's Slide, -1..1, for the default MPE map
         kNumInputs
       };
 
@@ -231,6 +232,10 @@ namespace vital {
       static bool usesDistortionPhase(DistortionType distortion_type);
 
       SynthOscillator(Wavetable* wavetable);
+      // (Aquanode, 6.9.12) how many frames a full Slide moves the frame by (0: off),
+      // shared by every voice's copy
+      void setAqSlideDepth(std::shared_ptr<std::atomic<float>> depth) { aq_slide_depth_ = std::move(depth); }
+      void setAqSlideShown(std::shared_ptr<std::atomic<float>> shown) { aq_slide_shown_ = std::move(shown); }
 
       void reset(poly_mask reset_mask, poly_int sample);
       void reset(poly_mask reset_mask) override;
@@ -254,6 +259,8 @@ namespace vital {
         Processor::setOversampleAmount(oversample);
         phase_inc_buffer_->ensureBufferSize(oversample * kMaxBufferSize);
       }
+
+      std::shared_ptr<std::atomic<float>> aq_slide_depth_, aq_slide_shown_;
 
     private:
       template<poly_int(*phaseDistort)(poly_int, poly_float, poly_int, const poly_float*, int),

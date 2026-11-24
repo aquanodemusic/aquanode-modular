@@ -62,8 +62,22 @@ public:
     void uiButtonClicked (const juce::String& paramId) override
     {
         if (paramId == "loadSample")
+        {
+            { const juce::SpinLock::ScopedLockType sl (nameLock); builtInName = {}; }   // (a file: its own name)
             openSampleChooser();
+        }
+        else if (paramId == "builtIn")
+            showBuiltInMenu();
     }
+    // (6.9.15) a built-in table (Vita's set, Massif's, or one generated - Massif's recipes, Vita's
+    // own, Phizmo's): its 2048-sample frames become the table, saved with the patch like a file
+    void loadBuiltIn (int group, int index, uint32_t seed);
+    std::unique_ptr<juce::Component> createExtraContentComponent() override;
+    int extraContentHeight() const override { return 56; }
+    float getUiPosition() const { return uiPosition.load (std::memory_order_relaxed); }
+    juce::String tableName() const { const juce::SpinLock::ScopedLockType sl (nameLock); return builtInName; }
+    void loadCustomState (const juce::String& s) override { const juce::SpinLock::ScopedLockType sl (nameLock); builtInName = s; }
+    juce::String saveCustomState() const override { return tableName(); }
 
     void processVoiceSample (int v, const aquanode::StereoFrame* inputs,
                              aquanode::StereoFrame* outputs) override;
@@ -71,6 +85,11 @@ public:
                       aquanode::StereoFrame* outputs);
 
 private:
+    void showBuiltInMenu();
+    std::atomic<float> uiPosition { 0.0f };
+    bool uiVoiceShown { false };
+    juce::String builtInName;
+    mutable juce::SpinLock nameLock;
     float readFrame (int frame, double phase01) const;
 
     aquanode::ModuleVoicePool pool;

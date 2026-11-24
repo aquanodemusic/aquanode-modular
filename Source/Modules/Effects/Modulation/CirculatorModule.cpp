@@ -20,6 +20,9 @@ void CirculatorModule::prepare (double sr)
 {
     SynthModule::prepare (sr);
     smCoef = 1.0f - std::exp (-1.0f / (0.025f * (float) sr / (float) kCtrl));   // 25 ms on the centre
+    oCoefSmooth = 1.0 - std::exp (-1.0 / (0.005 * sr));                                  // Circulate: 5 ms on g and k
+    oParamSmooth20 = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi / (0.020 * sr));   // its parameter smoothers
+    oParamSmooth10 = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi / (0.010 * sr));
     reset();
 }
 
@@ -29,6 +32,11 @@ void CirculatorModule::reset()
         for (auto& s : chs)
             s = Stage();
     lastOut[0] = lastOut[1] = 0.0f;
+    for (auto& chs : ost)
+        for (auto& s : chs)
+            s = OrigStage();
+    oCurrent[0] = oCurrent[1] = 0.0f;
+    oSnap = true;
     ctrlCount = 0;
     firstUpdate = true;
     heldCount = 0;
@@ -61,20 +69,20 @@ void CirculatorModule::rawMidiMessage (const juce::MidiMessage& m)
         heldCount = 0;
 }
 
+double CirculatorModule::centreHz() const
+{
+    const int mode = (int) std::lround (param (pMode));
+    if (mode == 0)
+        return param (pFreq);
+    const double note = (mode == 1 ? (double) param (pNote) : (double) keyNote) + param (pFine);
+    return midiNoteToHz (note);
+}
+
 void CirculatorModule::updateCoefficients()
 {
     const double sr = sampleRate;
-    const int mode = (int) std::lround (param (pMode));
-    double hz;
-    if (mode == 0)
-        hz = param (pFreq);
-    else
-    {
-        const double note = (mode == 1 ? (double) param (pNote) : (double) keyNote) + param (pFine);
-        hz = midiNoteToHz (note);
-    }
     const double maxHz = juce::jmin (18000.0, sr * 0.45);
-    hz = juce::jlimit (20.0, maxHz, hz);
+    const double hz = juce::jlimit (20.0, maxHz, centreHz());
 
     // the centre glides in octaves (no zipper when it is turned or switched)
     if (firstUpdate)
@@ -133,8 +141,84 @@ void CirculatorModule::updateCoefficients()
     firstUpdate = false;
 }
 
+// Engine Original: Circulate by GullDSP (Anis Dadou), GNU GPL v3 - its CirculateEffect and
+// AllpassFilter carried over as they are: one set of coefficients for every stage (the centre,
+// Focus 0.5 + 6 x Focus^3 as the Q), glided over 5 ms each sample; the stages' state-variable
+// all-pass in double precision; Feedback from the last output, safety-limited, with its gain
+// compensation; the output limited. Spread and Stagger are not part of it (the same centre for both
+// channels and every stage); Mix still blends with the dry signal (100 % = the original, fully wet).
+void CirculatorModule::processOriginal (const StereoFrame* inputs, StereoFrame* outputs)
+{
+    const double sr = sampleRate;
+    const double nyq = sr * 0.5;
+    const double maxHz = nyq < 18000.0 ? nyq - 500.0 : 18000.0;
+
+    // the parameters, smoothed as there: the centre on its log scale (20 Hz .. max), Focus, Feedback
+    const double hz = juce::jlimit (20.0, maxHz, centreHz());
+    const double norm = std::log (hz / 20.0) / std::log (maxHz / 20.0);
+    const double focusNorm = juce::jlimit (0.0, 1.0, (double) param (pFocus) * 0.01);
+    double fbTarget = juce::jlimit (-0.99, 0.99, (double) param (pFeedback) * 0.01);
+    if (oSnap) { oCentreNorm = norm; oFocus = focusNorm; oFeedback = fbTarget; }
+    oCentreNorm += (norm - oCentreNorm) * oParamSmooth20;
+    oFocus += (focusNorm - oFocus) * oParamSmooth20;
+    oFeedback += (fbTarget - oFeedback) * oParamSmooth10;
+
+    const int stages = juce::jlimit (0, kMaxStages, (int) std::lround (param (pDepth)));
+    if (stages > oStages)
+        for (auto& chs : ost)
+            for (int i = oStages; i < stages; ++i)
+                chs[i] = OrigStage();
+    oStages = stages;
+
+    const double centre = 20.0 * std::pow (maxHz / 20.0, juce::jlimit (0.0, 1.0, oCentreNorm));
+    const double f3 = oFocus * oFocus * oFocus;
+    const double gT = std::tan (juce::MathConstants<double>::pi * centre / sr);
+    const double kT = 1.0 / (2.0 * (0.5 + f3 * 6.0));
+    if (oSnap) { oG = gT; oK = kT; oSnap = false; }
+    else
+    {
+        oG += (gT - oG) * oCoefSmooth;
+        oK += (kT - oK) * oCoefSmooth;
+    }
+
+    // Feedback: snapped off near the middle (its +-0.1 of the knob), none without stages
+    double feedback = oFeedback;
+    if (std::abs (feedback) < 0.198) feedback = 0.0;
+    if (stages == 0) feedback = 0.0;
+    const float comp = std::sqrt (1.0f - (float) std::abs (feedback) / 1.5f);
+    const float mix = juce::jlimit (0.0f, 1.0f, param (pMix) * 0.01f);
+    const double g = oG, R = oK, d = 1.0 / (1.0 + 2.0 * R * g + g * g);
+
+    for (int c = 0; c < 2; ++c)
+    {
+        const float in = inputs[0][c];
+        float cur = softLimit (oCurrent[c]);
+        cur = in + (float) feedback * cur;
+        cur *= comp;
+        auto* s = ost[c];
+        for (int i = 0; i < stages; ++i)
+        {
+            const double x = cur;
+            const double bp = (g * (x - s[i].s2) + s[i].s1) * d;
+            const double bp2 = bp + bp;
+            const double olds1 = s[i].s1;
+            s[i].s1 = bp2 - olds1;
+            s[i].s2 = s[i].s2 + g * bp2;
+            cur = (float) (x - 4.0 * R * bp);
+        }
+        cur = softLimit (cur);
+        oCurrent[c] = cur;
+        outputs[0][c] = in + mix * (cur - in);
+    }
+}
+
 void CirculatorModule::processSample (const StereoFrame* inputs, StereoFrame* outputs)
 {
+    if (std::lround (param (pEngine)) == 1)
+    {
+        processOriginal (inputs, outputs);
+        return;
+    }
     if (ctrlCount <= 0)
     {
         updateCoefficients();
@@ -188,12 +272,14 @@ static ModuleDescriptor circulatorDescriptor()
         "Phase dispersion: up to 64 all-pass stages twist the phase around one centre, smearing every transient "
         "into a hollow, metallic chirp that rings at that pitch - drums and plucks turn springy and laser-like. "
         "Focus narrows the smear into a ringing tone, Feedback turns it into a steep phaser. The centre is Freq, "
-        "a Note, or Key: the last note on its Midi In, so the chirp follows a bass line.";
+        "a Note, or Key: the last note on its MIDI In, so the chirp follows a bass line. Engine Original runs "
+        "GullDSP's Circulate itself (GPLv3): its own Focus curve, smoothing and Feedback snap; Spread and Stagger "
+        "are not part of it.";
     d.section = ModuleSection::Effect;
     d.sidebarOrder = 22;
     d.sockets = {
         audioIn ("audioIn", "Audio In"),
-        midiIn ("midiIn", "Midi In"),
+        midiIn ("midiIn", "MIDI In"),
         audioOut ("audioOut", "Audio Out")
     };
     d.params = {
@@ -206,7 +292,8 @@ static ModuleDescriptor circulatorDescriptor()
         makeRotary ("feedback", "Feedback", -99.0f, 99.0f, 0.0f, 1, "%"),
         makeRotary ("spread",   "Spread",   0.0f, 100.0f, 0.0f, 2, "%"),
         makeRotary ("stagger",  "Stagger",  0.0f, 100.0f, 0.0f, 2, "%"),
-        makeRotary ("mix",      "Mix",      0.0f, 100.0f, 100.0f, 2, "%")
+        makeRotary ("mix",      "Mix",      0.0f, 100.0f, 100.0f, 2, "%"),
+        makeCombo  ("engine",   "Engine",   { "Aquanode", "Original" }, 0, 0, 2).noMod()
     };
     return d;
 }

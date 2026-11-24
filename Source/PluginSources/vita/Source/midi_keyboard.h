@@ -40,6 +40,8 @@ class MidiKeyboard : public OpenGlComponent {
     MidiKeyboard(MidiKeyboardState& state);
 
     void paintBackground(Graphics& g) override;
+    float lineWidth() const;       // (Vita)
+    bool snapsToPixels() const;    // (Vita) keys wide enough to round to whole pixels
     void parentHierarchyChanged() override;
     void resized() override;
     int getNoteAtPosition(Point<float> position);

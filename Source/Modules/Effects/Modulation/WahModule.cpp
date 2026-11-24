@@ -35,7 +35,7 @@ public:
         d.section = ModuleSection::Effect;
         d.sidebarOrder = 4;
         d.sockets = { audioIn ("audioIn", "Audio In"), modIn ("pedalIn", "Pedal In"),
-                      audioOut ("audioOut", "Audio Out"), modOut ("positionOut", "Position Out") };
+                      audioOut ("audioOut", "Audio Out"), modOut ("positionOut", "Position Out"), tempoIn() };
 
         juce::StringArray divisions { "Free" };
         divisions.addArray (seqDivisionChoices());

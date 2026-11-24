@@ -12,7 +12,7 @@ static aquanode::ModuleDescriptor fruitNoteFeedDescriptor()
     d.description = "The notes of one of Fruit DAW's synth slots (only inside a Fruit DAW card).";
     d.section = ModuleSection::Utility;
     d.listedInSidebar = false;
-    d.sockets = { midiOut ("midiOut", "Midi Out") };
+    d.sockets = { midiOut ("midiOut", "MIDI Out") };
     return d;
 }
 AQUANODE_REGISTER_MODULE (FruitNoteFeed, fruitNoteFeedDescriptor)
@@ -162,7 +162,7 @@ namespace
     aquanode::ModuleDescriptor fruitRackDescriptor()
     {
         auto d = fruitPartDescriptor ("fruit.part.rack", "Fruit DAW - Channel Rack");
-        d.sockets = { aquanode::midiIn ("midiIn", "Midi In") };      // the keys, unless something is patched in
+        d.sockets = { aquanode::midiIn ("midiIn", "MIDI In") };      // the keys, unless something is patched in
         return d;
     }
     aquanode::ModuleDescriptor fruitRollDescriptor()     { return fruitPartDescriptor ("fruit.part.roll", "Fruit DAW - Piano Roll"); }
@@ -220,3 +220,40 @@ static const bool fruitPatchRegistered = aquanode::plugins::registerPatchVersion
         ports.audioOut.push_back ({ owner, "audioOut" });
         return ports;
     }, nullptr);
+
+// (6.9.16) the DAW preset's Fruit DAW: a card with three lanes - a synth on each (Sine, Saw
+// and Triangle Oscillators) through an effect on its own insert (Delay, Reverb, Chorus) - a
+// pattern each, the three on the playlist from the start, its Audio Out into the patch's
+int fruitDawThreeLanes (AquanodeModularAudioProcessor& patch, juce::Point<int> at)
+{
+    const int id = patch.addModule ("plugin.fruitgui", at);
+    auto* inst = patch.getInstance (id);
+    auto* hosted = inst != nullptr ? dynamic_cast<aquanode::plugins::HostedPluginModule*> (inst->dsp.get()) : nullptr;
+    auto* fp = hosted != nullptr ? dynamic_cast<FruitProcessor*> (hosted->getPlugin()) : nullptr;
+    if (fp == nullptr) return id;
+    const char* const waves[3] = { "Sine", "Saw", "Tri" };
+    const char* const effects[3] = { "fx.delay", "fx.reverb", "fx.chorus" };
+    for (int lane = 1; lane <= 3; ++lane)
+    {
+        if (! fp->loadSynth (lane, "osc.basic")) continue;
+        if (auto* osc = fp->getEngine().getInstance (fp->slots[(size_t) lane].synthId))
+        {
+            osc->dsp->setParameter ("volume", 0.8f);
+            if (const auto* spec = osc->descriptor().findParam ("waveform"))
+                if (const int w = spec->choices.indexOf (waves[lane - 1]); w >= 0)
+                    osc->dsp->setParameter ("waveform", (float) w);
+        }
+        fp->loadEffect (lane, 0, effects[lane - 1]);
+        auto& pat = fp->song.patterns[(size_t) lane];
+        pat.slot = lane;
+        pat.lengthBeats = 16.0;
+        fruit::Clip c;
+        c.track = lane;
+        c.start = 0.0;
+        c.length = 16.0;
+        c.pattern = lane;
+        fp->song.clips.push_back (c);
+    }
+    fp->songChanged();
+    return id;
+}

@@ -88,15 +88,35 @@ void PatchCanvas::resized()
 void PatchCanvas::convertPluginCard (int instanceId)
 {
     juce::Component::SafePointer<PatchCanvas> safe (this);
-    juce::MessageManager::callAsync ([safe, instanceId]
+    auto convert = [safe, instanceId] (int kind)
     {
-        if (safe == nullptr)
-            return;
-        const auto name = aquanode::plugins::convertGuiToPatch (safe->processor, instanceId);
-        if (name.isNotEmpty())
-            safe->processor.patchName = name;
-        safe->rebuild();
-    });
+        juce::MessageManager::callAsync ([safe, instanceId, kind]
+        {
+            if (safe == nullptr)
+                return;
+            aquanode::plugins::patchKind() = kind;
+            const auto name = aquanode::plugins::convertGuiToPatch (safe->processor, instanceId);
+            aquanode::plugins::patchKind() = 0;
+            if (name.isNotEmpty())
+                safe->processor.patchName = name;
+            safe->rebuild();
+        });
+    };
+    // (6.9.17) a patch version in more than one kind (FM12's): which one
+    juce::StringArray kinds;
+    if (auto* inst = processor.getInstance (instanceId))
+        if (auto* hosted = dynamic_cast<aquanode::plugins::HostedPluginModule*> (inst->dsp.get()))
+            kinds = aquanode::plugins::patchKinds (hosted->getSpec().pluginId);
+    if (kinds.size() < 2)
+    {
+        convert (0);
+        return;
+    }
+    juce::PopupMenu m;
+    m.addSectionHeader ("Patch version");
+    for (int k = 0; k < kinds.size(); ++k)
+        m.addItem (kinds[k], [convert, k] { convert (k); });
+    m.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
 }
 
 void PatchCanvas::openPresetInPlugin (int instanceId)
@@ -314,7 +334,7 @@ namespace
                 if (sock->id == id && sock->kind == kind && ! sock->hidden)
                     return sock;
         for (const auto* sock : list)
-            if (sock->kind == kind && ! sock->hidden)
+            if (sock->kind == kind && ! sock->hidden && sock->id != "tempoIn")   // (6.9.10: never a cable into a Tempo In by itself)
                 return sock;
         return nullptr;
     }
@@ -730,6 +750,28 @@ std::vector<juce::Point<float>> PatchCanvas::leafPositions() const
 
 void PatchCanvas::paint (juce::Graphics& g)
 {
+    // (6.9.16) Disable GUI Transparency: the cards are solid - nothing to paint under them but
+    // their round corners (so a card's display repaints the card alone, not the jungle too)
+    if (guiOpaque() && (themeColours().glass || themeColours().skeuomorphic))
+    {
+        const float corner = themeColours().glass ? 12.0f : 8.0f;
+        for (auto& m : moduleComponents)
+        {
+            if (m == nullptr || m->getParentComponent() != this || ! m->isVisible() || m->isInFullView() || m->getAlpha() < 1.0f)
+                continue;
+            const auto body = m->getLocalBounds().toFloat().reduced (1.0f);
+            for (auto part : { body.reduced (corner, 1.0f), body.reduced (1.0f, corner) })
+            {
+                const auto a = getLocalArea (m.get(), part);
+                const int x0 = (int) std::ceil (a.getX()), y0 = (int) std::ceil (a.getY());
+                const int x1 = (int) std::floor (a.getRight()), y1 = (int) std::floor (a.getBottom());
+                if (x1 > x0 && y1 > y0)
+                    g.excludeClipRegion ({ x0, y0, x1 - x0, y1 - y0 });
+            }
+        }
+        if (g.isClipEmpty())
+            return;
+    }
     const auto background = themeColours().get (ThemeColours::Background);   // warm dark brown-grey by default
     if (themeColours().glass)
     {

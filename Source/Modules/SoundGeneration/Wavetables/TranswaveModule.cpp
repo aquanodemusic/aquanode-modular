@@ -1,4 +1,5 @@
 #include "TranswaveModule.h"
+#include "../../Shared/AntiAlias.h"
 
 #include <random>
 
@@ -24,14 +25,14 @@ namespace
     // frame cannot alias against its own cycle length, whatever cycle size the
     // user has dialled in.
     void spectrumToCycle(const std::vector<float>& amp, const std::vector<float>& phase,
-        std::vector<float>& out, int cycleSamples)
+        std::vector<float>& out, int cycleSamples, int harmonicLimit = 1 << 30)
     {
         static thread_local juce::dsp::FFT fft(11);   // 2048
         std::vector<float> buf((size_t)(2 * kSynthLength), 0.0f);
 
-        const int maxH = juce::jmin((int) amp.size() - 1,
+        const int maxH = juce::jmin (harmonicLimit, juce::jmin((int) amp.size() - 1,
             juce::jmin(kSynthLength / 2 - 1,
-                juce::jmax(1, cycleSamples / 2 - 1)));
+                juce::jmax(1, cycleSamples / 2 - 1))));
 
         for (int h = 1; h <= maxH; ++h)
         {
@@ -512,7 +513,11 @@ namespace
 
             for (int m = 1; m < TranswaveModule::kNumMips; ++m)
             {
-                spectrumToCycle (amp, phase, mips[(size_t) m], cycleSamples >> m);   // fewer harmonics each
+                if (m < TranswaveModule::kOldMips)
+                    spectrumToCycle (amp, phase, mips[(size_t) m], cycleSamples >> m);   // fewer harmonics each
+                else   // (6.9.21: 64 samples long, as many harmonics as a cycle this short could hold)
+                    spectrumToCycle (amp, phase, mips[(size_t) m], cycleSamples >> (TranswaveModule::kOldMips - 1),
+                                     juce::jmax (1, (cycleSamples >> m) / 2 - 1));
                 for (auto& v : mips[(size_t) m]) v *= g;
             }
         }
@@ -693,9 +698,11 @@ float TranswaveModule::readTable (const Table& t, float position01, double phase
         return 0.0f;
 
     // the brightest copy whose top harmonic still fits under ~0.45 x fs
+    // (6.9.21: with CPU > Anti-alias on, on into the copies with the fewest harmonics)
+    const int lastMip = aquanode::antiAliasOn() ? kNumMips - 1 : kOldMips - 1;
     int mip = 0;
-    while (mip < kNumMips - 1
-           && (double) ((kBaseLength >> mip) / 2 - 1) * freqHz > sampleRate * 0.45)
+    while (mip < lastMip
+           && (double) (juce::jmax (1, (kBaseLength >> mip) / 2 - 1)) * freqHz > sampleRate * 0.45)
         ++mip;
 
     const float pos = juce::jlimit (0.0f, 1.0f, position01) * (float) (t.numFrames - 1);
@@ -764,6 +771,8 @@ void TranswaveModule::processVoiceSample (int v, const StereoFrame* inputs, Ster
     }
 
     double pos = param (pPosition) * 0.01 + travel + inputs[0][0] * param (pPosDepth) * 0.01;
+    if (! isInputConnected (0))
+        pos += (double) mpeSlideOffset (v, pPosition);   // (6.9.12: MPE Slide, with nothing on Position)
     if (mode == sForward || mode == sBackward)
         pos -= std::floor (pos);                 // looping scans wrap round the table
     const float pos01 = (float) juce::jlimit (0.0, 1.0, pos);
@@ -871,7 +880,7 @@ static ModuleDescriptor transwaveDescriptor()
     d.sockets = {
         modIn    ("posIn",     "Pos In"),
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

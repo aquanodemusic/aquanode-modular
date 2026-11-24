@@ -101,7 +101,7 @@ class DrawbarOrganModule final : public SynthModule
 {
 public:
     enum ParamIndex { pDb16 = 0, pDb513, pDb8, pDb4, pDb223, pDb2, pDb135, pDb113, pDb1,
-                      pPerc, pPercDecay, pPercVol, pVibrato, pClick, pLeakage, pDrive, pLeslie, pLevel };
+                      pPerc, pPercDecay, pPercVol, pVibrato, pClick, pLeakage, pDrive, pLeslie, pLevel, pSlowRpm, pFastRpm, pInertia };
 
     VoiceMode voiceMode() const override { return VoiceMode::Global; }
     bool wantsRawMidi() const override { return true; }
@@ -121,12 +121,16 @@ public:
             phase[(size_t) w] = std::fmod (0.6180339887 * (w + 1), 1.0);   // (spinning since the power went on)
         }
         vibBuf.assign ((size_t) juce::nextPowerOfTwo ((int) (0.01 * fs) + 8), 0.0f);
+        tunedSeen.fill (0.0);   // (the tuning read again at the first block)
         reset();
     }
 
     void reset() override
     {
         for (auto& v : voices) v.active = false;
+        masterBend = 0.0f;
+        for (auto& c : chanBend) c = 0.0f;
+        for (auto& c : chanPressure) c = 0.0f;
         std::fill (vibBuf.begin(), vibBuf.end(), 0.0f);
         vibPos = 0;
         clickLp1 = clickLp2 = 0.0f;
@@ -136,8 +140,16 @@ public:
 
     void rawMidiMessage (const juce::MidiMessage& m) override
     {
-        if (m.isNoteOn()) noteOn (m.getNoteNumber(), m.getFloatVelocity());
-        else if (m.isNoteOff()) noteOff (m.getNoteNumber());
+        const int ch = juce::jlimit (1, 16, m.getChannel());
+        if (m.isNoteOn()) noteOn (m.getNoteNumber(), m.getFloatVelocity(), ch);
+        else if (m.isNoteOff()) noteOff (m.getNoteNumber(), ch);
+        else if (m.isPitchWheel())
+        {
+            // MPE: a member channel bends its own note (+-48 st); channel 1 bends them all (+-2 st)
+            const float b = (float) (m.getPitchWheelValue() - 8192) / 8192.0f;
+            if (ch == 1) masterBend = b * 2.0f; else chanBend[ch] = b * 48.0f;
+        }
+        else if (m.isChannelPressure()) chanPressure[ch] = m.getChannelPressureValue() / 127.0f;
         else if (m.isController())
         {
             const int cc = m.getControllerNumber();
@@ -148,6 +160,24 @@ public:
         else if (m.isAllNotesOff() || m.isAllSoundOff()) allOff();
     }
     void midiAllNotesOff() override { allOff(); }
+
+    // (6.9.14) a Global Microtuning (or an MTS-ESP master) retunes the generator: every
+    // wheel moves to its note's tuned pitch, keeping its own gear's offset from equal
+    // temperament (read inside the block, where the patch's tuning is in place)
+    void retuneWheels()
+    {
+        bool moved = false;
+        for (int k = 0; k < 12 && ! moved; ++k)
+            moved = ! juce::exactlyEqual (tuning::noteToHz ((double) (60 + k)), tunedSeen[(size_t) k]);
+        if (! moved) return;
+        for (int k = 0; k < 12; ++k) tunedSeen[(size_t) k] = tuning::noteToHz ((double) (60 + k));
+        for (int w = 0; w < kWheels; ++w)
+        {
+            const int m = kLowWheel + w;
+            const double et = 440.0 * std::pow (2.0, (m - 69) / 12.0);
+            inc[(size_t) w] = wheelHz (m) * (tuning::noteToHz ((double) m) / et) / fs;
+        }
+    }
 
     void blockStart() override
     {
@@ -181,6 +211,7 @@ public:
 
     void processSample (const StereoFrame*, StereoFrame* outputs) override
     {
+        if ((tuneCounter++ & 255) == 0) retuneWheels();
         // the generator turns
         for (int w = 0; w < kWheels; ++w)
         {
@@ -251,7 +282,7 @@ public:
     {
         ModuleDescriptor d;
         d.typeId = "osc.drawbarorgan";
-        d.displayName = "Drawbar Organ";
+        d.displayName = "Drawbar";   // (6.9.15: was Drawbar Organ)
         d.section = ModuleSection::Oscillator;
         d.sidebarOrder = 5;
         d.searchKeywords = "drawbar organ tonewheel hammond b3 leslie rotary percussion click jazz gospel";
@@ -260,9 +291,12 @@ public:
             "(16' to 1', pull them on the card) folding back at the generator's ends, the recorded organ's taper, a little "
             "leakage. Key Click: the contacts closing a hair apart. Percussion (2nd or 3rd, Fast or Slow, Normal or Soft) "
             "strikes only when no other key is held. The scanner's Vibrato and Chorus (V1 - V3, C1 - C3), the preamp's "
-            "Drive, and the Leslie built in (Off, Stop, Slow, Fast; the mod wheel switches Slow to Fast). Expression "
-            "(CC 11) is the swell pedal. Presets on the card set classic registrations.";
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("out", "Audio Out") };
+            "Drive, and the Leslie built in (Off, Stop, Slow, Fast; the mod wheel switches Slow to Fast; Slow RPM and Fast RPM: "
+            "how fast the horn turns at each, the drum following; Inertia: how quickly the rotors get to a new speed, from "
+            "almost at once to several seconds, like a real cabinet's). Expression "
+            "(CC 11) is the swell pedal. Presets on the card set classic registrations. MPE: each note bends on its own "
+            "channel (its tonewheels let go and turn at the bent speed) and pressure swells it.";
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("out", "Audio Out") };
         static const float defaults[kBars] = { 0, 0, 8, 8, 8, 0, 0, 0, 0 };
         for (int b = 0; b < kBars; ++b)
             d.params.push_back (makeRotary (kIds[b], kNames[b], 0.0f, 8.0f, defaults[b], 9, {}, false, 1.0f).hide().cableTargetInCustomUI());
@@ -275,6 +309,11 @@ public:
         d.params.push_back (makeRotary ("drive", "Drive", 0.0f, 100.0f, 8.0f, 2, "%", false, 1.0f));
         d.params.push_back (makeCombo ("leslie", "Leslie", { "Off", "Stop", "Slow", "Fast" }, 2, 2, 2).noMod());
         d.params.push_back (makeRotary ("level", "Level", 0.0f, 1.0f, 0.7f, 2));
+        // (6.9.11) the horn's speed at Slow and at Fast, and how quickly the
+        // rotors get to a new speed - the defaults as it always was
+        d.params.push_back (makeRotary ("slowRpm", "Slow RPM", 0.0f, 200.0f, (float) RotaryCabinet::kSlowRpm, 2, " rpm"));
+        d.params.push_back (makeRotary ("fastRpm", "Fast RPM", 100.0f, 800.0f, (float) RotaryCabinet::kFastRpm, 2, " rpm"));
+        d.params.push_back (makeRotary ("inertia", "Inertia", 0.0f, 100.0f, 60.0f, 2, "%", false, 0.1f));
         d.params.push_back (makeOutputTrim (-3.0f));
         return d;
     }
@@ -298,6 +337,9 @@ private:
         int release[kBars] {};     // samples until each contact opens again, once let go
         float perc { 0.0f };
         int percWheel { 0 };
+        int channel { 1 };
+        bool bent { false };          // MPE: once bent, the note turns its own wheels
+        double own[kBars + 1] {};     // (the nine bars and the percussion)
     };
     static constexpr int kVoices = 32;
 
@@ -306,6 +348,9 @@ private:
         RotaryCabinet::Settings s;
         const int l = juce::jlimit (0, 3, (int) std::lround (param (pLeslie)));
         s.speed = l <= 1 ? 0 : (l == 3 || modWheel > 0.5f ? 2 : 1);
+        s.slowRpm = juce::jmax (0.0, (double) param (pSlowRpm));
+        s.fastRpm = juce::jmax (0.0, (double) param (pFastRpm));
+        s.inertia = juce::jlimit (0.0, 100.0, (double) param (pInertia));
         // (fitted to the recorded organ: a gentler horn swirl, and the drum's own bend)
         s.hornDepth = 50.0f;
         s.drumDepth = 45.0f;
@@ -324,17 +369,18 @@ private:
         return wheelOut[(size_t) w];
     }
 
-    void noteOn (int note, float)
+    void noteOn (int note, float, int ch)
     {
         bool othersHeld = false;
         for (auto& c : voices) othersHeld = othersHeld || (c.active && ! c.releasing);
         Voice* v = nullptr;
-        for (auto& c : voices) if (c.active && c.note == note) { v = &c; break; }
+        for (auto& c : voices) if (c.active && c.note == note && c.channel == ch) { v = &c; break; }
         if (v == nullptr) for (auto& c : voices) if (! c.active) { v = &c; break; }
         if (v == nullptr) { v = &voices[0]; for (auto& c : voices) if (c.age < v->age) v = &c; }
         auto& k = *v;
         const bool again = k.active && k.note == note;
         k.active = true; k.releasing = false; k.note = note; k.age = ++ageCounter;
+        k.channel = ch; k.bent = false;
         // the nine contacts close a little apart (the more click, the further), bouncing
         const float spread = (0.15f + 2.2f * click) * 0.001f * (float) fs;
         for (int b = 0; b < kBars; ++b)
@@ -356,11 +402,11 @@ private:
         clickK = (float) std::exp (-1.0 / (0.0018 * fs));
     }
 
-    void noteOff (int note)
+    void noteOff (int note, int ch)
     {
         const float spread = (0.1f + 1.4f * click) * 0.001f * (float) fs;
         for (auto& v : voices)
-            if (v.active && v.note == note && ! v.releasing)
+            if (v.active && v.note == note && ! v.releasing && (v.channel == ch || ch == 1 || v.channel == 1))
             {
                 v.releasing = true;
                 for (int b = 0; b < kBars; ++b)
@@ -374,12 +420,31 @@ private:
 
     void allOff() { for (auto& v : voices) v.active = false; }
 
+    // a bent note's own wheel: it starts where the generator's wheel is (no click) and turns at the bent speed
+    float ownWheel (Voice& v, int slot, int midiWheel, double ratio)
+    {
+        const int w = juce::jlimit (0, kWheels - 1, midiWheel - kLowWheel);
+        double& ph = v.own[slot];
+        ph += inc[(size_t) w] * ratio;
+        ph -= std::floor (ph);
+        const float s = (float) std::sin (juce::MathConstants<double>::twoPi * ph);
+        return (s + third[(size_t) w] * (3.0f * s - 4.0f * s * s * s)) * taper[(size_t) w];
+    }
+
     float renderVoice (Voice& v)
     {
         // a contact closing (or opening) ramps over a fraction of a millisecond: the more click, the faster
         const float ramp = 1.0f / (float) ((0.0015 - 0.0013 * click) * fs + 1.0);
         float out = 0.0f;
         bool any = false;
+        const float bend = masterBend + (v.channel > 1 ? chanBend[v.channel] : 0.0f);
+        if (! v.bent && std::abs (bend) > 1.0e-4f)
+        {
+            v.bent = true;
+            for (int b = 0; b < kBars; ++b) v.own[b] = phase[(size_t) juce::jlimit (0, kWheels - 1, v.wheel[b] - kLowWheel)];
+            v.own[kBars] = phase[(size_t) juce::jlimit (0, kWheels - 1, v.percWheel - kLowWheel)];
+        }
+        const double ratio = v.bent ? std::pow (2.0, (double) bend / 12.0) : 1.0;
         for (int b = 0; b < kBars; ++b)
         {
             if (v.contact[b] > 0) { --v.contact[b]; continue; }
@@ -392,25 +457,29 @@ private:
             if (v.open[b] <= 0.0f) continue;
             any = true;
             const float g = gain[(size_t) b] + leak;
-            if (g > 0.0f) out += g * v.open[b] * wheelValue (v.wheel[b]);
+            if (g > 0.0f) out += g * v.open[b] * (v.bent ? ownWheel (v, b, v.wheel[b], ratio) : wheelValue (v.wheel[b]));
         }
         if (v.perc > 1.0e-4f)
         {
-            out += percAmp * v.perc * wheelValue (v.percWheel) * (v.releasing ? v.open[2] : 1.0f);
+            out += percAmp * v.perc * (v.bent ? ownWheel (v, kBars, v.percWheel, ratio) : wheelValue (v.percWheel)) * (v.releasing ? v.open[2] : 1.0f);
             v.perc *= percK;
         }
         if (v.releasing && ! any) v.active = false;
-        return out * 0.16f;
+        // MPE pressure swells the note
+        return out * 0.16f * (1.0f + 0.6f * chanPressure[v.channel > 1 ? v.channel : 1]);
     }
 
     double fs { 48000.0 };
     std::array<Voice, kVoices> voices;
     juce::uint32 ageCounter { 0 }, stamp { 0 }, noise { 22222u };
+    float masterBend { 0.0f }, chanBend[17] {}, chanPressure[17] {};
     std::array<double, kWheels> phase {}, inc {};
     std::array<float, kWheels> taper {}, third {}, wheelOut {};
     std::array<juce::uint32, kWheels> wheelStamp {};
     std::array<float, kBars> gain {};
     int percBar { -1 };
+    std::array<double, 12> tunedSeen {};   // (6.9.14) the tuning the wheels were last set for
+    unsigned tuneCounter { 0 };
     float percAmp { 0.0f }, percK { 0.999f }, leak { 0.0f }, click { 0.25f };
     float clickEnv { 0.0f }, clickK { 0.99f }, clickLp1 { 0.0f }, clickLp2 { 0.0f };
     double shaft { 0.0 };

@@ -131,15 +131,15 @@ NoteAdderProcessor::createParameterLayout()
     layout.add(std::make_unique<juce::AudioParameterInt>(
         "wanderprob", "Wander Probability", 0, 9, 4));
     layout.add(std::make_unique<juce::AudioParameterInt>(
-        "wandermax", "Wander Max Degrees", 0, 6, 2));
+        "wandermax", "Wander Range Degrees", 0, 6, 2));
     layout.add(std::make_unique<juce::AudioParameterInt>(
         "clouddensity", "Cloud Density", 0, 7, 1));
     layout.add(std::make_unique<juce::AudioParameterInt>(
         "cloudspread", "Cloud Spread", 0, 13, 3));
     layout.add(std::make_unique<juce::AudioParameterInt>(
-        "cloudvelmin", "Cloud Vel Min", 0, 9, 1));
+        "cloudvelmin", "Cloud Vel Low", 0, 9, 1));
     layout.add(std::make_unique<juce::AudioParameterInt>(
-        "cloudvelmax", "Cloud Vel Max", 0, 9, 4));
+        "cloudvelmax", "Cloud Vel High", 0, 9, 4));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "clouddecay", "Cloud Decay (ms)",
         juce::NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.4f), 200.0f));
@@ -161,9 +161,9 @@ NoteAdderProcessor::createParameterLayout()
     layout.add(std::make_unique<juce::AudioParameterInt>(
         "mcloudoctave", "Manual Cloud Octave Range", 0, 3, 1));
     layout.add(std::make_unique<juce::AudioParameterInt>(
-        "mcloudvelmin", "Manual Cloud Vel Min", 0, 9, 1));
+        "mcloudvelmin", "Manual Cloud Vel Low", 0, 9, 1));
     layout.add(std::make_unique<juce::AudioParameterInt>(
-        "mcloudvelmax", "Manual Cloud Vel Max", 0, 9, 4));
+        "mcloudvelmax", "Manual Cloud Vel High", 0, 9, 4));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "mclouddecay", "Manual Cloud Decay (ms)",
         juce::NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.4f), 200.0f));
@@ -192,9 +192,9 @@ NoteAdderProcessor::createParameterLayout()
     layout.add(std::make_unique<juce::AudioParameterInt>(
         "pncloudoctave", "PerNote Cloud Octave Range", 0, 3, 1));
     layout.add(std::make_unique<juce::AudioParameterInt>(
-        "pncloudvelmin", "PerNote Cloud Vel Min", 0, 9, 1));
+        "pncloudvelmin", "PerNote Cloud Vel Low", 0, 9, 1));
     layout.add(std::make_unique<juce::AudioParameterInt>(
-        "pncloudvelmax", "PerNote Cloud Vel Max", 0, 9, 4));
+        "pncloudvelmax", "PerNote Cloud Vel High", 0, 9, 4));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "pnclouddecay", "PerNote Cloud Decay (ms)",
         juce::NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.4f), 200.0f));
@@ -209,8 +209,8 @@ NoteAdderProcessor::createParameterLayout()
     layout.add(std::make_unique<juce::AudioParameterInt>("clustlowoend", "Cluster Low Oct End", 0, 9, 3));
     layout.add(std::make_unique<juce::AudioParameterInt>("clusthighostrt", "Cluster High Oct Start", 0, 9, 4));
     layout.add(std::make_unique<juce::AudioParameterInt>("clusthighoend", "Cluster High Oct End", 0, 9, 6));
-    layout.add(std::make_unique<juce::AudioParameterInt>("clustvelmin", "Cluster Vel Min", 0, 9, 1));
-    layout.add(std::make_unique<juce::AudioParameterInt>("clustvelmax", "Cluster Vel Max", 0, 9, 6));
+    layout.add(std::make_unique<juce::AudioParameterInt>("clustvelmin", "Cluster Vel Low", 0, 9, 1));
+    layout.add(std::make_unique<juce::AudioParameterInt>("clustvelmax", "Cluster Vel High", 0, 9, 6));
     layout.add(std::make_unique<juce::AudioParameterFloat>("clustdecay", "Cluster Decay (ms)",
         juce::NormalisableRange<float>(20.0f, 5000.0f, 1.0f, 0.35f), 2000.0f));
 
@@ -221,8 +221,8 @@ NoteAdderProcessor::createParameterLayout()
     layout.add(std::make_unique<juce::AudioParameterInt>("pnclustlowoend", "PN Cluster Low Oct End", 0, 9, 3));
     layout.add(std::make_unique<juce::AudioParameterInt>("pnclusthighostrt", "PN Cluster High Oct Start", 0, 9, 4));
     layout.add(std::make_unique<juce::AudioParameterInt>("pnclusthighoend", "PN Cluster High Oct End", 0, 9, 6));
-    layout.add(std::make_unique<juce::AudioParameterInt>("pnclustvelmin", "PN Cluster Vel Min", 0, 9, 1));
-    layout.add(std::make_unique<juce::AudioParameterInt>("pnclustvelmax", "PN Cluster Vel Max", 0, 9, 6));
+    layout.add(std::make_unique<juce::AudioParameterInt>("pnclustvelmin", "PN Cluster Vel Low", 0, 9, 1));
+    layout.add(std::make_unique<juce::AudioParameterInt>("pnclustvelmax", "PN Cluster Vel High", 0, 9, 6));
     layout.add(std::make_unique<juce::AudioParameterFloat>("pnclustdecay", "PN Cluster Decay (ms)",
         juce::NormalisableRange<float>(20.0f, 5000.0f, 1.0f, 0.35f), 2000.0f));
 

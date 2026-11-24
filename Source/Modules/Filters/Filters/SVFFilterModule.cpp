@@ -7,11 +7,11 @@ bool SVFFilterModule::magnitudeResponseDb (const float* hz, float* db, int n) co
 {
     const double fc = juce::jmin (juce::jlimit (20.0, 20000.0, (double) getParameterBase (pCutoff)), sampleRate * 0.49);
     const double k = 1.0 - getParameterBase (pResonance) * 0.98;
-    const int mode = (int) getParameterBase (pMode);
+    const double m = getParameterBase (pMorph) * 0.02;
     for (int i = 0; i < n; ++i)
     {
         const auto r = response::svf (response::sOf (hz[i], fc, sampleRate), k);
-        db[i] = response::db (mode == 0 ? r.low : (mode == 1 ? r.band : r.high));
+        db[i] = response::db (morphed (m, r.low, r.band, r.high));
     }
     return true;
 }
@@ -36,7 +36,7 @@ void SVFFilterModule::processVoiceSample (int v, const StereoFrame* inputs, Ster
     const float a1 = 1.0f / (1.0f + g * (g + k));
     const float a2 = g * a1;
     const float a3 = g * a2;
-    const int mode = (int) param (pMode);   // 0 LP, 1 BP, 2 HP
+    const double m = param (pMorph) * 0.02;   // (6.9.19) 0 LP, 1 BP, 2 HP, blended between
 
     for (int c = 0; c < 2; ++c)
     {
@@ -51,7 +51,7 @@ void SVFFilterModule::processVoiceSample (int v, const StereoFrame* inputs, Ster
         ic2 = juce::jlimit (-4.0f, 4.0f, 2.0f * v2 - ic2);
         const float high = in - k * v1 - v2;
 
-        outputs[0][(size_t) c] = mode == 0 ? v2 : (mode == 1 ? v1 : high);
+        outputs[0][(size_t) c] = (float) morphed<double> (m, v2, v1, high);
     }
 }
 
@@ -61,7 +61,7 @@ static ModuleDescriptor svfDescriptor()
     d.typeId = "filter.svf";
     d.displayName = "SVF Filter";
     d.description =
-        "A state-variable filter with lowpass, bandpass and highpass modes. Mod In "
+        "A state-variable filter whose Type knob glides from lowpass through bandpass to highpass. Mod In "
         "sweeps the cutoff - an ADSR, LFO or KeyTrack (at 100% Mod Depth KeyTrack gives exact "
         "one-octave-per-octave tracking). Flexible lane: fed per-voice it runs one filter per "
         "note, in a global chain it runs once.";
@@ -75,8 +75,19 @@ static ModuleDescriptor svfDescriptor()
     d.params = {
         makeRotary ("cutoff",    "Cutoff",    20.0f, 20000.0f, 1000.0f, 0, "Hz", true),
         makeRotary ("resonance", "Resonance", 0.0f, 1.0f, 0.2f, 0),
-        makeCombo  ("mode",      "Filter Mode", { "Lowpass", "Bandpass", "Highpass" }, 0, 0, 2),
-        makeRotary ("modDepth",  "Mod Depth", -100.0f, 100.0f, 0.0f, 0, "%")
+        // (6.9.19) Filter Mode is the Type knob now (a patch from before: its mode, ProcessorState)
+        makeCombo  ("mode",      "Filter Mode", { "Lowpass", "Bandpass", "Highpass" }, 0, 0, 2).hide(),
+        makeRotary ("modDepth",  "Mod Depth", -100.0f, 100.0f, 0.0f, 0, "%"),
+        [] { auto t = makeRotary ("morph", "Type", 0.0f, 100.0f, 0.0f, 0, "%");
+             t.textFromValue = [] (double v)
+             {
+                 if (v < 1.0) return juce::String ("Lowpass");
+                 if (std::abs (v - 50.0) < 1.0) return juce::String ("Bandpass");
+                 if (v > 99.0) return juce::String ("Highpass");
+                 return v < 50.0 ? "LP " + juce::String (juce::roundToInt (100.0 - v * 2.0)) + " / BP " + juce::String (juce::roundToInt (v * 2.0))
+                                 : "BP " + juce::String (juce::roundToInt (200.0 - v * 2.0)) + " / HP " + juce::String (juce::roundToInt (v * 2.0 - 100.0));
+             };
+             return t; }()
     };
     return d;
 }

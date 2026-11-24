@@ -247,6 +247,17 @@ struct ParamSpec
         return *this;
     }
 
+    // shown while another knob is at least a value (Band Splitter: Split 4 from Bands 5 on);
+    // uses visibleWhenParamId / visibleWhenEquals as the knob and the least value
+    bool visibleFromMin { false };
+    ParamSpec& visibleFrom (const juce::String& paramId, float atLeast)
+    {
+        visibleWhenParamId = paramId;
+        visibleWhenEquals = atLeast;
+        visibleFromMin = true;
+        return *this;
+    }
+
     ParamSpec& hide() { hidden = true; return *this; }
 
     bool modulatable { true };          // false = knob refuses param-mod cables
@@ -432,6 +443,13 @@ inline SocketSpec midiOut  (juce::String id, juce::String label) { return { std:
 inline SocketSpec modOut   (juce::String id, juce::String label) { return { std::move (id), std::move (label), SocketKind::Modulation, SocketDirection::Output }; }
 inline SocketSpec hiddenSocket (SocketSpec s) { s.hidden = true; return s; }
 inline SocketSpec unipolarOut (juce::String id, juce::String label) { auto s = modOut (std::move (id), std::move (label)); s.unipolar = true; return s; }
+// Tempo per lane (6.9.10): a module that follows the patch's BPM takes the
+// tempo arriving here instead, while something is patched in (a Tempo
+// module's Tempo Out); the engine does it (setTempo), the module does nothing.
+// Always the module's last input.
+inline SocketSpec tempoIn() { return modIn ("tempoIn", "Tempo In"); }
+// the tempo as a signal on a cable: BPM / 1000
+constexpr double kTempoSignalScale = 1000.0;
 
 struct ModuleDescriptor
 {
@@ -930,6 +948,12 @@ struct MidiControlState
     float voiceBend[kMaxVoices] {};
     float voiceSlide[kMaxVoices] {};
     float voicePressure[kMaxVoices] {};
+    bool voiceSlideSet[kMaxVoices] {};   // (6.9.12) its Slide has been sent (else none: not 0)
+    // (6.9.12) the default MPE map: how far a full Slide moves a wavetable position, each way, in
+    // 0..1 of the range - the MPE module's Wavetable knob (the first one in the patch), else a quarter
+    float slideWavetableDepth { 0.0f };   // (6.9.15: none unless an MPE module's knob says so)
+    float mpeBendRange { 48.0f };         // (6.9.15) a finger's whole bend, in semitones (the MPE module's)
+    bool mpeSwitch { false };             // (6.9.16) the MPE switch beside the module search is on (Super MIDI)
     int currentVoice { -1 };
 
     float bendSemitones() const
@@ -975,7 +999,8 @@ inline bool typeAcceptsMpe (const juce::String& typeId)
                                          "osc.strings", "osc.cello", "osc.clarinet", "osc.guitaracoustic", "osc.guitarelectric",
                                          "plugin.vita", "plugin.aquamassif", "plugin.virtualdx7", "plugin.additivekeys",
                                          "plugin.fm12", "plugin.aquanova", "plugin.reflex", "plugin.tidebreeze", "plugin.phizmo",
-                                         "plugin.alphabeta", "plugin.am20", "plugin.aliassynth", "plugin.aquavibrio" };
+                                         "plugin.alphabeta", "plugin.am20", "plugin.aliassynth", "plugin.aquavibrio",
+                                         "osc.formantfm", "osc.supersaw", "filter.playableeq", "osc.drawbarorgan", "osc.growl" };
     return ids.contains (typeId);
 }
 
@@ -994,6 +1019,13 @@ struct MpeReceiver
 {
     virtual ~MpeReceiver() = default;
     virtual void enableMpe (bool on) = 0;    // audio thread
+    // (6.9.10, Vita's card) MPE as the preset says instead of on with
+    // Aquanode's member channels; the per-finger bend range the preset's
+    // Bend range instead of 48 (audio thread, when the card's choice moves)
+    virtual void setMpePolicy (bool fromPreset, bool bendFromPreset) { juce::ignoreUnused (fromPreset, bendFromPreset); }
+    // (6.9.12) the default MPE map: how far a full Slide moves a wavetable position each way
+    // (0..1 of the range; a quarter unless the patch's MPE module says otherwise), every block
+    virtual void setSlideWavetableDepth (float eachWay) { juce::ignoreUnused (eachWay); }
 };
 
 struct TempoRequester
@@ -1093,6 +1125,111 @@ inline double sleepMemoryFromKnobs (const ModuleDescriptor& d)
 //==============================================================================
 // SynthModule - per-instance DSP object base class
 //==============================================================================
+//==============================================================================
+// A patch tuning for MIDI that a module cannot retune itself (a hosted plugin
+// plays its own pitches): every note goes out on an MPE member channel of its
+// own (2..16), its pitch bend (+-48 semitones, MPE's member range) set to the
+// table's pitch around the nearest key. A finger already on a member channel
+// (MPE in) keeps its channel and its own bend on top. Without a table (or at
+// 12-TET, A4 = 440) notes pass as they are; a note that went out retuned is
+// always let go where it went (6.9.10).
+class TuningRetuner
+{
+public:
+    template <typename Send>
+    void process (const tuning::Table* t, const juce::MidiMessage& m, Send&& send)
+    {
+        const int ch = m.getChannel();
+        if (m.isNoteOn())
+        {
+            const int k = m.getNoteNumber();
+            if (t == nullptr || t->identity) { send (m); return; }
+            if (! t->mapped[k]) return;
+            const double p = tuning::tablePitch (*t, k);
+            const int outNote = juce::jlimit (0, 127, (int) std::lround (p));
+            Slot s;
+            s.used = true;
+            s.inCh = ch; s.inNote = k; s.outNote = outNote;
+            s.offset = (float) (p - outNote);
+            s.age = ++clock;
+            s.outCh = ch >= 2 ? ch : freeChannel (send);
+            for (auto& o : slots)   // a key struck again on its channel lets the first go
+                if (o.used && o.inCh == ch && o.inNote == k) { send (juce::MidiMessage::noteOff (o.outCh, o.outNote)); o.used = false; }
+            for (auto& o : slots)
+                if (! o.used) { o = s; break; }
+            send (juce::MidiMessage::pitchWheel (s.outCh, wheel (s.offset + (ch >= 2 ? chanBend[ch] : 0.0f))));
+            send (juce::MidiMessage::noteOn (s.outCh, outNote, m.getVelocity()));
+            return;
+        }
+        if (m.isNoteOff())
+        {
+            for (auto& o : slots)
+                if (o.used && o.inCh == ch && o.inNote == m.getNoteNumber())
+                {
+                    send (juce::MidiMessage::noteOff (o.outCh, o.outNote, m.getVelocity()));
+                    o.used = false;
+                    return;
+                }
+            send (m);
+            return;
+        }
+        if (m.isPitchWheel() && ch >= 2)
+        {
+            chanBend[ch] = (float) (m.getPitchWheelValue() - 8192) / 8192.0f * 48.0f;
+            bool mapped = false;
+            for (auto& o : slots)
+                if (o.used && o.outCh == ch && o.inCh == ch) { send (juce::MidiMessage::pitchWheel (ch, wheel (o.offset + chanBend[ch]))); mapped = true; }
+            if (! mapped) send (m);
+            return;
+        }
+        if (m.isAftertouch())
+        {
+            for (auto& o : slots)
+                if (o.used && o.inCh == ch && o.inNote == m.getNoteNumber())
+                {
+                    send (juce::MidiMessage::aftertouchChange (o.outCh, o.outNote, m.getAfterTouchValue()));
+                    return;
+                }
+            send (m);
+            return;
+        }
+        if (m.isAllNotesOff() || m.isAllSoundOff())
+            for (auto& o : slots)
+                if (o.used) { send (juce::MidiMessage::noteOff (o.outCh, o.outNote)); o.used = false; }
+        send (m);
+    }
+
+private:
+    struct Slot { bool used { false }; int inCh { 1 }, inNote { 0 }, outCh { 2 }, outNote { 0 }; float offset { 0.0f }; juce::uint32 age { 0 }; };
+
+    static int wheel (float semis) { return juce::jlimit (0, 16383, 8192 + (int) std::lround (semis / 48.0f * 8192.0f)); }
+
+    template <typename Send>
+    int freeChannel (Send&& send)
+    {
+        for (int k = 0; k < 15; ++k)
+        {
+            const int c = 2 + (int) ((next + (juce::uint32) k) % 15u);
+            bool taken = false;
+            for (const auto& o : slots)
+                taken = taken || (o.used && o.outCh == c);
+            if (! taken) { next = (juce::uint32) (c - 1); return c; }
+        }
+        // all taken: the oldest note lets go of its channel
+        Slot* oldest = nullptr;
+        for (auto& o : slots)
+            if (o.used && (oldest == nullptr || o.age < oldest->age)) oldest = &o;
+        if (oldest == nullptr) return 2;
+        send (juce::MidiMessage::noteOff (oldest->outCh, oldest->outNote));
+        oldest->used = false;
+        return oldest->outCh;
+    }
+
+    std::array<Slot, 32> slots {};
+    float chanBend[17] {};
+    juce::uint32 clock { 0 }, next { 0 };
+};
+
 class SynthModule
 {
 public:
@@ -1151,6 +1288,12 @@ public:
     // the host of a nested Aquanode.
     virtual double takeTempoRequest() { return 0.0; }
     virtual void setTempo (double bpm) { tempoBpm = bpm; }
+    // (6.9.10) the tempo comes from a lane (a Tempo In, its own or upstream):
+    // then it wins over the module's own tempo knob, and over the host's
+    // position (a clock does not lock to the DAW's beats then)
+    void setTempoFromLane (bool b) noexcept { laneTempo = b; }
+    bool tempoFromLane() const noexcept { return laneTempo; }
+    double currentTempo() const noexcept { return tempoBpm; }
     void setHostTransport (const HostTransport& t) { hostTransport = t; }
     void setMidiControls (const MidiControlState* state) { midiControls = state; }
 
@@ -1173,6 +1316,17 @@ public:
 
     // Only Midi Controls answers: the pitch-bend range it sets, < 0 = none
     virtual float bendRangeSetting() const { return -1.0f; }
+    // (6.9.12) the MPE module: how far Slide moves a wavetable (0..1 each way); < 0: no say
+    virtual float slideWavetableSetting() const { return -1.0f; }
+    virtual float mpeBendRangeSetting() const { return -1.0f; }   // (6.9.15) the MPE module's Bend Range
+    // (6.9.15) a pill at the right of the card's top row, as the filters' Graph: its name (empty:
+    // none), whether it is on, and what pressing it does (message thread; the card re-lays out)
+    virtual juce::String titlePillName() const { return {}; }
+    virtual bool titlePillOn() const { return false; }
+    virtual void titlePillPressed() {}
+    // (6.9.15) a Microtuning (Global, Linear) whose scale is not 12 notes: its notes per
+    // period and the key of its first degree, for Aquanode's on-screen keys
+    virtual bool keyboardSteps (int& notesPerPeriod, int& degreeZeroKey) const { juce::ignoreUnused (notesPerPeriod, degreeZeroKey); return false; }
 
     // Snapshot of the plugin's host-automatable modulation parameters, handed
     // to every module once per block. Only DAW Mod reads it.
@@ -1254,6 +1408,12 @@ public:
     // Piano Roll -> Midi Add -> Discard Midi -> Arp -> Oscillator works.
     virtual bool isMidiProcessor() const { return false; }
 
+    // a processor that takes MPE notes as they are (6.9.10): their bend,
+    // pressure and slide on the note-ons, and the expression events between
+    // (isExpression). Any other processor gets plain notes and no expression,
+    // so a note-off is the only event that is not a note-on.
+    virtual bool acceptsMpeEvents() const { return false; }
+
     // One incoming note event in, the events to pass on out (audio thread).
     // Note-offs must undo exactly what the matching note-on produced, so a
     // processor that changes pitches remembers them. Default: pass through.
@@ -1284,7 +1444,39 @@ public:
     virtual bool wantsRawMidi() const { return false; }
     virtual void rawMidiMessage (const juce::MidiMessage& message) { juce::ignoreUnused (message); }
     // what the engine calls: MIDI wakes a sleeping module before it arrives
-    void deliverRawMidi (const juce::MidiMessage& message) { wakeFromSleep(); rawMidiMessage (message); }
+    // (with a patch tuning, a module that cannot retune itself gets its notes
+    // bent on member channels - TuningRetuner)
+    void deliverRawMidi (const juce::MidiMessage& message)
+    {
+        // (6.9.12) a member channel's bend, pressure or Slide an MPE module takes elsewhere
+        if (const int off = mpeDefaultsOff.load (std::memory_order_relaxed); off != 0 && message.getChannel() >= 2)
+        {
+            if ((off & kMpeBend) != 0 && message.isPitchWheel()) return;
+            if ((off & kMpePressure) != 0 && (message.isChannelPressure() || message.isAftertouch())) return;
+            if ((off & kMpeSlide) != 0 && message.isController() && message.getControllerNumber() == 74) return;
+        }
+        wakeFromSleep();
+        if (retuner != nullptr)
+            retuner->process (tuning::current(), message, [this] (const juce::MidiMessage& m) { rawMidiMessage (m); });
+        else
+            rawMidiMessage (message);
+    }
+
+    //=== tuning and played-key filters (6.9.10) ================================
+    // a Microtuning module in Global mode: its table for the whole patch
+    // (audio thread, after blockStart)
+    virtual const tuning::Table* globalTuningTable() const { return nullptr; }
+    // a Microtuning module (either mode) that plays the keys as Linear steps
+    virtual bool usesLinearKeys() const { return false; }
+    // Discard MIDI in Global mode: a played key nothing should hear
+    virtual bool discardsPlayedKey (int note) const { juce::ignoreUnused (note); return false; }
+    // set by the engine once a block: does a Microtuning play the keys as Linear steps?
+    void setLinearKeysInPatch (bool b) noexcept { linearKeys.store (b, std::memory_order_relaxed); }
+    bool linearKeysInPatch() const noexcept { return linearKeys.load (std::memory_order_relaxed); }
+    // MIDI it cannot retune itself (a hosted plugin's own voices): the engine
+    // gives it a TuningRetuner (message thread, when the module is made)
+    virtual bool retunesByMpeBend() const { return false; }
+    std::unique_ptr<TuningRetuner> retuner;
 
     // The host's play head for this block (nullptr in the standalone app and
     // on Android), and how many samples of the block have been processed so
@@ -1458,6 +1650,9 @@ public:
     };
     SleepState sleepState;                         // audio thread
     std::atomic<bool> sleepingNow { false };       // (for tests and the CPU meter)
+private:
+    std::atomic<bool> linearKeys { false };
+public:
     uint32_t audioInMask { 0 }, audioOutMask { 0 };   // which inputs / outputs carry audio
     void wakeFromSleep() noexcept                  // audio thread
     {
@@ -1555,6 +1750,43 @@ public:
     }
 
     //=== connection info (set by the processor when topology changes) ========
+    //=== (6.9.12) the default MPE map ==========================================
+    // what of a note's MPE the module leaves to an MPE module (Ignore Default
+    // MPE Map on, its cable reaching this module): bend, pressure, Slide.
+    // Raw MIDI then comes without the member channels' messages for it.
+    // Graph build (message thread); read on the audio thread.
+    static constexpr int kMpeBend = 1, kMpePressure = 2, kMpeSlide = 4;
+    // (the MPE module: which of its outputs took a default over, for its title)
+    virtual void setMpeTakenOver (int bits) { juce::ignoreUnused (bits); }
+
+    //=== (6.9.14) section cards: a plugin's patch version as one engine and smaller cards ===
+    // A section card (VCOs, Filters, Envelopes ...) holds some of the engine's knobs and
+    // shares their values through a CardLink; cards chain Link Out -> Link In and the last
+    // one goes into the engine's Cards In. The graph hands the engine every card it finds
+    // up that chain (message thread); the cards write, the engine reads (audio thread).
+    struct CardLink
+    {
+        explicit CardLink (std::vector<juce::String> paramIds)
+            : ids (std::move (paramIds)), base (new std::atomic<float>[ids.size() + 1]), mod (new std::atomic<float>[ids.size() + 1])
+        {
+            for (size_t i = 0; i <= ids.size(); ++i) { base[i].store (0.0f); mod[i].store (0.0f); }
+        }
+        const std::vector<juce::String> ids;
+        std::unique_ptr<std::atomic<float>[]> base, mod;   // the knob as set, and with its cables
+        std::atomic<bool> live { false };                  // written at least once
+    };
+    virtual std::shared_ptr<CardLink> cardLink() const { return {}; }
+    virtual bool takesCardLinks() const { return false; }
+    virtual void setCardLinks (std::vector<std::shared_ptr<CardLink>> links) { juce::ignoreUnused (links); }
+    void setMpeDefaultsOff (int bits) noexcept { mpeDefaultsOff.store (bits, std::memory_order_relaxed); }
+    int mpeDefaultsOffBits() const noexcept { return mpeDefaultsOff.load (std::memory_order_relaxed); }
+    // which knobs (the first 64) have a cable onto them (graph build)
+    void setCabledParams (juce::uint64 bits) noexcept { cabledParams.store (bits, std::memory_order_relaxed); }
+    bool isParamCabled (int index) const noexcept
+    {
+        return index >= 0 && index < 64 && ((cabledParams.load (std::memory_order_relaxed) >> index) & 1u) != 0;
+    }
+
     void setInputConnected (int inputIndex, bool connected)
     {
         if (inputIndex >= 0 && inputIndex < (int) inputConnectedFlags.size())
@@ -1795,11 +2027,38 @@ protected:
 
     double sampleRate { 44100.0 };
     double tempoBpm { 120.0 };
+    bool laneTempo { false };
     HostTransport hostTransport;
     const MidiControlState* midiControls { nullptr };
 
-    // the played pitch bend in semitones, for pitched generators
-    float pitchBendSemitones() const { return midiControls != nullptr ? midiControls->bendSemitones() : 0.0f; }
+    // the played pitch bend in semitones, for pitched generators (6.9.12: a
+    // note's own MPE bend left out while an MPE module takes it elsewhere)
+    float pitchBendSemitones() const
+    {
+        if (midiControls == nullptr) return 0.0f;
+        if ((mpeDefaultsOff.load (std::memory_order_relaxed) & kMpeBend) != 0)
+            return midiControls->bend * midiControls->bendRangeSemis;
+        return midiControls->bendSemitones();
+    }
+    // (6.9.12) a voice's own MPE pressure, 0 while an MPE module takes it elsewhere
+    float mpeVoicePressure (int v) const
+    {
+        if (midiControls == nullptr || v < 0 || v >= kMaxVoices || (mpeDefaultsOff.load (std::memory_order_relaxed) & kMpePressure) != 0)
+            return 0.0f;
+        return midiControls->voicePressure[v];
+    }
+    // (6.9.12) the default MPE map: a voice's Slide moves a wavetable position,
+    // the middle of the key the knob's own place, up or down a quarter of the
+    // range - while the knob has no cable, the note has sent Slide and no MPE
+    // module takes Slide elsewhere. In 0..1 of the knob's range.
+    float mpeSlideOffset (int v, int paramIndex) const
+    {
+        if (midiControls == nullptr || v < 0 || v >= kMaxVoices || ! midiControls->voiceSlideSet[v]
+            || (mpeDefaultsOff.load (std::memory_order_relaxed) & kMpeSlide) != 0 || isParamCabled (paramIndex))
+            return 0.0f;
+        return (midiControls->voiceSlide[v] - 0.5f) * 2.0f * midiControls->slideWavetableDepth;
+    }
+    bool mpeSlideDefaultOff() const noexcept { return (mpeDefaultsOff.load (std::memory_order_relaxed) & kMpeSlide) != 0; }
     const float* hostModValues { nullptr };
     juce::AudioPlayHead* hostPlayHead { nullptr };
 
@@ -1816,6 +2075,8 @@ private:
     int glideParamIndex { -1 };
     std::unordered_map<std::string, int> paramIndexById;
     std::array<std::atomic<bool>, 8> inputConnectedFlags;
+    std::atomic<int> mpeDefaultsOff { 0 };
+    std::atomic<juce::uint64> cabledParams { 0 };
 
     mutable juce::SpinLock sampleLock;
     std::shared_ptr<const juce::AudioBuffer<float>> loadedSample;

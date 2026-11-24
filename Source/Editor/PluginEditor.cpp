@@ -1,5 +1,6 @@
 // The editor: the top bar, the sidebar, the patch area and the keys put together,
 // Import / Export Patch, and adding the plugins.
+#include "../Modules/Shared/AntiAlias.h"
 #include "../Platform/AndroidPerfHint.h"
 #include "PluginEditor.h"
 #include "../Engine/Mutation.h"
@@ -271,6 +272,106 @@ private:
     juce::Point<int> lastNative;
 };
 
+//==============================================================================
+// The computer keyboard as a MIDI keyboard (6.9.10, desktop): the FL Studio
+// layout, into the on-screen keys' state, so every generator hears it as
+// played keys. Not while a text field has the focus.
+struct AquanodeModularAudioProcessorEditor::ComputerKeys : public juce::KeyListener,
+                                                          private juce::Timer
+{
+    ComputerKeys (juce::Component& ownerIn, juce::MidiKeyboardState& stateIn) : owner (ownerIn), state (stateIn)
+    {
+        owner.addKeyListener (this);
+    }
+
+    ~ComputerKeys() override
+    {
+        owner.removeKeyListener (this);
+        releaseAll();
+    }
+
+    static int noteFor (int keyCode)
+    {
+        static const char* lower = "ZSXDCVGBHNJM,";   // C4 ..
+        static const char* upper = "Q2W3ER5T6Y7UI9O0P";   // C5 ..
+        const int c = juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) keyCode);
+        for (int i = 0; lower[i] != 0; ++i) if (lower[i] == c) return 60 + i;
+        for (int i = 0; upper[i] != 0; ++i) if (upper[i] == c) return 72 + i;
+        return -1;
+    }
+
+    // a text field being typed in - the search bar, a knob's value box, the
+    // Notes module, a name: the keys are its letters then
+    static bool typing()
+    {
+        auto* f = juce::Component::getCurrentlyFocusedComponent();
+        for (auto* c = f; c != nullptr; c = c->getParentComponent())
+            if (auto* te = dynamic_cast<juce::TextEditor*> (c))
+                return ! te->isReadOnly();
+        return false;
+    }
+
+    bool keyPressed (const juce::KeyPress& k, juce::Component*) override
+    {
+        if (typing() || k.getModifiers().isCommandDown() || k.getModifiers().isAltDown())
+            return false;
+        if (noteFor (k.getKeyCode()) < 0)
+            return false;
+        poll();
+        return true;   // (a played key does nothing else)
+    }
+
+    bool keyStateChanged (bool, juce::Component*) override
+    {
+        if (typing())
+            return false;
+        return poll();
+    }
+
+    // every mapped key: down now, or not
+    bool poll()
+    {
+        static const char* keys = "ZSXDCVGBHNJM,Q2W3ER5T6Y7UI9O0P";
+        bool any = false, changed = false;
+        for (int i = 0; keys[i] != 0; ++i)
+        {
+            const int note = noteFor (keys[i]);
+            const bool down = juce::KeyPress::isKeyCurrentlyDown (keys[i]);
+            if (down != held[note])
+            {
+                held[note] = down;
+                changed = true;
+                if (down) state.noteOn (1, note, 0.8f);
+                else      state.noteOff (1, note, 0.0f);
+            }
+            any = any || down;
+        }
+        if (any) startTimerHz (30); else stopTimer();   // (a key let go while the window lost the focus)
+        return changed;
+    }
+
+    void releaseAll()
+    {
+        for (int n = 0; n < 128; ++n)
+            if (held[n]) { state.noteOff (1, n, 0.0f); held[n] = false; }
+    }
+
+    void timerCallback() override
+    {
+        if (! owner.hasKeyboardFocus (true) && ! juce::Process::isForegroundProcess())
+        {
+            releaseAll();
+            stopTimer();
+            return;
+        }
+        poll();
+    }
+
+    juce::Component& owner;
+    juce::MidiKeyboardState& state;
+    bool held[128] {};
+};
+
 AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (AquanodeModularAudioProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p),
@@ -297,7 +398,9 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
           if (const auto* adder = aquanode::presets::findEffectAdder (typeId))
           {
               auto seed = (juce::uint32) juce::Random::getSystemRandom().nextInt();
+              aquanode::presets::setQuickAddAnchor (canvas.getSelectedModuleId());
               const auto note = adder->apply (processor, seed == 0 ? 1u : seed);
+              aquanode::presets::setQuickAddAnchor (-1);
               if (note.isNotEmpty() && ! processor.patchName.contains ("+ " + note))
                   processor.patchName = processor.patchName + " + " + note;
               canvas.rebuild();
@@ -356,6 +459,9 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     // the first patch is made before the standalone app finishes setting up
     // its device input: settle the input's mute for it now
     processor.refreshStandaloneInputMute();
+
+    // (6.9.16) Disable GUI Transparency, as chosen before
+    guiOpaque() = juce::PropertiesFile (settingsOptions()).getBoolValue ("gui.opaque", false);
 
     // "Don't slow down" (Android performance hint): the remembered switch,
     // and the once-a-second keeper of its session
@@ -423,6 +529,12 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
         processor.uiKeyZoom = (float) juce::PropertiesFile (settingsOptions()).getDoubleValue ("keys.zoom", 1.0);
     if (processor.uiKeyPinch < 0)
         processor.uiKeyPinch = juce::PropertiesFile (settingsOptions()).getBoolValue ("keys.pinch", true) ? 1 : 0;
+   #if ! JUCE_ANDROID && ! JUCE_IOS
+    // the computer keyboard as MIDI, if it was switched on (6.9.10)
+    setWantsKeyboardFocus (true);
+    if (juce::PropertiesFile (settingsOptions()).getBoolValue ("keys.computer", true))   // (6.9.11: on unless switched off)
+        computerKeys = std::make_unique<ComputerKeys> (*this, processor.keyboardState);
+   #endif
     keyZoomToggle.isOn = [this] { return processor.uiKeyPinch != 0; };
     keyZoomToggle.onToggle = [this]
     {
@@ -456,13 +568,14 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     // the standalone window's own maximise button now, and F11)
     // (6.7.7: Delete and Move Only back on the bar - pressed all the time;
     // Undo / Redo in the Edit menu, the zoom in the View menu)
-    for (auto* b : { &patchMenuButton, &editMenuButton, &viewMenuButton, &pluginBlockButton, &deleteButton, &moveOnlyButton })
+    // (6.9.15: Move Only only in the Edit menu)
+    for (auto* b : { &patchMenuButton, &editMenuButton, &viewMenuButton, &pluginBlockButton, &deleteButton })
         toolbarStrip.content.addAndMakeVisible (b);
     deleteButton.setButtonText ("Delete");
     toolbarStrip.content.addAndMakeVisible (bpmBox);
-    patchMenuButton.setTooltip ("Initialize Patch, Import Patch, Export Patch, Render");
+    patchMenuButton.setTooltip ("Initialize Patch, Save Patch, Load Patch, Render");
     editMenuButton.setTooltip ("Clone Selected, Delete Selected, Region Select, Move Only");
-    viewMenuButton.setTooltip ("Keys, Sidebar, Mutator");
+    viewMenuButton.setTooltip ("Keys, Sidebar, Mutator, Zoom, Reset View");
     patchMenuButton.onClick = [this] { showPatchMenu(); };
     editMenuButton.onClick = [this] { showEditMenu(); };
     viewMenuButton.onClick = [this] { showViewMenu(); };
@@ -507,10 +620,10 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     renderButton.setTooltip ("Render the patch to a WAV or FLAC file: every Piano Roll with notes that is patched "
                              "somewhere, played through once from the start, and the tails after it");
     renderButton.onClick = [this] { showRenderPanel(); };
-    pluginBlockButton.setTooltip ("CPU: the Plugin Block (the block every plugin card runs in behind the patch, unless its "
-                                  "own Block pill says otherwise - larger blocks cost much less CPU for plugins with a lot of "
-                                  "work per block, like Vita, and add that much latency), CPU Sleep, and on Android the "
-                                  "performance hint");
+    pluginBlockButton.setTooltip ("CPU: the Plugin Block Size (every plugin card, unless its own Block pill "
+                                  "says otherwise - larger blocks cost much less CPU for plugins like Vita), lined up with "
+                                  "the rest of the patch; the latency switches for all patches, CPU Sleep, and on Android "
+                                  "the performance hint");
     pluginBlockButton.onClick = [this] { showPluginBlockMenu(); };
 
     // CPU Sleep: app-wide, remembered (on unless switched off)
@@ -691,7 +804,7 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
         if (base.isEmpty() || base == "Init") base = "Patch";
         const auto suggested = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
                                    .getChildFile (base + ".aqua");
-        fileChooser = std::make_unique<juce::FileChooser> ("Export Patch", suggested, "*.aqua");
+        fileChooser = std::make_unique<juce::FileChooser> ("Save Patch", suggested, "*.aqua");
         fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
                                   | juce::FileBrowserComponent::canSelectFiles
                                   | juce::FileBrowserComponent::warnAboutOverwriting,
@@ -721,13 +834,13 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
                     }
 
                 if (problem.isNotEmpty())
-                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Export Patch",
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Save Patch",
                                                             "The patch could not be saved: " + problem + ".");
                #else
                 auto file = fc.getResult();
                 if (file != juce::File())
                     if (! processor.exportPatchToZip (file.withFileExtension ("aqua")))   // a .zip inside
-                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Export Patch",
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Save Patch",
                                                                 "The patch could not be saved to " + file.withFileExtension ("aqua").getFullPathName() + ".");
                #endif
             });
@@ -743,7 +856,7 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
        #else
         const juce::String patterns { "*.aqua;*.zip;*.xml" };
        #endif
-        fileChooser = std::make_unique<juce::FileChooser> ("Import Patch", juce::File(), patterns);
+        fileChooser = std::make_unique<juce::FileChooser> ("Load Patch", juce::File(), patterns);
         fileChooser->launchAsync (juce::FileBrowserComponent::openMode
                                   | juce::FileBrowserComponent::canSelectFiles,
             [this] (const juce::FileChooser& fc)
@@ -800,7 +913,7 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
                     }
                     problem = whyNotAPatch (data);
                 }
-                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Import Patch",
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Load Patch",
                                                         "Could not import " + (name.isNotEmpty() ? name : juce::String ("the file"))
                                                         + ": " + problem + ".");
             });
@@ -853,8 +966,25 @@ AquanodeModularAudioProcessorEditor::AquanodeModularAudioProcessorEditor (Aquano
     }
 }
 
+void AquanodeModularAudioProcessorEditor::setComputerKeys (bool on)
+{
+   #if JUCE_ANDROID || JUCE_IOS
+    juce::ignoreUnused (on);
+   #else
+    if (on == (computerKeys != nullptr))
+        return;
+    computerKeys = on ? std::make_unique<ComputerKeys> (*this, processor.keyboardState) : nullptr;
+    if (on)
+        grabKeyboardFocus();
+    juce::PropertiesFile file (settingsOptions());
+    if (on) file.removeValue ("keys.computer"); else file.setValue ("keys.computer", false);
+    file.saveIfNeeded();
+   #endif
+}
+
 AquanodeModularAudioProcessorEditor::~AquanodeModularAudioProcessorEditor()
 {
+    computerKeys = nullptr;
     moduleFullView = nullptr;   // a borrowed card back onto the canvas first
     pluginFullView = nullptr;   // the plugin's editor back onto its card first
     historyTimer.stopTimer();
@@ -1171,7 +1301,7 @@ void AquanodeModularAudioProcessorEditor::resized()
         // left to right on screen: View, Delete, Move Only, Edit, Patch, CPU,
         // the tempo (6.7.9; Undo / Redo in Edit, the zoom in View)
         std::vector<juce::TextButton*> buttons;
-        for (juce::TextButton* b : std::initializer_list<juce::TextButton*> { &viewMenuButton, &deleteButton, &moveOnlyButton, &editMenuButton,
+        for (juce::TextButton* b : std::initializer_list<juce::TextButton*> { &viewMenuButton, &deleteButton, &editMenuButton,
                          &patchMenuButton, &pluginBlockButton, &bpmBox })
             buttons.push_back (b);
         // what each button's text needs
@@ -1313,9 +1443,21 @@ void AquanodeModularAudioProcessorEditor::showPluginPatchMenu (const juce::Strin
     const auto id = pluginId;
 
     juce::PopupMenu menu;
-    menu.addSectionHeader (entry->name + " - Patch version");
-    menu.addItem ("New patch", [safeThis, id] { if (safeThis) safeThis->buildPluginPatch (id, {}, true); });
-    menu.addItem ("Add to this patch", [safeThis, id] { if (safeThis) safeThis->buildPluginPatch (id, {}, false); });
+    // (6.9.17) a patch version in more than one kind (FM12's): each with its own two choices
+    const auto kinds = aquanode::plugins::patchKinds (id);
+    for (int k = 0; k < juce::jmax (1, kinds.size()); ++k)
+    {
+        menu.addSectionHeader (entry->name + " - " + (kinds.size() > 1 ? kinds[k] : juce::String ("Patch version")));
+        auto build = [safeThis, id, k] (bool replace)
+        {
+            if (safeThis == nullptr) return;
+            aquanode::plugins::patchKind() = k;
+            safeThis->buildPluginPatch (id, {}, replace);
+            aquanode::plugins::patchKind() = 0;
+        };
+        menu.addItem ("New patch", [build] { build (true); });
+        menu.addItem ("Add to this patch", [build] { build (false); });
+    }
 
     if (entry->presetPatterns.isNotEmpty() && entry->loadPreset != nullptr)
     {
@@ -1655,6 +1797,12 @@ int AquanodeModularAudioProcessorEditor::BpmBox::tempoModule (bool& modulated) c
     for (int id : proc.getModuleIds())
         if (auto* inst = proc.getInstance (id); inst != nullptr && inst->descriptor().typeId == "util.tempo")
         {
+            // (6.9.10: a Tempo whose Tempo Out feeds lanes is theirs, not the patch's)
+            bool feedsLanes = false;
+            for (const auto& c : proc.getCables())
+                feedsLanes = feedsLanes || (c.fromModule == id && c.fromSocket == "tempoOut");
+            if (feedsLanes)
+                continue;
             for (const auto& pc : proc.getParamCables())
                 if (pc.toModule == id && pc.paramId == "bpm") modulated = true;
             return id;
@@ -1771,22 +1919,15 @@ void AquanodeModularAudioProcessorEditor::showPatchMenu()
     m.addItem (5, "Clear Patch");
     m.addItem (1, "Initialize Patch");
     m.addSeparator();
-    m.addItem (2, "Import Patch ...");
-    m.addItem (3, "Export Patch ...");
+    m.addItem (3, "Save Patch ...");
+    m.addItem (2, "Load Patch ...");
     m.addSeparator();
     m.addItem (4, "Render to File ...", renderButton.isEnabled());
-    m.addSeparator();
-    // (6.7.12) parallel paths lined up where they meet; off by default, as live playing would wait for the slowest chain
-    m.addItem (6, "Latency Compensation", true, processor.getLatencyCompensation());
+    // (6.9.15: Latency Compensation is under CPU, with the other latency choices)
     juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&patchMenuButton), [safe] (int r)
     {
         if (safe == nullptr) return;
-        if (r == 6)
-        {
-            safe->processor.setLatencyCompensation (! safe->processor.getLatencyCompensation());
-            return;
-        }
         if (r == 5)
         {
             // an empty patch area (6.7.7) - nothing at all, not even Audio Out
@@ -1811,10 +1952,15 @@ void AquanodeModularAudioProcessorEditor::showEditMenu()
     m.addSeparator();
     m.addItem (3, "Region Select (a drag on empty space draws a box)", true, regionButton.getToggleState());
     m.addItem (4, "Move Only (every gesture moves the view)", true, moveOnlyButton.getToggleState());
+   #if ! JUCE_ANDROID && ! JUCE_IOS
+    m.addSeparator();
+    m.addItem (7, "Computer Keyboard as MIDI (Z..M, Q..P)", true, computerKeys != nullptr);
+   #endif
     juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&editMenuButton), [safe] (int r)
     {
         if (safe == nullptr) return;
+        if (r == 7) safe->setComputerKeys (safe->computerKeys == nullptr);
         if (r == 1) safe->pressHidden (safe->cloneButton);
         if (r == 2) safe->pressHidden (safe->deleteButton);
         if (r == 3) safe->pressHidden (safe->regionButton);
@@ -1833,9 +1979,11 @@ void AquanodeModularAudioProcessorEditor::showViewMenu()
     m.addSeparator();
     m.addItem (4, "Zoom In (+)");
     m.addItem (5, "Zoom Out (-)");
+    m.addItem (6, "Reset View (to the origin, at 100 %)");   // (6.9.15: from the colour picker)
     juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&viewMenuButton), [safe] (int r)
     {
+        if (safe != nullptr && r == 6) safe->canvas.resetView();
         if (safe == nullptr) return;
         if (r == 1) safe->pressHidden (safe->keysButton);
         if (r == 2) safe->pressHidden (safe->sidebarButton);
@@ -1862,21 +2010,41 @@ void AquanodeModularAudioProcessorEditor::parentHierarchyChanged()
 void AquanodeModularAudioProcessorEditor::showPluginBlockMenu()
 {
     using HP = aquanode::plugins::HostedPluginModule;
-    const int current = HP::globalBlockSize().load();
+    using AP = AquanodeModularAudioProcessor;
+    const int currentPlugins = HP::globalBlockSize().load();
     juce::PopupMenu m;
-    m.addSectionHeader ("Plugin Block (every plugin card on Global)");
-    const int sizes[] = { 16, 32, 64, 128, 256, 512 };
-    for (int sz : sizes)
-        m.addItem (sz, juce::String (sz) + " samples" + (sz == 128 ? "  (default)" : ""), true, sz == current);
+    // (6.9.11) the modules always run sample by sample: blocks gave them
+    // nothing measurable; the plugins' block, lined up with the rest of the patch
+    m.addSectionHeader ("Plugin Block (cards on Global)");
+    for (int sz : AP::blockSizeChoices())
+        m.addItem (sz, juce::String (sz) + (sz == 1 ? " sample" : " samples") + (sz == 128 ? "  (default)" : ""), true, sz == currentPlugins);
+    m.addItem (-1, "Above 1: a plugin's sound comes a block later", false, false);
     static constexpr int perfHintItem = 10000;
     static constexpr int cpuSleepItem = 10001;
+    static constexpr int neverAlignItem = 10002;
+    static constexpr int reportItem = 10003;
+    static constexpr int alignAllItem = 10004, alignPluginsItem = 10005;
+    static constexpr int opaqueItem = 10006;
+    static constexpr int antiAliasItem = 10007;
+    // (6.9.15) one choice, short: what gets lined up where paths meet. The first two are saved
+    // with the patch (how it sounds); Nothing is for every patch (the least delay, playing live)
     m.addSeparator();
-    m.addItem (cpuSleepItem, "CPU Sleep (effects and filters rest while silent)", true, aquanode::cpuSleepEnabled().load());
+    m.addSectionHeader ("Line Up Latency");
+    const bool never = AP::neverCompensate().load();
+    m.addItem (alignAllItem, "Everything (this patch)", true, ! never && processor.getLatencyCompensation());
+    m.addItem (alignPluginsItem, "Plugin Blocks Only (this patch)", true, ! never && ! processor.getLatencyCompensation());
+    m.addItem (neverAlignItem, "Nothing (all patches)", true, never);
+    m.addItem (reportItem, "Report Latency to the DAW", true, AP::reportLatency().load());
+    m.addSeparator();
+    m.addItem (cpuSleepItem, "CPU Sleep (effects rest while silent)", true, aquanode::cpuSleepEnabled().load());
+    m.addItem (opaqueItem, "Disable GUI Transparency (faster Glass and Skeuomorphic)", true, guiOpaque());
+    // (6.9.21) all patches: the oscillators that alias on high notes band-limit themselves
+    m.addItem (antiAliasItem, "Anti-alias (cleaner high notes, a little more CPU)", true, aquanode::antiAliasOn());
     if (aquanode::perfhint::available())
     {
         m.addSeparator();
         m.addSectionHeader ("Phone CPU");
-        m.addItem (perfHintItem, "Don't slow down while playing (Android performance hint)", true,
+        m.addItem (perfHintItem, "Stay Fast While Playing", true,
                    aquanode::perfhint::switchedOn().load());
     }
     juce::Component::SafePointer<AquanodeModularAudioProcessorEditor> safe (this);
@@ -1889,6 +2057,24 @@ void AquanodeModularAudioProcessorEditor::showPluginBlockMenu()
                              safe->pressHidden (safe->cpuSleepButton);
                              return;
                          }
+                         if (r == antiAliasItem)
+                         {
+                             const bool on = ! aquanode::antiAliasOn();
+                             aquanode::antiAliasEnabled().store (on);
+                             juce::PropertiesFile file (settingsOptions());
+                             if (on) file.setValue ("audio.antialias", true); else file.removeValue ("audio.antialias");
+                             file.saveIfNeeded();
+                             return;
+                         }
+                         if (r == opaqueItem)
+                         {
+                             guiOpaque() = ! guiOpaque();
+                             juce::PropertiesFile file (settingsOptions());
+                             if (guiOpaque()) file.setValue ("gui.opaque", true); else file.removeValue ("gui.opaque");
+                             file.saveIfNeeded();
+                             safe->repaint();
+                             return;
+                         }
                          if (r == perfHintItem)
                          {
                              const bool on = ! aquanode::perfhint::switchedOn().load();
@@ -1899,10 +2085,37 @@ void AquanodeModularAudioProcessorEditor::showPluginBlockMenu()
                              file.saveIfNeeded();
                              return;
                          }
-                         HP::globalBlockSize().store (r);
                          juce::PropertiesFile file (settingsOptions());
+                         if (r == alignAllItem || r == alignPluginsItem || (r == neverAlignItem && AP::neverCompensate().load()))
+                         {
+                             // (Nothing ticked again: back to the patch's own choice)
+                             if (AP::neverCompensate().load())
+                             {
+                                 AP::neverCompensate().store (false);
+                                 file.removeValue ("latency.never");
+                                 file.saveIfNeeded();
+                             }
+                             if (r != neverAlignItem)
+                                 safe->processor.setLatencyCompensation (r == alignAllItem);
+                             AP::rebuildAllGraphs();
+                             return;
+                         }
+                         if (r == neverAlignItem || r == reportItem)
+                         {
+                             auto& flag = r == neverAlignItem ? AP::neverCompensate() : AP::reportLatency();
+                             const bool on = ! flag.load();
+                             flag.store (on);
+                             const char* key = r == neverAlignItem ? "latency.never" : "latency.report";
+                             const bool byDefault = r == reportItem;
+                             if (on == byDefault) file.removeValue (key); else file.setValue (key, on);
+                             file.saveIfNeeded();
+                             AP::rebuildAllGraphs();
+                             return;
+                         }
+                         HP::globalBlockSize().store (r);
                          if (r == 128) file.removeValue ("plugins.block"); else file.setValue ("plugins.block", r);
                          file.saveIfNeeded();
+                         AquanodeModularAudioProcessor::rebuildAllGraphs();   // (lined up again with the new latency)
                          safe->resized();
                          safe->repaint();
                      });

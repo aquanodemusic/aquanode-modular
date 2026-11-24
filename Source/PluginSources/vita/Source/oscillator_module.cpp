@@ -25,6 +25,8 @@ namespace vital {
       SynthModule(kNumInputs, kNumOutputs), prefix_(std::move(prefix)), on_(nullptr), distortion_type_(nullptr) {
     wavetable_ = std::make_shared<Wavetable>(kNumOscillatorWaveFrames);
     was_on_ = std::make_shared<bool>(true);
+    aq_slide_depth_ = std::make_shared<std::atomic<float>>(0.0f);
+    aq_slide_shown_ = std::make_shared<std::atomic<float>>(0.0f);
   }
 
   void OscillatorModule::init() {
@@ -67,6 +69,9 @@ namespace vital {
     oscillator_->useInput(input(kRetrigger), SynthOscillator::kRetrigger);
     oscillator_->useInput(input(kActiveVoices), SynthOscillator::kActiveVoices);
     oscillator_->useInput(input(kMidi), SynthOscillator::kMidiNote);
+    oscillator_->useInput(input(kAqSlide), SynthOscillator::kAqSlideFrame);
+    oscillator_->setAqSlideDepth(aq_slide_depth_);
+    oscillator_->setAqSlideShown(aq_slide_shown_);
     oscillator_->plug(wave_frame, SynthOscillator::kWaveFrame);
     oscillator_->plug(midi_track, SynthOscillator::kMidiTrack);
     oscillator_->plug(smooth_interpolation, SynthOscillator::kSmoothlyInterpolate);

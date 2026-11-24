@@ -35,4 +35,36 @@ namespace aquanode::tuning
 
     // built with MTS-ESP at all (false on Android)
     bool isCompiledIn() noexcept;
+
+    //=== a patch's own tuning (6.9.10: the Microtuning module, Global) ========
+    // A table of every key's frequency. While a processor runs its block with
+    // one (Scope), noteToHz and shouldFilterNote use it - before an MTS-ESP
+    // master. It belongs to the thread for that block only, so two Aquanode
+    // instances in one host never retune each other; a nested Aquanode (Fruit
+    // DAW's lanes, a plugin's patch version) keeps the one around it unless it
+    // has its own.
+    struct Table
+    {
+        double hz[128] {};
+        bool mapped[128] {};     // false: the key plays nothing (a keyboard map's "x")
+        bool linear { false };   // the keys are steps of a scale that is not 12 notes
+        bool identity { true };  // 12-TET at A4 = 440 Hz: nothing to retune
+        unsigned serial { 0 };   // goes up with every change
+    };
+
+    const Table* current() noexcept;
+
+    struct Scope
+    {
+        explicit Scope (const Table* t) noexcept;
+        ~Scope();
+        Scope (const Scope&) = delete;
+        Scope& operator= (const Scope&) = delete;
+    private:
+        const Table* previous { nullptr };
+        bool set { false };
+    };
+
+    // a key's pitch in the table as a (fractional) MIDI note
+    double tablePitch (const Table& t, int key) noexcept;
 }

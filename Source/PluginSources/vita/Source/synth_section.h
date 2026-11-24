@@ -211,7 +211,8 @@ class SynthSection : public Component, public Slider::Listener,
     void showLibraryBrowser(Component* anchor, VitaLibrary::Kind kind, const String& current,
                             std::function<void()> load_file,
                             std::function<void(const VitaLibrary::Entry&)> load_entry,
-                            std::function<json()> add_current = nullptr);
+                            std::function<json()> add_current = nullptr,
+                            std::vector<std::pair<std::string, std::function<void()>>> extras = {});
     // the library's next (delta 1) or previous (-1) item of the kind after the one called current
     void loadNeighbourFromLibrary(VitaLibrary::Kind kind, const String& current, int delta,
                                   std::function<void(const VitaLibrary::Entry&)> load_entry);

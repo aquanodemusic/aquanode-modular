@@ -93,6 +93,7 @@ public:
     // the filters' live graph: a "Graph" pill at the right of the top row
     // shows or hides it under the card's controls (saved with the patch)
     bool showsGraphPill() const;
+    bool showsTitlePill() const;   // (6.9.15) a module's own pill in the Graph pill's place
     static bool hasCurve (const aquanode::SynthModule& dsp);   // a filter's static curve (magnitudeResponseDb)
     juce::Rectangle<int> graphPillArea() const;
     void toggleGraph();

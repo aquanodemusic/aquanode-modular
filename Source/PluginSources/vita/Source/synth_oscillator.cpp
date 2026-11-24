@@ -884,6 +884,12 @@ namespace vital {
                                 FourierTransform*, float, int, const poly_float*, float, const mono_float*)>
   void SynthOscillator::setFourierWaveBuffers(poly_float phase_inc, int index, bool formant_shift) {
     poly_float wave_frame = input(kWaveFrame)->at(0);
+    if (aq_slide_depth_) {
+      const float depth = aq_slide_depth_->load(std::memory_order_relaxed);
+      const poly_float offset = depth != 0.0f ? input(kAqSlideFrame)->at(0) * depth : poly_float(0.0f);
+      wave_frame += offset;
+      if (aq_slide_shown_) aq_slide_shown_->store(offset[0], std::memory_order_relaxed);   // (6.9.15: shown)
+    }
     poly_float frame_spread = input(kUnisonFrameSpread)->at(0);
     phase_inc = utils::max(0.0f, phase_inc);
     float phase_inc_adjustment = getPhaseIncAdjustment();

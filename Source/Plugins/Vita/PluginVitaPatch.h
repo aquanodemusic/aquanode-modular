@@ -1451,7 +1451,7 @@ namespace vitapatch
     inline void monoSockets (Spec& s, bool mono)
     {
         if (mono)
-            s.d.sockets.insert (s.d.sockets.begin(), midiIn ("midiIn", "Midi In"));
+            s.d.sockets.insert (s.d.sockets.begin(), midiIn ("midiIn", "MIDI In"));
     }
 
     inline const Spec& envSpec (bool mono)
@@ -1460,7 +1460,7 @@ namespace vitapatch
         {
             Spec s;
             s.d = base (m ? "monoenv" : "env", m ? "Mono Env" : "Env", ModuleSection::Utility, m ? 11 : 5,
-                        m ? "A Vita envelope that follows the newest note played (or arriving at Midi In): the copy "
+                        m ? "A Vita envelope that follows the newest note played (or arriving at MIDI In): the copy "
                             "of an envelope that modulates an effect, as Vital lets the newest voice do."
                           : "One of Vita's envelopes (delay, attack, hold, decay, sustain, release and the three "
                             "curves). Out is 0..1. Env 1 is the amplitude envelope: it goes to Vita - Amp's Env In.");
@@ -1516,7 +1516,7 @@ namespace vitapatch
         {
             Spec s;
             s.d = base (m ? "monolfo" : "lfo", m ? "Mono LFO" : "LFO", ModuleSection::Utility, m ? 12 : 6,
-                        m ? "A Vita LFO that follows the newest note played (or arriving at Midi In): the copy of an "
+                        m ? "A Vita LFO that follows the newest note played (or arriving at MIDI In): the copy of an "
                             "LFO that modulates an effect, as Vital lets the newest voice do. Its shape comes from the preset."
                           : "One of Vita's LFOs, with its drawn shape from the preset, the sync modes (trigger, sync, "
                             "envelope, loop) and tempo. Out is 0..1; Pitch In moves its note for keytracking.");
@@ -1602,7 +1602,7 @@ namespace vitapatch
         {
             Spec s;
             s.d = base (m ? "monorandom" : "random", m ? "Mono Random" : "Random", ModuleSection::Utility, m ? 13 : 7,
-                        m ? "A Vita random LFO that follows the newest note played (or arriving at Midi In): the copy "
+                        m ? "A Vita random LFO that follows the newest note played (or arriving at MIDI In): the copy "
                             "of a random LFO that modulates an effect."
                           : "One of Vita's random LFOs (perlin, sample & hold, sine interpolate, lorenz attractor). "
                             "Out is 0..1.");
@@ -1910,7 +1910,7 @@ namespace vitapatch
         {
             Spec s;
             s.d = base (m ? "monovoice" : "voice", m ? "Mono Voice" : "Voice", ModuleSection::Utility, m ? 10 : 4,
-                        m ? "Vita's voice sources for the newest note played (or arriving at Midi In): the copy that "
+                        m ? "Vita's voice sources for the newest note played (or arriving at MIDI In): the copy that "
                             "modulates effects. Pitch Out is that note's glide, bend, tune and transpose in semitones."
                           : "Vita's voice: Pitch Out (semitones added to the note - portamento, pitch bend, tune and "
                             "transpose) for the oscillators, sampler, filters and LFOs, and the voice's modulation "
@@ -2427,6 +2427,23 @@ namespace aquanode::plugins::vita
             return ports;
         }
 
+        // (6.9.16) Vita FX's patch version: each of its nine effects as a module of its own, three
+        // to a row and unconnected - to chain as you like - its knobs as the Vita FX card had them
+        PatchPorts makeEffects()
+        {
+            namespace C = vt::constants;
+            for (int e = 0; e < C::kNumEffects; ++e)
+            {
+                const auto& s = effectSpec (e);
+                const int m = add (s.d.typeId, (e % 3) * 360, (e / 3) * 760, s, "", "");
+                if (e == C::kFilterFx)
+                    b.set (m, "type", (float) filterTypeIndex ((int) value ("filter_fx_model"), (int) value ("filter_fx_style")));
+            }
+            PatchPorts ports;
+            ports.name = "Vita FX";
+            return ports;
+        }
+
     private:
         float value (const std::string& name, float fallback = 0.0f) const
         {
@@ -2722,4 +2739,15 @@ namespace aquanode::plugins::vita
     }
 
     static const bool registered = registerPatchVersion (kPlugin, buildPatch, loadPreset);
+
+    // (6.9.16) Vita FX: its effects, each a module, unconnected
+    PatchPorts buildFxPatch (AquanodeModularAudioProcessor& patch, juce::AudioProcessor& original, juce::Point<int> origin)
+    {
+        auto* synth = dynamic_cast<aqp_vita::SynthPlugin*> (&original);
+        if (synth == nullptr)
+            return {};
+        const Json preset = synth->saveToJson();
+        return PatchMaker (patch, preset, origin).makeEffects();
+    }
+    static const bool fxRegistered = registerPatchVersion ("vitafx", buildFxPatch, loadPreset);
 }

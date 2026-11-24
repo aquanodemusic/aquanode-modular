@@ -205,7 +205,7 @@ static ModuleDescriptor randomLfoDescriptor()
         "voice keep wandering. Amount scales the output.";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 12;
-    d.sockets = { modOut ("modOut", "Mod Out") };
+    d.sockets = { modOut ("modOut", "Mod Out"), tempoIn() };
     d.params = {
         makeCombo ("mode", "Mode", { "Smooth", "Sine", "Steps", "Random" }, 0, 0, 2),
         makeRotary ("rate",   "Rate",   0.1f, 50.0f, 1.0f, 0, "Hz", true).visibleWhen ("sync", 0.0f),

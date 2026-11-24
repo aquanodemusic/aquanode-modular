@@ -12,6 +12,10 @@
 #include "../Engine/PluginProcessor.h"
 #include <map>
 
+// (6.9.16) the DAW preset's three lanes (Plugins/FruitGUI/FruitModules.cpp, FruitArrangerModule.cpp)
+int fruitDawThreeLanes (AquanodeModularAudioProcessor&, juce::Point<int>);
+int fruitArrangerAddWithLanes (AquanodeModularAudioProcessor&, juce::Point<int>);
+
 namespace aquanode::presets
 {
 
@@ -482,22 +486,71 @@ namespace
         return "DAW";
     }
 
+    //==========================================================================
+    // DAW (6.9.16), three lanes, the other half of the time: a Fruit DAW card with three
+    // lanes (a synth through an effect on each, a pattern each on its playlist), or Fruit
+    // Arranger with three piano rolls, each into a synth and its effect, into its Lanes In
+    //==========================================================================
+    juce::String buildDawLanes (AquanodeModularAudioProcessor& p, bool fruitDaw)
+    {
+        if (fruitDaw)
+        {
+            const int daw = fruitDawThreeLanes (p, { 60, 60 });
+            const int out = p.addModule ("io.audioOut", { 1800, 120 });
+            p.addCable (daw, "audioOut", out, "audioIn");
+            p.generatedKeepsTrims = true;
+            return "DAW";
+        }
+        const char* const waves[3] = { "Sine", "Saw", "Tri" };
+        const char* const effects[3] = { "fx.delay", "fx.reverb", "fx.chorus" };
+        const int out = p.addModule ("io.audioOut", { 1150, 520 });
+        for (int lane = 0; lane < 3; ++lane)
+        {
+            const int y = 97 + lane * 420;
+            const int roll = p.addModule ("util.pianoroll", { -409, y });
+            if (auto* d = p.getInstance (roll))
+            {
+                d->dsp->setParameter ("tempo", 120.0f);
+                d->dsp->setParameter ("bars", 4.0f);
+                d->dsp->setParameter ("playing", 0.0f);
+            }
+            setChoice (p, roll, "sync", "Own Tempo");
+            setChoice (p, roll, "loop", "Loop");
+            const int osc = p.addModule ("osc.basic", { 136, y });
+            if (auto* o = p.getInstance (osc)) o->dsp->setParameter ("volume", 0.8f);
+            setChoice (p, osc, "waveform", waves[lane]);
+            const int fx = p.addModule (effects[lane], { 421, y });
+            p.addCable (roll, "midiOut", osc, "addMidiIn");
+            p.addCable (osc, "audioOut", fx, "audioIn");
+            p.addCable (fx, "audioOut", out, "audioIn");
+        }
+        // the arranger takes the three in: a pill each, their cables into the Audio Out moved to Lanes In
+        fruitArrangerAddWithLanes (p, { 760, 97 });
+        p.generatedKeepsTrims = true;
+        return "DAW";
+    }
+
     Generator makeDaw()
     {
         Generator g;
         g.id = "gen.DAW";
         g.label = "DAW";
         g.tooltipTitle = "DAW";
-        g.tooltipBody = "Clears the patch and builds an empty two-track arrangement to draw into: two Piano Rolls (4 "
-                        "and 256 bars), each playing a sine Oscillator, one through a Delay and one through a Reverb. "
-                        "Half the time the Oscillators go through Reroute buses to the effects by two Audio Outs, "
-                        "half the time through their effects onto one bus and one Audio Out - both play the same. "
-                        "Draw notes, swap the Oscillators for any sound, and Render the result.";
+        g.tooltipBody = "Clears the patch and builds an empty arrangement to draw into. Half the time two tracks: two "
+                        "Piano Rolls (4 and 256 bars), each playing a sine Oscillator, one through a Delay and one through "
+                        "a Reverb - through Reroute buses to the effects by two Audio Outs, or through their effects onto "
+                        "one bus and one Audio Out (both play the same). The other half three lanes: a Fruit DAW with "
+                        "three synth lanes (Sine, Saw and Triangle Oscillators through a Delay, a Reverb and a Chorus, a "
+                        "pattern each on its playlist), or three Piano Rolls into those synths and effects into a Fruit "
+                        "Arranger's Lanes In. Draw notes, swap the Oscillators for any sound, and Render the result.";
         g.random = [] (juce::uint32 seed) -> BuildFn
         {
             Dice dice (seed);
-            const bool sendsFirst = dice.chance (0.5f);
-            return [sendsFirst] (AquanodeModularAudioProcessor& p) { return buildDaw (p, sendsFirst); };
+            const bool lanes = dice.chance (0.5f);   // (6.9.16)
+            const bool other = dice.chance (0.5f);   // two tracks: sends first; three lanes: Fruit DAW
+            if (lanes)
+                return [other] (AquanodeModularAudioProcessor& p) { return buildDawLanes (p, other); };
+            return [other] (AquanodeModularAudioProcessor& p) { return buildDaw (p, other); };
         };
         return g;
     }

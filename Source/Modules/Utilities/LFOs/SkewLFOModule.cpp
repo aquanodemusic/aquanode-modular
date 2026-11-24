@@ -17,7 +17,8 @@ static ModuleDescriptor skewLfoDescriptor()
     d.sidebarOrder = 40;
     d.sockets = {
         modOut ("triOut",   "Tri Out"),
-        modOut ("pulseOut", "Pulse Out")
+        modOut ("pulseOut", "Pulse Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     d.params = {
         makeRotary ("rate",     "Frequency", 0.05f, 30.0f, 1.0f, 0, "Hz", true),

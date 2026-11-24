@@ -28,7 +28,9 @@ public:
     enum ScanMode { sOff = 0, sForward, sBackward, sPingPong, sOnce };
 
     static constexpr int kBaseLength = 2048;
-    static constexpr int kNumMips = 6;          // 2048, 1024 ... 64 samples per cycle
+    static constexpr int kNumMips = 10;         // 2048, 1024 ... 64 samples per cycle, then (6.9.21) four
+                                                // 64-sample copies with 15, 7, 3 and 1 harmonics
+    static constexpr int kOldMips = 6;          // (what is read with CPU > Anti-alias off: as before)
 
     struct Table
     {

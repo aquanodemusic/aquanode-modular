@@ -42,7 +42,7 @@ bool ModuleComponent::showsFullScreenIcon() const
 
 juce::Rectangle<int> ModuleComponent::fullScreenIconArea() const
 {
-    const int right = getWidth() - layout::pad - (showsGraphPill() ? 58 : 0);
+    const int right = getWidth() - layout::pad - (showsGraphPill() || showsTitlePill() ? 58 : 0);
     return { right - 26, 0, 26, layout::topRow };
 }
 
@@ -131,7 +131,8 @@ bool ModuleComponent::isParamVisible (const ParamSpec& spec) const
         return true;
 
     if (auto* inst = processor.getInstance (instanceId))
-        return std::abs (inst->dsp->getParameter (spec.visibleWhenParamId) - spec.visibleWhenEquals) < 0.5f
+        return (spec.visibleFromMin ? inst->dsp->getParameter (spec.visibleWhenParamId) > spec.visibleWhenEquals - 0.5f
+                                    : std::abs (inst->dsp->getParameter (spec.visibleWhenParamId) - spec.visibleWhenEquals) < 0.5f)
             && (spec.visibleWhen2ParamId.isEmpty()
                 || std::abs (inst->dsp->getParameter (spec.visibleWhen2ParamId) - spec.visibleWhen2Equals) < 0.5f);
 
@@ -607,6 +608,13 @@ bool ModuleComponent::showsGraphPill() const
     return inst->dsp != nullptr && hasCurve (*inst->dsp);
 }
 
+bool ModuleComponent::showsTitlePill() const
+{
+    if (showsGraphPill()) return false;
+    auto* inst = processor.getInstance (instanceId);
+    return inst != nullptr && inst->dsp != nullptr && inst->dsp->titlePillName().isNotEmpty();
+}
+
 bool ModuleComponent::hasCurve (const SynthModule& dsp)
 {
     float hz = 1000.0f, db = 0.0f;
@@ -675,7 +683,9 @@ juce::Rectangle<int> ModuleComponent::fullSizePillArea() const
 bool ModuleComponent::showsBlockPill() const
 {
     auto* inst = processor.getInstance (instanceId);
-    return inst != nullptr && ! isCollapsed() && dynamic_cast<aquanode::plugins::HostedPluginModule*> (inst->dsp.get()) != nullptr;
+    if (inst == nullptr || isCollapsed())
+        return false;
+    return dynamic_cast<aquanode::plugins::HostedPluginModule*> (inst->dsp.get()) != nullptr;
 }
 
 juce::Rectangle<int> ModuleComponent::blockPillArea() const
@@ -688,6 +698,7 @@ void ModuleComponent::showBlockMenu()
 {
     auto* inst = processor.getInstance (instanceId);
     if (inst == nullptr) return;
+    static const juce::String loopNote = "Above 1 sound through it comes one block later (lined up with the rest of the patch)";
     using HP = aquanode::plugins::HostedPluginModule;
     const int current = (int) std::lround (inst->dsp->getParameter ("blockSize"));
     juce::PopupMenu m;
@@ -699,6 +710,8 @@ void ModuleComponent::showBlockMenu()
                                    : choices[i] + " samples";
         m.addItem (i + 1, text, true, i == current);
     }
+    m.addSeparator();
+    m.addItem (-1, loopNote, false, false);
     juce::Component::SafePointer<ModuleComponent> safe (this);
     const int id = instanceId;
     m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (blockPillArea())),
@@ -901,7 +914,7 @@ void ModuleComponent::paint (juce::Graphics& g)
         // a pane of frosted glass over the jungle, faintly tinted with the
         // card's colour, its header band a little brighter, a leaf mark in the
         // corner
-        glass::panel (g, card, body, 12.0f);
+        glass::panel (g, card, body, 12.0f, guiOpaque());
         {
             juce::Graphics::ScopedSaveState ss (g);
             juce::Path clip;
@@ -918,8 +931,9 @@ void ModuleComponent::paint (juce::Graphics& g)
         // a satin panel lit from above, a touch translucent: a little lighter at
         // the top, a glossy header band, light coming up through the lower
         // edge, a thin bevel and four small flush screws
-        juce::ColourGradient panel (body.brighter (0.16f).withAlpha (0.93f), 0.0f, card.getY(),
-                                    body.darker (0.08f).withAlpha (0.90f), 0.0f, card.getBottom(), false);
+        const bool solid = guiOpaque();   // (6.9.16: Disable GUI Transparency)
+        juce::ColourGradient panel (body.brighter (0.16f).withAlpha (solid ? 1.0f : 0.93f), 0.0f, card.getY(),
+                                    body.darker (0.08f).withAlpha (solid ? 1.0f : 0.90f), 0.0f, card.getBottom(), false);
         g.setGradientFill (panel);
         g.fillRoundedRectangle (card, 8.0f);
         {
@@ -1071,6 +1085,17 @@ void ModuleComponent::paint (juce::Graphics& g)
         g.setColour (graphOn ? juce::Colours::white : text.withAlpha (0.85f));
         g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
         g.drawText ("Graph", r, juce::Justification::centred);
+    }
+
+    if (showsTitlePill())   // (6.9.15) a module's own pill there (MIDI Add's Visuals)
+    {
+        const auto r = graphPillArea().toFloat().reduced (0.5f);
+        const bool on = inst->dsp->titlePillOn();
+        g.setColour (on ? juce::Colours::black.withAlpha (0.45f) : juce::Colours::black.withAlpha (0.18f));
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        g.setColour (on ? juce::Colours::white : text.withAlpha (0.85f));
+        g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
+        g.drawText (inst->dsp->titlePillName(), r, juce::Justification::centred);
     }
 
     if (showsConvertPill())
@@ -1569,6 +1594,7 @@ void ModuleComponent::mouseDown (const juce::MouseEvent& e)
     if (! inFullView)
         canvas.moduleClicked (instanceId);   // (keeps a Region Select box that holds this card)
 
+
     // The collapse tab is checked first, before the rapid-click and drag
     // gestures: tapping it repeatedly must open and close the module rather
     // than read as a triple-click that deletes its self-modulation cables.
@@ -1586,6 +1612,17 @@ void ModuleComponent::mouseDown (const juce::MouseEvent& e)
     {
         rapidClickCount = 0;
         toggleGraph();
+        return;
+    }
+    // (6.9.15) a module's own pill there
+    if (e.eventComponent == this && ! e.mods.isPopupMenu() && showsTitlePill()
+        && graphPillArea().contains (e.getPosition()))
+    {
+        rapidClickCount = 0;
+        if (auto* inst = processor.getInstance (instanceId))
+            if (inst->dsp != nullptr) inst->dsp->titlePillPressed();
+        refreshLayout();
+        repaint();
         return;
     }
 

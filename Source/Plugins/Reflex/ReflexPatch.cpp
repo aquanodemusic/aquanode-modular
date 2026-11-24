@@ -184,7 +184,7 @@ public:
                         "and drift, the ladder filter in its thirteen types, two envelopes, three LFOs, glide, vibrato "
                         "and the arpeggiator, through the amp's drive, the trance gate and the output EQ. The delay and "
                         "the reverb are in Reflex - Effects. The whole patch comes with the module (saved in the patch).";
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
         for (const auto& k : voiceKnobs())
             d.params.push_back (specFor (k));
         return d;

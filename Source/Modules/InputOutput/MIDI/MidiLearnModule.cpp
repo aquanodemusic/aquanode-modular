@@ -260,13 +260,13 @@ static ModuleDescriptor midiLearnDescriptor()
 {
     ModuleDescriptor d;
     d.typeId = "io.midilearn";
-    d.displayName = "Midi Learn";
+    d.displayName = "MIDI Learn";
     d.description =
         "A knob, fader, wheel or pedal of your MIDI controller as a cable into any knob: tap Learn and move "
         "the control. Like a Macro, each knob it is patched into follows the control across its whole range "
         "(the cable's depth blends with the knob's own setting, negative turns it round); Low and High narrow "
         "the sweep. Nothing moves until the control does, and its last position is saved with the patch. "
-        "One Midi Learn per control - with a keyboard on an Android phone, too.";
+        "One MIDI Learn per control - with a keyboard on an Android phone, too.";
     d.section = ModuleSection::InputOutput;
     d.sidebarOrder = 7;
     d.sockets = {

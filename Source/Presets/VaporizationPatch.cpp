@@ -48,7 +48,7 @@ juce::String buildVaporizationPatch (AquanodeModularAudioProcessor& p)
     s.set (flt, "hpfExt", 8.2f);
     s.set (flt, "lpfCutoff", 300.0f);
     s.set (flt, "lpfPeak", 6.0f);
-    s.set (flt, "lpfMg", 3.45f);
+    s.set (flt, "lpfExt", 3.45f);
 
     const int vca1 = s.add ("util.volume", 3);
     s.set (vca1, "level", 0.33f);
@@ -65,7 +65,7 @@ juce::String buildVaporizationPatch (AquanodeModularAudioProcessor& p)
     s.wire (noise, "audioOut", sh, "sigIn");
     s.wire (lfo, "pulseOut", sh, "clockIn");
     s.wire (sh, "modOut", flt, "hpfExt");
-    s.wire (lfo, "triOut", flt, "lpfMg");
+    s.wire (lfo, "triOut", flt, "lpfExt");
     s.wire (vco, "audioOut", flt, "audioIn");
     s.wire (flt, "audioOut", vca1, "audioIn");
     s.wire (eg2, "modOut", vca1, "volMod");

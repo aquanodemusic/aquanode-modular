@@ -1,4 +1,5 @@
 #include "ChordWavetableModule.h"
+#include "../../Shared/AntiAlias.h"
 
 using namespace aquanode;
 
@@ -45,13 +46,13 @@ namespace
     constexpr int kSawChord = 8, kSquareChord = 9;
 
     void spectrumToCycle (const std::vector<float>& amp, const std::vector<float>& phase,
-                          float* out, int cycleSamples)
+                          float* out, int cycleSamples, int harmonicLimit = 1 << 30)
     {
         static thread_local juce::dsp::FFT fft (11);    // 2048
         static thread_local std::vector<float> buf;
         buf.assign ((size_t) (2 * kSynth), 0.0f);
 
-        const int maxH = juce::jmin ((int) amp.size() - 1, juce::jmin (kSynth / 2 - 1, juce::jmax (1, cycleSamples / 2 - 1)));
+        const int maxH = juce::jmin (harmonicLimit, juce::jmin ((int) amp.size() - 1, juce::jmin (kSynth / 2 - 1, juce::jmax (1, cycleSamples / 2 - 1))));
         for (int h = 1; h <= maxH; ++h)
         {
             const float a = amp[(size_t) h];
@@ -343,8 +344,9 @@ namespace
                 for (int mip = 1; mip < ChordWavetableModule::kNumMips; ++mip)
                 {
                     float* d = const_cast<float*> (t->cycle (f, m, mip));
-                    spectrumToCycle (mamp, mph, d, kSynth >> mip);
-                    for (int i = 0; i < (kSynth >> mip); ++i) d[i] = juce::jlimit (-1.5f, 1.5f, d[i] * frameGain);
+                    const int len = ChordWavetableModule::mipLength (mip);   // (6.9.21: the last four 64 long)
+                    spectrumToCycle (mamp, mph, d, len, mip < ChordWavetableModule::kOldMips ? (1 << 30) : juce::jmax (1, (kSynth >> mip) / 2 - 1));
+                    for (int i = 0; i < len; ++i) d[i] = juce::jlimit (-1.5f, 1.5f, d[i] * frameGain);
                 }
             }
         }
@@ -611,7 +613,8 @@ void ChordWavetableModule::processVoiceSample (int v, const StereoFrame* inputs,
     const double baseFreq = midiNoteToHz (semis);
 
     // (Position and Morph move by cables onto their knobs)
-    const float pos01 = juce::jlimit (0.0f, 1.0f, param (pPosition) * 0.01f);
+    const float pos01 = juce::jlimit (0.0f, 1.0f, param (pPosition) * 0.01f
+                                                  + mpeSlideOffset (v, pPosition));   // (6.9.12: MPE Slide, no cable there)
     const float morph01 = juce::jlimit (0.0f, 1.0f, param (pMorph) * 0.01f);
     if (v == 0 || gate.isOn (v) || ! uiVoiceShown)
     {
@@ -644,6 +647,7 @@ void ChordWavetableModule::processVoiceSample (int v, const StereoFrame* inputs,
     const float mf = mpos - (float) m0;
 
     const double nyq = sampleRate * 0.45;
+    const int lastMip = aquanode::antiAliasOn() ? kNumMips - 1 : kOldMips - 1;   // (6.9.21)
     float outL = 0.0f, outR = 0.0f;
 
     for (int u = 0; u < unisonCount; ++u)
@@ -656,10 +660,10 @@ void ChordWavetableModule::processVoiceSample (int v, const StereoFrame* inputs,
             continue;
 
         int mip = 0;
-        while (mip < kNumMips - 1 && (double) ((kBaseLength >> mip) / 2 - 1) * freq > nyq)
+        while (mip < lastMip && (double) (juce::jmax (1, (kBaseLength >> mip) / 2 - 1)) * freq > nyq)
             ++mip;
 
-        const int len = kBaseLength >> mip;
+        const int len = mipLength (mip);
         const double x = ph * len;
         const int i0 = (int) x & (len - 1);
         const int i1 = (i0 + 1) & (len - 1);
@@ -781,7 +785,7 @@ static ModuleDescriptor chordWavetableDescriptor()
         modIn    ("pitchIn",   "Pitch In"),
         modIn    ("levelIn",   "Level In"),
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

@@ -1,4 +1,5 @@
 #include "vita_library.h"
+#include "vita_file_chooser.h"
 
 #include "synth_constants.h"
 
@@ -105,7 +106,7 @@ bool VitaLibrary::addFile(const File& file, int& index, Kind& kind) {
     file_kind = kWavetable;   // audio asked for as a wavetable
 
   Entry entry;
-  entry.name = file.getFileNameWithoutExtension().toStdString();
+  entry.name = vitaDisplayName(file).toStdString();
   entry.extension = file.getFileExtension().trimCharactersAtStart(".").toLowerCase().toStdString();
   if (isAudioExtension(file.getFileExtension())) {
     if (!file.loadFileAsData(entry.audio) || entry.audio.getSize() == 0)

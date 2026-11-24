@@ -61,11 +61,78 @@ public:
     // the notes it arpeggiates arrive like any processor's (the played keys
     // when its Midi In is empty); what it plays comes from its own clock
     bool isMidiProcessor() const override { return true; }
+
+    // MPE (6.9.10): each arp note takes the bend, pressure and slide of the
+    // held key it comes from (that key, or an octave of it), and follows them
+    // while it sounds
+    bool acceptsMpeEvents() const override { return true; }
     int processMidiEvent (const aquanode::MidiDriverEvent& in, aquanode::MidiDriverEvent*, int) override
     {
+        const int key = juce::jlimit (0, 127, in.note);
+        if (in.isExpression || in.isOn)
+        {
+            auto& x = expr[key];
+            x.mpe = in.mpe;
+            x.bend = in.bend;
+            x.pressure = in.pressure;
+            x.slide = in.slide;
+            if (in.isExpression)
+            {
+                if (currentNote >= 0 && ! gateClosed && sourceKey (currentNote) == key)
+                    expressionPending = true;
+                return 0;
+            }
+        }
         if (in.isOn) midiDriverHeldNoteOn (in.note);
         else         midiDriverHeldNoteOff (in.note);
         return 0;
+    }
+
+    int midiDriverAdvanceEvents (double sr, aquanode::MidiDriverEvent* events, int maxEvents) override
+    {
+        int onNote = -1, offNote = -1;
+        midiDriverAdvance (sr, onNote, offNote);
+        int n = 0;
+        if (offNote >= 0 && n < maxEvents)
+        {
+            aquanode::MidiDriverEvent off;
+            off.note = offNote;
+            off.velocity = 0.0f;
+            off.isOn = false;
+            off.mpe = soundingMpe;
+            events[n++] = off;
+        }
+        if (onNote >= 0 && n < maxEvents)
+        {
+            aquanode::MidiDriverEvent on;
+            on.note = onNote;
+            on.velocity = 0.85f;
+            on.isOn = true;
+            const int k = sourceKey (onNote);
+            if (k >= 0 && expr[k].mpe)
+            {
+                on.mpe = true;
+                on.bend = expr[k].bend;
+                on.pressure = expr[k].pressure;
+                on.slide = expr[k].slide;
+            }
+            soundingMpe = on.mpe;
+            events[n++] = on;
+            expressionPending = false;
+        }
+        else if (expressionPending && currentNote >= 0 && soundingMpe && n < maxEvents)
+        {
+            const int k = sourceKey (currentNote);
+            aquanode::MidiDriverEvent x;
+            x.note = currentNote;
+            x.velocity = 0.0f;
+            x.mpe = true;
+            x.isExpression = true;
+            if (k >= 0) { x.bend = expr[k].bend; x.pressure = expr[k].pressure; x.slide = expr[k].slide; }
+            events[n++] = x;
+            expressionPending = false;
+        }
+        return n;
     }
     void midiAllNotesOff() override { numHeld = 0; }
 
@@ -203,6 +270,19 @@ private:
 
         return seq[juce::jlimit (0, n - 1, stepIndex)];
     }
+
+    // the held key an arp note comes from (it, or one of its octaves up)
+    int sourceKey (int note) const
+    {
+        for (int i = 0; i < numHeld; ++i)
+            if (note >= held[i] && (note - held[i]) % 12 == 0 && note - held[i] <= 36)
+                return held[i];
+        return -1;
+    }
+
+    struct Expression { bool mpe { false }; float bend { 0.0f }, pressure { -1.0f }, slide { -1.0f }; };
+    Expression expr[128];
+    bool soundingMpe { false }, expressionPending { false };
 
     int held[128] {};
     int numHeld { 0 };

@@ -1093,7 +1093,7 @@ ModuleDescriptor PianoModel::makeDescriptor (const juce::String& typeId, const j
     d.sockets = {
         modIn    ("pitchIn",   "Pitch In"),
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

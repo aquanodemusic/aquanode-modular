@@ -61,6 +61,24 @@ public:
     void footerResized() { buildRows(); repaint(); }
     int layoutWidth() const;   // the rows' width: what the sidebar's Viewport shows, less its scrollbar
 
+   #if AQUANODE_TEST_HARNESS
+    // (test harness) every header opened, the rows: "H:" a category, "G:" a group, "M:" a module
+    juce::StringArray debugAllRows()
+    {
+        for (int pass = 0; pass < 6; ++pass)
+        {
+            for (const auto& r : rows) if (r.headerKey.isNotEmpty()) expandedHeaders.addIfNotAlreadyThere (r.headerKey);
+            buildRows();
+        }
+        juce::StringArray out;
+        for (const auto& r : rows)
+            out.add (r.isSeparator ? "S:" + juce::String (r.area.getX())   // (a line between kinds: where it starts)
+                                   : (r.isSubLabel ? "G:" : r.headerKey.isNotEmpty() ? "H:" : r.typeId.isNotEmpty() ? "M:" : "?:") + r.text
+                                         + (r.typeId.isNotEmpty() ? "|" + r.typeId : juce::String()));
+        return out;
+    }
+   #endif
+
 private:
     struct Row
     {
@@ -76,6 +94,7 @@ private:
         bool pluginHasPatch { false };
         juce::String headerKey;           // a category header that folds its list
         bool isSubLabel { false };        // a group's name inside a category ("Envelopes")
+        bool isSeparator { false };       // (6.9.17) a thin line between kinds (Plugin Modules)
         juce::String detail;              // dim text at the right (search results: the group)
     };
 

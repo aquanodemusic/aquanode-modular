@@ -175,6 +175,19 @@ void MidiManager::processSostenuto(const MidiMessage& midi_message, int sample_p
   }
 }
 
+void MidiManager::setMpeEnabled(bool enabled) {
+  if (enabled == mpe_enabled_)
+    return;
+  mpe_enabled_ = enabled;
+  if (engine_ != nullptr) {
+    engine_->setZonedPitchWheel(0.0f, 0, vital::kNumMidiChannels - 1);
+    for (int ch = 0; ch < vital::kNumMidiChannels; ++ch)
+      engine_->setPitchWheel(0.0f, ch);
+  }
+  if (listener_ != nullptr)
+    listener_->pitchWheelMidiChanged(0.0f);
+}
+
 void MidiManager::processPitchBend(const MidiMessage& midi_message, int sample_position, int channel) {
   vital::mono_float percent = midi_message.getPitchWheelValue() / kHighResolutionMax;
   vital::mono_float value = 2 * percent - 1.0f;

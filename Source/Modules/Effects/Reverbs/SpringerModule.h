@@ -85,7 +85,7 @@ private:
     {
         // the stretched all-pass cascade: one line per stage (lineLen apart),
         // read N samples back and through a first-order fractional all-pass
-        std::vector<float> ap;            // maxTankStages * lineLen
+        std::vector<float> ap;            // lineLen * maxTankStages (position-major: [pos * maxTankStages + stage])
         std::vector<float> fx1, fy1;      // the fractional all-passes' memories
         int readN { 4 };                  // whole samples of the stretch
         float eta { 0.0f };               // the fractional part's all-pass coefficient

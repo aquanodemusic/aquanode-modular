@@ -221,11 +221,11 @@ public:
         d.description = "One tuned resonator with everything Resonate's resonators can do: four engines (Modelled, Native, "
                         "Crisp, Dark), Note and Fine, Decay and Color, Const (the same decay at every pitch), Full or Odd "
                         "(a hollow, square tone), its Gain and Pan, a filter on the input, Dry/Wet, and the Crisp engine's "
-                        "Center, Exp Decay, 2x, Smooth, Chorus and LFO. Notes on Midi In retune it. Feed it noise for a "
+                        "Center, Exp Decay, 2x, Smooth, Chorus and LFO. Notes on MIDI In retune it. Feed it noise for a "
                         "sung drone. Resonate (Plugins) has seven of them.";
         d.section = ModuleSection::Effect;
         d.sidebarOrder = 9;
-        d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
         addGlobalParams (d.params, 60, 75.0f, 45.0f);
         d.params.push_back (makeRotary ("fine", "Fine", -50.0f, 50.0f, 0.0f, 4, "ct"));
         d.params.push_back (makeRotary ("resGain", "Gain", -48.0f, 12.0f, 0.0f, 4, "dB"));
@@ -274,11 +274,11 @@ public:
         d.description = "Resonate whole as one module: seven tuned resonators - I at Note, II to VII tuned around it in "
                         "semitones (G3, +2, +9, +9, +2 to begin with) - each with its own On, Fine, Gain and Pan, and with "
                         "Per Res its own Decay, Color and Const; the engine (Modelled, Native, Crisp, Dark), Full / Odd, "
-                        "Width, the input filter, Dry/Wet and the Crisp engine's extras. Notes on Midi In retune the "
+                        "Width, the input filter, Dry/Wet and the Crisp engine's extras. Notes on MIDI In retune the "
                         "resonators round robin. Every knob takes cables.";
         d.section = ModuleSection::Effect;
         d.sidebarOrder = 400;
-        d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
         addGlobalParams (d.params, 55, 75.0f, 45.0f);
         d.params.push_back (makeRotary ("gain", "Gain", -48.0f, 12.0f, 0.0f, 1, "dB"));
         d.params.push_back (makeRotary ("width", "Width", 0.0f, 100.0f, 100.0f, 2, "%", false, 1.0f));

@@ -80,7 +80,7 @@ public:
         d.section = ModuleSection::Oscillator;
         d.accent = kit::accentOf (kPlugin);
         d.sidebarOrder = 400;
-        d.sockets = { modIn ("envIn", "Env In"), midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { modIn ("envIn", "Env In"), midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
         d.params = {
             makeCombo ("mode", "Mode", { "Subtractive Saw", "Additive Saw (64)", "Sine Wave",
                                          "Sample (Root C0)", "Sample (Root C5)", "Sample (Root C10)" }, 2, 0, 3),

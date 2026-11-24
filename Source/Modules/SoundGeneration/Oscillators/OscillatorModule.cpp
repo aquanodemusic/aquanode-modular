@@ -119,6 +119,7 @@ void OscillatorModule::renderVoice (int v, const StereoFrame* inputs, StereoFram
     const double invSr = 1.0 / sampleRate;
 
     // carrier phase advance
+    const double prevPhase = phase[v];
     phase[v] += freqHz[v] * param (pFmRatio) * invSr;
     phase[v] -= std::floor (phase[v]);
 
@@ -129,7 +130,25 @@ void OscillatorModule::renderVoice (int v, const StereoFrame* inputs, StereoFram
     double readPhase = phase[v] + (double) fmIn;
     readPhase -= std::floor (readPhase);
 
-    const float y = readWave ((int) param (pWaveform), readPhase);
+    const int waveform = (int) param (pWaveform);
+    float y;
+    if (waveform >= 1 && waveform <= 3 && aquanode::antiAliasOn())
+    {
+        // (6.9.21) Anti-alias: the wave at the half step and at the step, band-limited, brought down
+        if (! aaWasOn[v]) { aaDown[v].reset(); aaWasOn[v] = true; }
+        const double inc = freqHz[v] * param (pFmRatio) * invSr, dt = juce::jlimit (1.0e-9, 0.5, inc * 0.5);
+        auto wave = [waveform, dt] (double t)
+        {
+            return waveform == 1 ? aquanode::blTriangle (t, dt) : waveform == 2 ? aquanode::blSaw (t, dt) : aquanode::blSquare (t, dt);
+        };
+        const double mid = aquanode::wrap01 (prevPhase + 0.5 * inc + (double) fmIn);
+        y = aaDown[v].process ((float) wave (mid), (float) wave (readPhase));
+    }
+    else
+    {
+        aaWasOn[v] = false;
+        y = readWave (waveform, readPhase);
+    }
 
     float gain;
     if (envConnected)
@@ -169,7 +188,7 @@ static ModuleDescriptor oscillatorDescriptor()
     d.sockets = {
         modIn ("fmIn",  "FM In"),
         modIn ("envIn", "Env In"),
-        midiIn ("addMidiIn", "Add Midi In"),
+        midiIn ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut", "Audio Out")
     };
     d.params = {

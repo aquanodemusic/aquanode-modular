@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/AntiAlias.h"
 #include "../../Shared/VintageDSP.h"
 
 // Dual VCO - two engines in one card (Engine):
@@ -123,7 +124,14 @@ private:
     float driftT1[aquanode::kMaxVoices] {}, driftT2[aquanode::kMaxVoices] {};
     int driftCount[aquanode::kMaxVoices] {};
 
+    aquanode::Decimator2x aaDown [aquanode::kMaxVoices];   // (6.9.21: CPU > Anti-alias)
+    bool aaWasOn [aquanode::kMaxVoices] {};
     juce::Random rng;
+public:
+   #if AQUANODE_TEST_HARNESS
+    void seedForTest (juce::int64 seed) { rng.setSeed (seed); }
+   #endif
+private:
     int lastNote { -1 };
     int heldNotes { 0 };
     juce::String presetName;

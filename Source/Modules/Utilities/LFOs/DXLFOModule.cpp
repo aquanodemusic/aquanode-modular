@@ -110,7 +110,7 @@ static ModuleDescriptor dxLFODescriptor()
         "The DX7's LFO, shared by every note: Speed and Delay follow the hardware's curves, Delay counts "
         "from the first key of a phrase and Key Sync restarts the wave on every key. Pitch Out (wave x PMD "
         "x PMS) goes to the DX Operators' Pitch In, AM Out (x AMD) to their AM In, where each operator's AMS "
-        "sets the depth. Wheel In adds to PMD - patch a Midi Controls' Wheel Out for mod-wheel vibrato.";
+        "sets the depth. Wheel In adds to PMD - patch a MIDI Controls' Wheel Out for mod-wheel vibrato.";
     d.section = ModuleSection::Utility;
     d.family = ModuleFamily::DX;
     d.sidebarOrder = 41;

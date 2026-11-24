@@ -155,6 +155,25 @@ void SynthPlugin::processBlock(AudioSampleBuffer& buffer, MidiBuffer& midi_messa
     return;
   }
 
+  // (Aquanode, 6.9.10) the per-finger bend range: 48, or the preset's Bend range
+  {
+    float range = 48.0f;
+    if (bend_from_preset_) {
+      auto& controls = getControls();
+      auto it = controls.find("pitch_bend_range");
+      if (it != controls.end())
+        range = it->second->value();
+    }
+    getEngine()->setLocalPitchBendRange(range);
+  }
+  // (Aquanode, 6.9.12) the default MPE map: with MPE on, a note's Slide moves the frame
+  // of every oscillator whose frame nothing modulates, a quarter of the table each way
+  {
+    const bool mpe = isMpeEnabled();
+    for (int i = 0; i < vital::kNumOscillators; ++i)
+      getEngine()->setAqSlideDepth(i, mpe && aqFrameFree(i) ? aq_slide_each_way_.load(std::memory_order_relaxed) * (vital::kNumOscillatorWaveFrames - 1) : 0.0f);
+  }
+
   int total_samples = buffer.getNumSamples();
   int num_channels = getTotalNumOutputChannels();
   AudioPlayHead* play_head = getPlayHead();

@@ -737,8 +737,8 @@ void Acid303Module::gridAdvance()
     }
 
     const bool hostAvailable = hostTransport.hasBpm && hostTransport.bpm > 0.0;
-    const bool useHost = param (pSync) > 0.5f && hostAvailable;
-    const double bpm = juce::jlimit (10.0, 999.0, useHost ? hostTransport.bpm : (double) param (pTempo));
+    const bool useHost = param (pSync) > 0.5f && hostAvailable && ! tempoFromLane();
+    const double bpm = juce::jlimit (10.0, 999.0, tempoFromLane() ? tempoBpm : useHost ? hostTransport.bpm : (double) param (pTempo));   // (6.9.10: a lane's tempo wins)
     uiBpm.store (bpm, std::memory_order_relaxed);
     uiHostTempo.store (hostAvailable, std::memory_order_relaxed);
     // swing: the first sixteenth of every pair longer, the second shorter (100 %: three to one)
@@ -1262,16 +1262,17 @@ static ModuleDescriptor acid303Descriptor()
     d.description =
         "A bass line synth fitted to recordings of the original hardware: its saw and its slanted square, the "
         "four-pole filter with resonance, the cutoff envelope (Env Mod, Decay), the accent sweep and the VCA. "
-        "Free: played from its Midi In, a note as loud as Acc Vel is an accent; Mono slides into a note played "
+        "Free: played from its MIDI In, a note as loud as Acc Vel is an accent; Mono slides into a note played "
         "under a held one, Poly gives every note its own voice (no slide). Grid: its own 303 pattern of 1-4 "
         "bars in the card - note, octave, accent, slide and note/tie/rest lanes - on its own tempo or the "
         "host's; Play All on a Piano Roll starts it too. FM In: phase modulation, as on the other oscillators.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 30;
     d.sockets = {
-        midiIn   ("midiIn",   "Midi In"),
+        midiIn   ("midiIn",   "MIDI In"),
         modIn    ("fmIn",     "FM In"),
-        audioOut ("audioOut", "Audio Out")
+        audioOut ("audioOut", "Audio Out"),
+        tempoIn()   // (6.9.10: tempo per lane - wins over its own Tempo and Sync)
     };
     d.params = {
         makeCombo  ("wave",      "Wave",   { "Saw", "Square" }, 0, 0, 2).noMod(),

@@ -29,7 +29,10 @@
 //   on the selection (any number of boxes, time x frequency): Delete, Keep
 //   (delete everything around them), Gain, Transpose, Reverse (in time),
 //   Rotate (the box's content turned by an angle in time x log-frequency),
-//   Smear (what sounds there rings on, fading over the time set) - a region
+//   Smear (what sounds there rings on, fading over the time set), Paint
+//   (6.9.16: sound added where the region is - a narrow stretch, up to a
+//   semitone or 60 Hz wide, a tone at its middle, a wider one noise filling
+//   it, at the Level set; Init Blank gives an empty sound to paint on) - a region
 //   is a box, or any shape drawn by hand (Draw);
 //   on a note (tap a partial with Note: its fundamental is searched - which
 //   harmonic of which note the partial is - and followed through time, the
@@ -48,8 +51,10 @@ public:
         pVolume = 0, pLoad, pRecord, pVoices, pGlide,
         pEngine, pFft, pHop, pWindow, pDecim, pThreshold, pMaxPeaks, pMinLen,
         pSpeed, pStart, pEnd, pLoop, pFreeze, pPosition, pRoot, pFine,
-        pTranspose, pShiftHz, pScatter, pTilt, pLowCut, pHighCut, pSines, pNoise, pPartials, pSpread
+        pTranspose, pShiftHz, pScatter, pTilt, pLowCut, pHighCut, pSines, pNoise, pPartials, pSpread,
+        pInitBlank   // (6.9.16)
     };
+    static constexpr double kBlankSeconds = 30.0;   // (6.9.16) Init Blank's empty sound
 
     static constexpr int kBands = 24;            // Partials: noise floor bands
     static constexpr int kBlock = 32;            // Partials: control block (samples)
@@ -159,7 +164,8 @@ public:
     enum class Op
     {
         Delete = 0, Keep, Gain, Transpose, Reverse, Rotate, Smear,
-        NoteRemove, NoteGain, NoteTranspose, NoteUnison, NoteFundOnly, NoteNoFund, NoteOddOnly
+        NoteRemove, NoteGain, NoteTranspose, NoteUnison, NoteFundOnly, NoteNoFund, NoteOddOnly,
+        Paint   // (6.9.16) a region op: sound added where the region is (after the note ops: saved by name)
     };
 
     struct Edit
@@ -167,9 +173,9 @@ public:
         Op op { Op::Delete };
         std::vector<Box> regions;               // the region operations
         NoteContour note;                       // the note operations
-        float amount { 0.0f };                  // dB, semitones, degrees, unison voices, smear (ms)
+        float amount { 0.0f };                  // dB, semitones, degrees, unison voices, smear (ms), paint level (dB)
         float amount2 { 0.0f };                 // unison: detune (cents)
-        bool isNoteOp() const { return op >= Op::NoteRemove; }
+        bool isNoteOp() const { return op >= Op::NoteRemove && op <= Op::NoteOddOnly; }
     };
 
     static juce::String describe (const Edit& e);

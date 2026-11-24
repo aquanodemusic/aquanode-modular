@@ -799,10 +799,18 @@ void TranswaveAudioProcessorEditor::addGenerateMenuItems(juce::PopupMenu& menu, 
     menu.addItem(9100, "Random Transwave");
     menu.addItem(9101, "Transwavify audio file...");
 
+    // 7.0.0: the built-in transwaves
+    {
+        juce::PopupMenu builtin;
+        for (int i = 0; i < ::twremake::count(); ++i)
+            builtin.addItem(9600 + i, ::twremake::name(i));
+        menu.addSubMenu("Built-in transwaves", builtin);
+    }
+
     const int origin = audioProcessor.getSlotOrigin(slot);
     menu.addItem(9102, origin == 1 ? "Re-roll (new seed)"
         : origin == 2 ? "Re-analyse (flip pitched/slice)"
-        : "Re-roll", origin != 0);
+        : "Re-roll", origin == 1 || origin == 2);
     menu.addItem(9103, "Export wave as .wav...", audioProcessor.isWavetableLoaded(slot));
 
     juce::PopupMenu framesMenu;
@@ -860,6 +868,12 @@ bool TranswaveAudioProcessorEditor::handleGenerateMenuResult(int result, int slo
     if (result == 9100)
     {
         audioProcessor.generateRandomWavetable(slot, 0, frames, cycle, status);
+        refreshSlotName(slot);
+        return true;
+    }
+    if (result >= 9600 && result < 9600 + ::twremake::count())
+    {
+        audioProcessor.loadBuiltinTranswave(slot, result - 9600, status);
         refreshSlotName(slot);
         return true;
     }
@@ -936,6 +950,32 @@ void TranswaveAudioProcessorEditor::savePresetClicked()
 }
 
 void TranswaveAudioProcessorEditor::loadPresetClicked()
+{
+    // 7.0.0: the factory presets first, then a preset file
+    juce::PopupMenu menu;
+    menu.setLookAndFeel(&laf);
+    menu.addSectionHeader("Factory presets");
+    for (int i = 0; i < TranswaveAudioProcessor::getNumFactoryPresets(); ++i)
+        menu.addItem(1 + i, TranswaveAudioProcessor::getFactoryPresetName(i));
+    menu.addSeparator();
+    menu.addItem(1000, "Open preset file...");
+    juce::Component::SafePointer<TranswaveAudioProcessorEditor> safeThis(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&loadPresetButton),
+        [safeThis](int r)
+        {
+            if (safeThis == nullptr || r == 0) return;
+            if (r == 1000) { safeThis->openPresetFileChooser(); return; }
+            auto& proc = safeThis->audioProcessor;
+            if (proc.loadFactoryPreset(r - 1))
+            {
+                safeThis->presetNameLabel.setText(proc.getCurrentPresetName(), juce::dontSendNotification);
+                safeThis->refreshUIAfterPresetLoad();
+            }
+            else safeThis->presetNameLabel.setText("Load failed!", juce::dontSendNotification);
+        });
+}
+
+void TranswaveAudioProcessorEditor::openPresetFileChooser()
 {
     fileChooser = std::make_unique<juce::FileChooser>("Open preset...",
         audioProcessor.getEffectivePresetsDirectory(), "*.phizm");

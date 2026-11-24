@@ -397,6 +397,11 @@ namespace layout
     // 16 %, a sheen from the top, a pale edge); knobs with a dark track, a
     // luminous arc and a glass cap with a white pointer; white text.
     //==========================================================================
+    // (6.9.16) CPU > Disable GUI Transparency: the Glass and Skeuomorphic cards are painted
+    // solid and the patch area is not painted under them, so a card's display, knob or
+    // meter repaints the card alone (the app's settings: "gui.opaque")
+    inline bool& guiOpaque() { static bool on = false; return on; }
+
     namespace glass
     {
         const juce::Colour canopy (0xff2fd17a), moss (0xff118f56), deepJade (0xff064f3d), loam (0xff123a30),
@@ -594,12 +599,14 @@ namespace layout
 
         // a pane of frosted glass: a translucent body (tinted a touch), a sheen
         // from the top, a pale edge (in the palette's Glass Sheen)
-        inline void panel (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour tint, float corner)
+        inline void panel (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour tint, float corner, bool solid = false)
         {
             const auto sheenC = pal (ThemeColours::KnobEnd);
             g.setColour (juce::Colours::black.withAlpha (0.16f));                         // a soft shadow below
             g.fillRoundedRectangle (r.translated (0.0f, 2.0f), corner);
-            g.setColour (pal (ThemeColours::Sidebar).darker (0.1f).interpolatedWith (tint, 0.18f).withAlpha (0.66f));   // frosted
+            // frosted (solid: Disable GUI Transparency - the jungle's dark green behind it, as it shows through)
+            const auto frost = pal (ThemeColours::Sidebar).darker (0.1f).interpolatedWith (tint, 0.18f);
+            g.setColour (solid ? frost.interpolatedWith (juce::Colour (0xff0e2a22), 0.34f) : frost.withAlpha (0.66f));
             g.fillRoundedRectangle (r, corner);
             g.setColour (sheenC.withAlpha (0.10f));
             g.fillRoundedRectangle (r, corner);

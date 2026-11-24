@@ -6,7 +6,7 @@ using namespace aquanode;
 // the peaking bands: Count pairs either side of Freq, Spread apart, the
 // outer ones thinned by Damp (an inactive band is skipped)
 int CenterCombModule::computeFilters (float freq, float gainDb, int count, float spread, float q, float damp,
-                                      double sr, Coeffs* out)
+                                      double sr, Coeffs* out, bool multiplicative)
 {
     const float lowLimit = 20.0f;
     const float highLimit = (float) (sr * 0.475);
@@ -21,7 +21,9 @@ int CenterCombModule::computeFilters (float freq, float gainDb, int count, float
             continue;
 
         const int offsetIdx = i - count;
-        const float f = freq + (float) offsetIdx * spread;   // Regular (linear) spread
+        // Linear: Spread Hz apart; Multiplicative (6.9.19): each one Ratio times its neighbour
+        const float f = multiplicative ? (float) ((double) freq * std::pow ((double) spread, (double) offsetIdx)) + (float) i * 0.0001f
+                                       : freq + (float) offsetIdx * spread;
         if (f < lowLimit || f > highLimit)
             continue;
 
@@ -51,27 +53,29 @@ void CenterCombModule::blockStart()
     const float freq = param (pFreq);
     const float gainDb = param (pGain);
     const int count = juce::jlimit (0, maxPairs, (int) param (pCount));
-    const float spread = param (pSpread);
+    const int mode = param (pSpreadMode) > 0.5f ? 1 : 0;
+    const float spread = mode == 1 ? param (pRatio) : param (pSpread);
     const float q = param (pQ);
     const float damp = param (pDamp) * 0.01f;
 
     if (freq == lastFreq && gainDb == lastGain && count == lastCount
-        && spread == lastSpread && q == lastQ && damp == lastDamp)
+        && spread == lastSpread && q == lastQ && damp == lastDamp && mode == lastMode)
         return;
 
     lastFreq = freq; lastGain = gainDb; lastCount = count;
-    lastSpread = spread; lastQ = q; lastDamp = damp;
+    lastSpread = spread; lastQ = q; lastDamp = damp; lastMode = mode;
 
-    activeFilters = computeFilters (freq, gainDb, count, spread, q, damp, sampleRate, coeffs);
+    activeFilters = computeFilters (freq, gainDb, count, spread, q, damp, sampleRate, coeffs, mode == 1);
 }
 
 bool CenterCombModule::magnitudeResponseDb (const float* hz, float* db, int n) const
 {
     Coeffs c[maxFilters] {};
+    const bool multi = getParameterBase (pSpreadMode) > 0.5f;
     const int active = computeFilters (getParameterBase (pFreq), getParameterBase (pGain),
                                        juce::jlimit (0, maxPairs, (int) getParameterBase (pCount)),
-                                       getParameterBase (pSpread), getParameterBase (pQ),
-                                       getParameterBase (pDamp) * 0.01f, sampleRate, c);
+                                       multi ? getParameterBase (pRatio) : getParameterBase (pSpread), getParameterBase (pQ),
+                                       getParameterBase (pDamp) * 0.01f, sampleRate, c, multi);
     for (int i = 0; i < n; ++i)
     {
         const auto z1 = response::zInv (hz[i], sampleRate);
@@ -106,6 +110,8 @@ void CenterCombModule::processSample (const StereoFrame* inputs, StereoFrame* ou
 
         outputs[0][(size_t) c] = x;
     }
+    if (param (pLimiter) > 0.5f)   // (6.9.19)
+        limiter.process (outputs[0][0], outputs[0][1]);
 }
 
 static ModuleDescriptor centerCombDescriptor()
@@ -116,7 +122,9 @@ static ModuleDescriptor centerCombDescriptor()
     d.description =
         "A bank of peaking filters spread symmetrically around a centre frequency, with Damp "
         "thinning the outer peaks. It has no delay line, so it colours rather "
-        "than rings - for the ringing, pitched kind reach for Comb Filter instead.";
+        "than rings - for the ringing, pitched kind reach for Comb Filter instead. Spread Mode: Linear sets the "
+        "peaks Spread Hz apart (the graph then has a linear frequency scale, so they stand evenly), Multiplicative "
+        "each Ratio times its neighbour (a log scale). The Limiter keeps the output under full scale.";
     d.section = ModuleSection::Filter;
     d.sidebarOrder = 2;
     d.sockets = {
@@ -127,9 +135,13 @@ static ModuleDescriptor centerCombDescriptor()
         makeRotary ("freq",   "Center",  20.0f, 20000.0f, 1000.0f, 0, "Hz", true),
         makeRotary ("gain",   "Gain",    -24.0f, 24.0f, 6.0f, 0, "dB"),
         makeRotary ("count",  "Count",   0.0f, 16.0f, 2.0f, 0, {}, false, 1.0f),
-        makeRotary ("spread", "Spread",  10.0f, 2000.0f, 100.0f, 0, "Hz", true),
+        makeRotary ("spread", "Spread",  10.0f, 2000.0f, 100.0f, 0, "Hz", true).visibleWhen ("spreadMode", 0.0f),
         makeRotary ("q",      "Q",       0.5f, 100.0f, 10.0f, 0, {}, true),
-        makeRotary ("damp",   "Damp",    0.0f, 100.0f, 50.0f, 1, "%")
+        makeRotary ("damp",   "Damp",    0.0f, 100.0f, 50.0f, 1, "%"),
+        // (6.9.19) on for new cards; patches from before keep it off (as they sounded)
+        makeCombo ("limiter", "Limiter", { "Off", "On" }, 1, 1, 2).noMod().whenMissing (0.0f),
+        makeCombo ("spreadMode", "Spread Mode", { "Linear", "Multiplicative" }, 0, 1, 2).noMod(),
+        makeRotary ("ratio", "Ratio", 1.01f, 10.0f, 1.05f, 0, "x", true).visibleWhen ("spreadMode", 1.0f)
     };
     return d;
 }

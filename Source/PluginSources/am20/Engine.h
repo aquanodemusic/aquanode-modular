@@ -8,6 +8,7 @@
 // Every voice runs the full patch panel, so patches with cables play
 // polyphonically too. The voices run at twice the host rate (below 88.2 kHz)
 // and are decimated once after mixing.
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "Params.h"
 #include "Curves.h"
 #include <array>
@@ -780,7 +781,7 @@ private:
             {
                 const float semi1 = kb12 + oct1 + common;
                 const float semi2 = kb2 + oct2 + tune2 + common + mV2;
-                v.f1 = 440.0f * std::exp2 ((semi1 - 69.0f) / 12.0f); v.f2 = 440.0f * std::exp2 ((semi2 - 69.0f) / 12.0f);
+                v.f1 = (float) ::aquanode::tuning::noteToHz (semi1); v.f2 = (float) ::aquanode::tuning::noteToHz (semi2);
             }
             const float f1 = v.f1, f2 = v.f2;
             const float dt1 = std::min (0.45f, f1 * dt), dt2 = std::min (0.45f, f2 * dt);

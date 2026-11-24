@@ -1,3 +1,4 @@
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
@@ -1010,7 +1011,7 @@ void TranswaveAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 voicePosLFOPhase[si] = (double)((msg.getNoteNumber() * 7) & 0xF) / 16.0;
                 monoActive = false;
             }
-            lastNoteFreq = 440.0 * std::pow(2.0, (msg.getNoteNumber() - 69.0) / 12.0);
+            lastNoteFreq = ::aquanode::tuning::noteToHz((double) msg.getNoteNumber());
         }
         else if (msg.isNoteOff())
         {
@@ -1230,6 +1231,8 @@ void TranswaveAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
         xml->setAttribute("genArch" + sfx, wt[s].genArchetype);
         xml->setAttribute("genUnpitched" + sfx, wt[s].genUnpitched ? 1 : 0);
         xml->setAttribute("genStatus" + sfx, wt[s].genStatus);
+        if (wt[s].loaded && wt[s].origin == 3)
+            xml->setAttribute("builtin" + sfx, ::twremake::name((int)wt[s].genSeed));
     }
 
     juce::String xmlString = xml->toString();
@@ -1237,9 +1240,11 @@ void TranswaveAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     juce::ZipFile::Builder zb;
     zb.addEntry(new juce::MemoryInputStream(xmlString.toUTF8(), xmlString.getNumBytesAsUTF8(), true),
         9, "state.xml", juce::Time::getCurrentTime());
-    if (hasA && dataA.getSize() > 0)
+    // 7.0.0: a built-in transwave travels as its name only (rebuilt on load)
+    const bool builtinA = getSlotOrigin(0) == 3, builtinB = getSlotOrigin(1) == 3;
+    if (hasA && dataA.getSize() > 0 && !builtinA)
         zb.addEntry(new juce::MemoryInputStream(dataA, true), 9, "A/" + fnA, juce::Time::getCurrentTime());
-    if (hasB && dataB.getSize() > 0)
+    if (hasB && dataB.getSize() > 0 && !builtinB)
         zb.addEntry(new juce::MemoryInputStream(dataB, true), 9, "B/" + fnB, juce::Time::getCurrentTime());
 
     juce::MemoryOutputStream mos(destData, false);
@@ -1309,6 +1314,7 @@ void TranswaveAudioProcessor::setStateInformation(const void* data, int sizeInBy
                         wt[s].genUnpitched = xml->getIntAttribute("genUnpitched" + sfx, 0) != 0;
                         wt[s].genStatus = xml->getStringAttribute("genStatus" + sfx);
                     }
+                    restoreBuiltins(*xml);
                     return;
                 }
             }
@@ -1430,6 +1436,8 @@ bool TranswaveAudioProcessor::savePreset(const juce::File& dest)
         xml->setAttribute("genArch" + sfx, wt[s].genArchetype);
         xml->setAttribute("genUnpitched" + sfx, wt[s].genUnpitched ? 1 : 0);
         xml->setAttribute("genStatus" + sfx, wt[s].genStatus);
+        if (wt[s].loaded && wt[s].origin == 3)
+            xml->setAttribute("builtin" + sfx, ::twremake::name((int)wt[s].genSeed));
     }
 
     juce::String xmlString = xml->toString();
@@ -1437,9 +1445,11 @@ bool TranswaveAudioProcessor::savePreset(const juce::File& dest)
     juce::ZipFile::Builder zb;
     zb.addEntry(new juce::MemoryInputStream(xmlString.toUTF8(), xmlString.getNumBytesAsUTF8(), true),
         9, "state.xml", juce::Time::getCurrentTime());
-    if (hasA && dataA.getSize() > 0)
+    // 7.0.0: a built-in transwave travels as its name only (rebuilt on load)
+    const bool builtinA = getSlotOrigin(0) == 3, builtinB = getSlotOrigin(1) == 3;
+    if (hasA && dataA.getSize() > 0 && !builtinA)
         zb.addEntry(new juce::MemoryInputStream(dataA, true), 9, "A/" + fnA, juce::Time::getCurrentTime());
-    if (hasB && dataB.getSize() > 0)
+    if (hasB && dataB.getSize() > 0 && !builtinB)
         zb.addEntry(new juce::MemoryInputStream(dataB, true), 9, "B/" + fnB, juce::Time::getCurrentTime());
 
     juce::TemporaryFile tempFile(dest);
@@ -1451,10 +1461,48 @@ bool TranswaveAudioProcessor::savePreset(const juce::File& dest)
     return tempFile.overwriteTargetFileWithTemporary();
 }
 
+#include "PhizmOscFactoryPresets.inl"
+
+int TranswaveAudioProcessor::getNumFactoryPresets() { return kNumPhizmOscFactoryPresets; }
+
+juce::String TranswaveAudioProcessor::getFactoryPresetName(int i)
+{
+    return (i >= 0 && i < kNumPhizmOscFactoryPresets) ? juce::String(kPhizmOscFactoryPresets[i].name) : juce::String();
+}
+
+// 7.0.0: a factory preset is a state.xml only (its tables are built-in
+// transwaves); it goes through the same path as a preset file.
+bool TranswaveAudioProcessor::loadFactoryPreset(int i)
+{
+    if (i < 0 || i >= kNumPhizmOscFactoryPresets) return false;
+    juce::MemoryBlock zipBytes;
+    {
+        juce::ZipFile::Builder zb;
+        const juce::String xmlString(juce::CharPointer_UTF8(kPhizmOscFactoryPresets[i].xml));
+        zb.addEntry(new juce::MemoryInputStream(xmlString.toRawUTF8(), xmlString.getNumBytesAsUTF8(), true),
+            9, "state.xml", juce::Time::getCurrentTime());
+        juce::MemoryOutputStream mos(zipBytes, false);
+        zb.writeToStream(mos, nullptr);
+    }
+    juce::ZipFile zip(new juce::MemoryInputStream(zipBytes, false), true);
+    if (!loadPresetZip(zip)) return false;
+    currentPresetName = getFactoryPresetName(i);
+    return true;
+}
+
 bool TranswaveAudioProcessor::loadPreset(const juce::File& src)
 {
     juce::ZipFile zip(src);
     if (zip.getNumEntries() > 0)
+        return loadPresetZip(zip);
+
+    // Legacy fallback: pre-existing flat-XML presets that referenced an
+    // absolute path on disk instead of embedding the wavetable.
+    return loadPresetLegacy(src);
+}
+
+bool TranswaveAudioProcessor::loadPresetZip(juce::ZipFile& zip)
+{
     {
         int stateIdx = zip.getIndexOfFileName("state.xml");
         if (stateIdx < 0) return false;
@@ -1501,11 +1549,13 @@ bool TranswaveAudioProcessor::loadPreset(const juce::File& src)
             wt[s].genUnpitched = xml->getIntAttribute("genUnpitched" + sfx, 0) != 0;
             wt[s].genStatus = xml->getStringAttribute("genStatus" + sfx);
         }
+        restoreBuiltins(*xml);
         return true;
     }
+}
 
-    // Legacy fallback: pre-existing flat-XML presets that referenced an
-    // absolute path on disk instead of embedding the wavetable.
+bool TranswaveAudioProcessor::loadPresetLegacy(const juce::File& src)
+{
     auto xml = juce::XmlDocument::parse(src);
     if (!xml || xml->getTagName() != "PhizmOscState") return false;
     if (auto* c = xml->getFirstChildElement())

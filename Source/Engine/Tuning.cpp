@@ -54,8 +54,57 @@ void refresh() noexcept
    #endif
 }
 
+namespace
+{
+    thread_local const Table* tlTable = nullptr;
+
+    double tableHz (const Table& t, int k) noexcept
+    {
+        if (k < 0)   return t.hz[0] * std::exp2 ((double) k / 12.0);
+        if (k > 127) return t.hz[127] * std::exp2 ((double) (k - 127) / 12.0);
+        return t.hz[k];
+    }
+}
+
+const Table* current() noexcept { return tlTable; }
+
+Scope::Scope (const Table* t) noexcept
+{
+    if (t != nullptr)
+    {
+        previous = tlTable;
+        tlTable = t;
+        set = true;
+    }
+}
+
+Scope::~Scope()
+{
+    if (set)
+        tlTable = previous;
+}
+
+double tablePitch (const Table& t, int key) noexcept
+{
+    const double hz = tableHz (t, key);
+    return hz > 0.0 ? 69.0 + 12.0 * std::log2 (hz / 440.0) : (double) key;
+}
+
 double noteToHz (double note) noexcept
 {
+    if (const auto* t = tlTable)
+    {
+        // between two keys in proportion (as with an MTS-ESP master)
+        const double lo = std::floor (note);
+        const int k = (int) lo;
+        const double f0 = tableHz (*t, k);
+        const double frac = note - lo;
+        if (frac <= 0.0)
+            return f0;
+        const double f1 = tableHz (*t, k + 1);
+        return f0 > 0.0 && f1 > 0.0 ? f0 * std::pow (f1 / f0, frac) : equalTempered (note);
+    }
+
    #if AQUANODE_USE_MTS_ESP
     if (masterPresent.load (std::memory_order_relaxed))
         if (auto* c = client())
@@ -79,6 +128,9 @@ double noteToHz (double note) noexcept
 
 bool shouldFilterNote (int note) noexcept
 {
+    if (const auto* t = tlTable)
+        return note >= 0 && note < 128 && ! t->mapped[note];
+
    #if AQUANODE_USE_MTS_ESP
     if (masterPresent.load (std::memory_order_relaxed) && note >= 0 && note < 128)
         if (auto* c = client())

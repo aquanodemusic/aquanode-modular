@@ -463,6 +463,17 @@ public:
             }
             for (int m : reg) rollsOf[m].push_back (r);
         }
+        // (6.9.14) only the lanes whose sound goes into this arranger's Lanes In belong to it
+        // (Add and Rescan first move a clean lane's cables from the Audio Out over to it)
+        std::set<int> intoLanes;
+        for (const auto& c : proc.getCables())
+            if (c.toModule == myId && c.toSocket == "lanesIn") intoLanes.insert (c.fromModule);
+        auto reachesLanes = [&] (int r)
+        {
+            if (adopting || intoLanes.count (r) > 0) return true;
+            for (int m : region[r]) if (intoLanes.count (m) > 0) return true;
+            return false;
+        };
         auto rollLabel = [&] (int r) -> juce::String
         {
             for (const auto& p : patterns) if (p.rollId == r) return "Piano Roll " + juce::String (p.number);
@@ -500,6 +511,7 @@ public:
             for (const auto& p : patterns) bound = bound || p.rollId == r;
             if (bound) continue;
             if (claimed.count (r) > 0) continue;          // (on another Fruit Arranger)
+            if (! reachesLanes (r)) continue;              // (6.9.14: not this arranger's lane)
             const auto why = problemOf (r);
             if (why.isNotEmpty() || dismissed.count (r) > 0)
             {
@@ -523,15 +535,17 @@ public:
             auto* inst = proc.getInstance (p.rollId);
             auto* roll = inst != nullptr ? dynamic_cast<PianoRollModule*> (inst->dsp.get()) : nullptr;
             juce::String problem;
+            const bool free = roll != nullptr && claimed.count (p.rollId) == 0 && ! reachesLanes (p.rollId);
             if (roll == nullptr) problem = "its Piano Roll was deleted";
             else if (claimed.count (p.rollId) > 0) problem = "it is on another Fruit Arranger";
+            else if (free) problem = "its sound does not go into Lanes In";   // (6.9.14: it plays on its own meanwhile)
             else problem = problemOf (p.rollId);
             const bool valid = problem.isEmpty();
             const auto name = roll != nullptr ? namesOf (proc, region[p.rollId], p.rollId) : p.name;
             const double loop = roll != nullptr ? roll->loopLengthBeats() : p.loopBeats;
             if (valid != p.valid || problem != p.problem || name != p.name || loop != p.loopBeats) changed = true;
             p.valid = valid; p.problem = problem; p.name = name; p.loopBeats = loop;
-            if (roll != nullptr && claimed.count (p.rollId) == 0)
+            if (roll != nullptr && claimed.count (p.rollId) == 0 && ! free)
             {
                 roll->arrangerNumber.store (p.number, std::memory_order_relaxed);
                 links.songs.push_back ({ myId, p.number - 1, p.rollId });   // (crossed out too: silent in the song, not its own)
@@ -581,6 +595,7 @@ public:
     }
     std::set<int> linkedAutos;
     bool inSync { false };
+    bool adopting { false };   // (6.9.14) Add / Rescan: lanes join before they are wired to Lanes In
 
     // a pattern's name: the synths its roll plays
     static juce::String namesOf (AquanodeModularAudioProcessor& proc, const std::set<int>& reg, int roll)
@@ -599,7 +614,9 @@ public:
     void adopt (AquanodeModularAudioProcessor& proc)
     {
         dismissed.clear();
-        proc.routingChanged();          // (a fresh check: every clean piano roll on it)
+        adopting = true;                // (every clean piano roll on it, connected to Lanes In or not yet)
+        proc.routingChanged();          // (a fresh check)
+        adopting = false;
         for (const auto& p : patterns)
             if (p.valid && ! hasPills (Kind::Pattern, p.number))
                 placePill (Kind::Pattern, p.number, firstEmptyTrack(), 0.0);
@@ -750,7 +767,7 @@ public:
             "Added from the sidebar it moves the patterns' cables into the Audio Out over to Lanes In. Inside its patterns "
             "latency compensation is always on. Own Play / Stop, or the host's transport.";
         d.section = ModuleSection::Utility;
-        d.sockets = { audioIn ("lanesIn", "Lanes In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { audioIn ("lanesIn", "Lanes In"), audioOut ("audioOut", "Audio Out"), tempoIn() };   // (6.9.10: tempo per lane)
         for (int k = 0; k < kRolls; ++k) d.sockets.push_back (hiddenSocket (modOut ("roll" + juce::String (k + 1), "Roll " + juce::String (k + 1))));
         for (int k = 0; k < kAutos; ++k) d.sockets.push_back (hiddenSocket (unipolarOut ("auto" + juce::String (k + 1), "Auto " + juce::String (k + 1))));
         d.params = {
@@ -1905,4 +1922,11 @@ void fruitArrangerTestSeek (SynthModule* m, double beat) { if (auto* a = asArran
 void fruitArrangerTestAddPill (SynthModule* m, int kind, int item, double start, int track)
 {
     if (auto* a = asArranger (m)) a->placePill ((Kind) kind, item, track, start);
+}
+// (6.9.14) the piano rolls that are its patterns (valid or crossed out)
+int fruitArrangerTestPatternCount (SynthModule* m, bool validOnly)
+{
+    int n = 0;
+    if (auto* a = asArranger (m)) for (const auto& p : a->patterns) if (! validOnly || p.valid) ++n;
+    return n;
 }

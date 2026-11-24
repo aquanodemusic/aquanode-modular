@@ -2,7 +2,6 @@
 #include "PluginProcessor.h"
 #include "../Editor/PluginEditor.h"
 #include "../Modules/Core/ModuleRegistry.h"
-#include "../Modules/Utilities/MIDI/MidiAddModule.h"
 #include "../Modules/Utilities/MIDI/DiscardMidiModule.h"
 #include "../Modules/Utilities/Control/DawModModule.h"
 #include "../Modules/Utilities/MIDI/PianoRollModule.h"
@@ -22,6 +21,10 @@ void AquanodeModularAudioProcessor::initInstanceBuffers (ModuleInstance& inst)
     inst.inBuf.assign ((size_t) inst.numIn, { 0.0f, 0.0f });
     inst.outBuf.assign ((size_t) inst.numOut, { 0.0f, 0.0f });
     inst.prevOutBuf.assign ((size_t) inst.numOut, { 0.0f, 0.0f });
+
+    // a patch tuning reaches a hosted plugin as bent notes (6.9.10)
+    if (inst.dsp->retunesByMpeBend() && inst.dsp->retuner == nullptr)
+        inst.dsp->retuner = std::make_unique<aquanode::TuningRetuner>();
 
     // per-voice lanes for anything that can run per-voice (PerVoice or Flexible)
     if (inst.dsp->voiceMode() != aquanode::VoiceMode::Global)
@@ -196,6 +199,16 @@ bool AquanodeModularAudioProcessor::addCable (int fromModule, const juce::String
     if (srcMidi && src->dsp->emitsMpeMidi() && ! aquanode::typeAcceptsMpe (dst->descriptor().typeId))
         return false;
 
+    // tempo per lane (6.9.10): a Tempo Out only into a Tempo In and the other
+    // way round; a Tempo In follows one Tempo - a new cable replaces the old
+    if ((fromSocket == "tempoOut") != (toSocket == "tempoIn"))
+        return false;
+    if (toSocket == "tempoIn")
+        cables.erase (std::remove_if (cables.begin(), cables.end(), [&] (const CableInfo& c)
+                                      { return c.toModule == toModule && c.toSocket == "tempoIn"
+                                            && ! (c.fromModule == fromModule && c.fromSocket == fromSocket); }),
+                      cables.end());
+
     // Several MIDI sources may feed one socket: a generator can follow an
     // Arp AND a Midi Add, or drone on three Always Midis at once. They stack
     // rather than replace, so nothing is removed here.
@@ -229,6 +242,8 @@ bool AquanodeModularAudioProcessor::addParamCable (int fromModule, const juce::S
         return false;
     if (src->descriptor().outputIndexOf (fromSocket) < 0)
         return false;
+    if (fromSocket == "tempoOut")
+        return false;   // (a Tempo Out only feeds Tempo Ins, 6.9.10)
 
     // target must be a modulatable rotary parameter that is either visible or
     // explicitly exposed as a cable target by the module's custom UI (e.g.

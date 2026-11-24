@@ -405,7 +405,7 @@ namespace aquanode::acid303
                     fbState = 2.0 * lp - fbState;
                 }
                 // VCA, then the high-pass after it
-                const double out = v * vca;
+                const double out = v * vca * kMakeup;
                 const double lp = outG * out + (1.0 - outG) * outHpState;
                 outHpState = 2.0 * lp - outHpState;
                 y2[n] = (out - lp) * (wave == 0 ? sawGain : squareGain);
@@ -465,7 +465,7 @@ namespace aquanode::acid303
         // cached per knob change / pitch change
         Knobs lastKnobs;
         bool knobsValid = false, pitchValid = false;
-        double kBase = 0.0, kDepth = 0.0, kSweep = 0.0, kVcaAcc = 0.0, kFb = 0.0, kFbNow = 0.0, kTrack = 0.0, kDrive = 1.0, inc = 0.0;
+        double kBase = 0.0, kDepth = 0.0, kSweep = 0.0, kVcaAcc = 0.0, kFb = 0.0, kFbNow = 0.0, kTrack = 0.0, kDrive = 1.0, kMakeup = 1.0, inc = 0.0;
         static constexpr double kLowC = 6.0313;   // log2 of 65.41 Hz, the 303's low C
         const float* tab = nullptr;
 
@@ -480,6 +480,13 @@ namespace aquanode::acid303
             kFb = cal[ResMax] * std::pow (r, cal[ResCurve]);
             kTrack = k.track;
             kDrive = drive * std::exp2 (5.0 * std::clamp (k.drive, 0.0, 1.0));
+            // (6.9.12) the limit inside the filter's loop holds the level down as
+            // Drive pushes into it (up to 10 dB at full): made up after the filter,
+            // measured - exactly 1 with Drive at 0, so nothing else changes
+            {
+                const double r = kDrive / drive;
+                kMakeup = std::sqrt ((1.0 + (r / 9.0) * (r / 9.0)) / (1.0 + 1.0 / 81.0));
+            }
             const double st = std::max (0.05, k.sweepTime);
             chargeCoef = coefOf (std::exp (cal[AccentChargeLn]) * st, fs);
             releaseCoef = coefOf (std::exp (cal[AccentReleaseLn]) * st, fs);

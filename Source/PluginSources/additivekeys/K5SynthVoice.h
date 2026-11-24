@@ -1,4 +1,5 @@
 #pragma once
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
 #include <cmath>
@@ -909,7 +910,7 @@ public:
         pitchBendSemitones = (float) (currentPitchWheelPosition - 8192) / 8192.0f * bendRange;
         voice.setBendRatio (std::exp2 (pitchBendSemitones / 12.0f));
 
-        const float frequency = (float) juce::MidiMessage::getMidiNoteInHertz (midiNoteNumber);
+        const float frequency = (float) ::aquanode::tuning::noteToHz ((double) midiNoteNumber);
         voice.noteOn (frequency, juce::jmax (0.05f, velocity));
     }
 

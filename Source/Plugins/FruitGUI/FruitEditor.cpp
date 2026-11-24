@@ -188,7 +188,7 @@ FruitSlotCard::FruitSlotCard (FruitProcessor& p, int id, const juce::String& t)
                 c->index = i;
                 if (ps.visibleWhenParamId.isNotEmpty())
                     for (int j = 0; j < (int) params.size(); ++j)
-                        if (params[(size_t) j].id == ps.visibleWhenParamId) { c->visIndex = j; c->visEquals = ps.visibleWhenEquals; break; }
+                        if (params[(size_t) j].id == ps.visibleWhenParamId) { c->visIndex = j; c->visEquals = ps.visibleWhenEquals; c->visFrom = ps.visibleFromMin; break; }
                 c->label = std::make_unique<juce::Label> (juce::String(), ps.label);
                 c->label->setJustificationType (juce::Justification::centred);
                 c->label->setFont (font (12.0f));
@@ -268,7 +268,8 @@ bool FruitSlotCard::updateShown()
     bool changed = false;
     for (auto& c : controls)
     {
-        const bool show = c->visIndex < 0 || juce::roundToInt (m->getParameterBase (c->visIndex)) == juce::roundToInt (c->visEquals);
+        const bool show = c->visIndex < 0 || (c->visFrom ? juce::roundToInt (m->getParameterBase (c->visIndex)) >= juce::roundToInt (c->visEquals)
+                                                             : juce::roundToInt (m->getParameterBase (c->visIndex)) == juce::roundToInt (c->visEquals));
         if (show == c->shown) continue;
         c->shown = show;
         changed = true;

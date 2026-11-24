@@ -1,3 +1,4 @@
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "Engine.h"
 #include "Tables.h"
 #include <algorithm>
@@ -358,7 +359,7 @@ void Engine::updateVoiceControl(Voice& v) {
   }
   v.nCopies = copies;
   int n = std::clamp(v.note, 0, 127);
-  double base = 440.0 * std::pow(2.0, (v.pitch + semis - 69.0) / 12.0) * 0.5 * tbl::tuneRatio[n] * detune;
+  double base = ::aquanode::tuning::noteToHz((double) (v.pitch + semis)) * 0.5 * tbl::tuneRatio[n] * detune;
   const int smP[3] = { OSC1sm, OSC2sm, OSC3sm };
   for (int o = 0; o < 3; ++o) {
     const double la = amt(p[LFO1De + 5 * o]);          // LFO n modulates oscillator n

@@ -25,7 +25,18 @@ namespace aquanode::plugins::whole
         bool showPanel { false };            // the plugin's own panel on the card
         int panelWidth { 0 }, panelHeight { 0 }, cardWidth { 520 };
         std::function<bool (const juce::String& paramId)> hide;   // parameters kept but not shown as knobs
-        juce::String typeId() const { return "plugin." + pluginId + ".whole"; }
+        juce::String suffix { "whole" };     // (6.9.14) "engine": the one with section cards
+        // (6.9.16) knobs held at a value (in the plugin's units; a menu's index), not shown:
+        // what this patch version is (EcoSee's: its Custom 3D Grid view)
+        std::vector<std::pair<juce::String, float>> fixed;
+        // (6.9.21) shown knobs that start elsewhere than the plugin's own start (EcoSee's Auto Rotate: off),
+        // and its On / Off switches as wide menus (so the word shows)
+        std::vector<std::pair<juce::String, float>> startAt;
+        bool wideSwitches { false };
+        // (6.9.16) only this part of the plugin's panel on the card (its own pixels; empty: all of it)
+        juce::Rectangle<int> panelCrop;
+        bool cardsIn { false };              // (6.9.14) a Cards In socket for section cards
+        juce::String typeId() const { return "plugin." + pluginId + "." + suffix; }
     };
 
     // what the sidebar lists before the app runs (no knobs yet)
@@ -60,6 +71,15 @@ namespace aquanode::plugins::whole
     };
 
     PatchPorts build (const Def& def, AquanodeModularAudioProcessor& patch, juce::AudioProcessor& original, juce::Point<int> origin);
+
+    // (6.9.14) the patch version in smaller cards: the engine (engineDef: its own
+    // knobs the ones no card holds) and the section cards chained into its Cards
+    // In. The whole module (wholeDef) stays registered for patches that have it.
+    // All defs must be statics.
+    bool registerWithCards (const Def& wholeDef, const Def& engineDef, const std::vector<kit::CardDef>& cards,
+                            PresetLoadFn loader, int columns = 4);
+    // a card's knob spec, from a fresh instance of the plugin (by its parameter id)
+    ParamSpec pluginSpec (const juce::String& pluginId, const juce::String& paramId);
 }
 
 // At the end of Plugin<Name>.cpp: the plugin's one-module patch version.

@@ -14,6 +14,7 @@
 // themselves - only <JuceHeader.h>, which Aquanode's PluginPrelude.h (or a
 // standalone build) brings in first.
 //==============================================================================
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include <JuceHeader.h>
 
 namespace tb
@@ -23,7 +24,7 @@ namespace tb
 
     inline float dbToGain (float db) { return std::pow (10.0f, db * 0.05f); }
     inline float gainToDb (float g)  { return 20.0f * std::log10 (std::max (g, 1.0e-9f)); }
-    inline float midiToHz (float note) { return 440.0f * std::exp2 ((note - 69.0f) / 12.0f); }
+    inline float midiToHz (float note) { return (float) ::aquanode::tuning::noteToHz ((double) note); }
     inline float clamp01 (float x) { return x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x); }
 
     // 0..99 times: 0 -> 1 ms, 50 -> 0.18 s, 80 -> 4 s, 99 -> 30 s

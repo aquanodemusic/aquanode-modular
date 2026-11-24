@@ -146,6 +146,7 @@ namespace vital {
     producers_->plug(bent_midi_, ProducersModule::kMidi);
     producers_->plug(note_count(), ProducersModule::kNoteCount);
     producers_->plug(active_mask(), ProducersModule::kActiveVoices);
+    producers_->plug(aq_slide(), ProducersModule::kAqSlide);   // (Aquanode, 6.9.12)
     addSubmodule(producers_);
     addProcessor(producers_);
   }

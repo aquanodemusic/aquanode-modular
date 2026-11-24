@@ -1,3 +1,4 @@
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "AquaVibrioEngine.h"
 
 namespace aquavibrio
@@ -2470,7 +2471,7 @@ void Engine::renderVoice (int v, const LayerState& L, float& outL, float& outR, 
     const float reso2Trim = 1.0f - 0.4f * res2 * res2;
 
     const float fbal = clamp01 (b.filterBalance + m (Dest::FilterBalance));
-    const float noteHz = voice.memo.noteHz.get (voice.glideNote, [] (float n) { return 440.0f * std::exp2 ((n - 69.0f) / 12.0f); });
+    const float noteHz = voice.memo.noteHz.get (voice.glideNote, [] (float n) { return (float) ::aquanode::tuning::noteToHz (n); });
     const float satAmount = (ov + 1.0f) * 0.5f;
 
     const auto sat = [&] (float& l, float& r)

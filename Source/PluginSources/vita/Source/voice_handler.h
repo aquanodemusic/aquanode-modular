@@ -97,6 +97,7 @@ namespace vital {
         aftertouch_sample_ = 0;
         slide_ = 0.0f;
         slide_sample_ = 0;
+        slide_seen_ = false;
         setKeyState(kTriggering);
       }
 
@@ -166,6 +167,10 @@ namespace vital {
         slide_ = slide;
         slide_sample_ = sample;
       }
+      // (Aquanode, 6.9.12) Slide has come for this note (a CC 74 on its channel): only then
+      // does Aquanode's default MPE map move the wavetable frame (-1..1 around the knob)
+      force_inline void setSlideSeen(bool seen) { slide_seen_ = seen; }
+      force_inline mono_float aqSlide() const { return slide_seen_ ? 2.0f * slide_ - 1.0f : 0.0f; }
 
       force_inline bool hasNewAftertouch() {
         return aftertouch_sample_ >= 0;
@@ -235,6 +240,7 @@ namespace vital {
 
       int slide_sample_;
       mono_float slide_;
+      bool slide_seen_ = false;
 
       AggregateVoice* parent_;
   };
@@ -247,6 +253,10 @@ namespace vital {
   class VoiceHandler : public SynthModule, public NoteHandler {
     public:
       static constexpr mono_float kLocalPitchBendRange = 48.0f;
+      // (Aquanode, 6.9.10) the per-finger (MPE member channel) bend range:
+      // 48 semitones, or the preset's Bend range (the card's choice)
+      void setLocalPitchBendRange(mono_float semis) { local_pitch_bend_range_ = semis; }
+      mono_float local_pitch_bend_range_ = kLocalPitchBendRange;
 
       enum {
         kPolyphony,
@@ -355,6 +365,7 @@ namespace vital {
       force_inline Output* lift() { return &lift_; }
       force_inline Output* aftertouch() { return &aftertouch_; }
       force_inline Output* slide() { return &slide_; }
+      force_inline Output* aq_slide() { return &aq_slide_; }   // (Aquanode, 6.9.12)
       force_inline Output* active_mask() { return &active_mask_; }
       force_inline Output* pitch_wheel() { return &pitch_wheel_; }
       force_inline Output* pitch_wheel_percent() { return &pitch_wheel_percent_; }
@@ -455,6 +466,7 @@ namespace vital {
       cr::Output lift_;
       cr::Output aftertouch_;
       cr::Output slide_;
+      cr::Output aq_slide_;
       cr::Output active_mask_;
       cr::Output mod_wheel_;
       cr::Output pitch_wheel_;
@@ -468,6 +480,7 @@ namespace vital {
       mono_float zoned_pitch_wheel_values_[kNumMidiChannels];
       mono_float pressure_values_[kNumMidiChannels];
       mono_float slide_values_[kNumMidiChannels];
+      bool slide_seen_values_[kNumMidiChannels] = {};
 
       const Tuning* tuning_;
       VoicePriority voice_priority_;

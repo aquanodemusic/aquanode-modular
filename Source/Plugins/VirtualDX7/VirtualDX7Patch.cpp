@@ -69,9 +69,9 @@ public:
                         "tune and portamento (DX7 time law, retain/follow or fingered/full time, glissando) on "
                         "Pitch Out, for every operator's Pitch In; and the wheel, foot (CC 4), breath (CC 2) "
                         "and aftertouch, each with a range and its PITCH / AMP / EG BIAS assignments - into "
-                        "the DX LFO's Wheel, Amp and Hold inputs. Bend comes from here: the patch's Midi "
+                        "the DX LFO's Wheel, Amp and Hold inputs. Bend comes from here: the patch's MIDI "
                         "Controls has its own bend range at 0.";
-        d.sockets = { midiIn ("addMidiIn", "Add Midi In"),
+        d.sockets = { midiIn ("addMidiIn", "Add MIDI In"),
                       modOut ("pitchOut", "Pitch Out"), modOut ("pitchDepth", "LFO Depth"),
                       modOut ("ampBias", "Amp Bias"), modOut ("egHold", "EG Hold") };
         d.params = {
@@ -196,7 +196,7 @@ public:
         d.description = "VirtualDX7's Chord section on the MIDI before the operators: up to six intervals added "
                         "to every note (moving one re-strikes it on the held notes), and Sustain, which holds "
                         "every note until it is switched off.";
-        d.sockets = { midiIn ("midiIn", "Midi In"), midiOut ("midiOut", "Midi Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), midiOut ("midiOut", "MIDI Out") };
         d.params = { makeCombo ("fxChordOn", "Chord", offOn(), 0, 0, 1),
                      makeCombo ("fxChordSustain", "Sustain", offOn(), 0, 0, 1) };
         for (int i = 1; i <= 6; ++i)

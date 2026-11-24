@@ -210,7 +210,7 @@ static ModuleDescriptor dxOperatorDescriptor()
         audioIn  ("fbIn",      "Fb In"),
         modIn    ("amIn",      "AM In"),
         modIn    ("pitchIn",   "Pitch In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
 

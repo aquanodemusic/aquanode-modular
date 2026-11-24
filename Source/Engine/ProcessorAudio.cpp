@@ -2,11 +2,11 @@
 #include "PluginProcessor.h"
 #include "../Editor/PluginEditor.h"
 #include "../Modules/Core/ModuleRegistry.h"
-#include "../Modules/Utilities/MIDI/MidiAddModule.h"
 #include "../Modules/Utilities/MIDI/DiscardMidiModule.h"
 #include "../Modules/Utilities/Control/DawModModule.h"
 #include "../Modules/Utilities/MIDI/PianoRollModule.h"
 #include "PatchStateFiles.h"
+#include "../Plugins/Host/HostedPlugin.h"
 #include "../Platform/AndroidPerfHint.h"
 
 #include <algorithm>
@@ -151,22 +151,57 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     for (size_t i = 0; i < dawModParams.size(); ++i)
         dawModSnapshot[i] = dawModParams[i] != nullptr ? dawModParams[i]->get() : 0.0f;
 
-    for (auto& n : nodes)
+    for (size_t ni = 0; ni < nodes.size(); ++ni)
     {
+        auto& n = nodes[ni];
         n->dsp->setHostPlayHead (getPlayHead());
-        n->dsp->setTempo (bpm);
+        // tempo per lane (6.9.10): a patched Tempo In wins over the patch's BPM
+        // (its own Tempo In, or the lane it is in - see rebuildGraph)
+        double laneBpm = bpm;
+        bool fromLane = false;
+        if (ni < graph->tempoSource.size() && graph->tempoSource[ni] >= 0)
+        {
+            const size_t ti = (size_t) graph->tempoSource[ni];
+            const auto& src = *nodes[ti];
+            const int sock = graph->tempoOutSock[ti];
+            if (! src.perVoice && sock >= 0 && sock < (int) src.outBuf.size())
+            {
+                // (its value this block; before the first sample the knob itself)
+                double v = (double) src.outBuf[(size_t) sock][0] * aquanode::kTempoSignalScale;
+                if (v < 19.5) v = (double) src.dsp->getParameter ("bpm");
+                if (v >= 19.5 && v <= 1000.5)
+                {
+                    laneBpm = juce::jlimit (20.0, 999.0, v);
+                    fromLane = true;
+                }
+            }
+        }
+        n->dsp->setTempoFromLane (fromLane);
+        n->dsp->setTempo (laneBpm);
         n->dsp->setHostTransport (hostTransport);
         n->dsp->setMidiControls (&midiState);
         n->dsp->setHostModValues (dawModSnapshot.data());
         // a tempo a module asks for: into the BPM box - or, where a host sets the tempo (a nested
         // Aquanode's is the patch around it), on to that host
-        if (const double wanted = n->dsp->takeTempoRequest(); wanted > 0.0)
+        if (const double wanted = n->dsp->takeTempoRequest(); wanted > 0.0
+            && ! (ni < graph->tempoOutPatched.size() && graph->tempoOutPatched[ni] != 0))   // (a Tempo feeding lanes: theirs only)
         {
             if (hostTransport.hasBpm) tempoRequest.store (wanted, std::memory_order_relaxed);
             else patchBpm.store (juce::jlimit (20.0, 999.0, wanted));
         }
         n->dsp->blockStart();
     }
+
+    // (6.9.12) how far Slide moves a wavetable in the default MPE map: the first MPE module's knob
+    midiState.slideWavetableDepth = 0.0f;   // (6.9.15: 0 without an MPE module)
+    midiState.mpeBendRange = 48.0f;
+    for (auto& n : nodes) if (const float r = n->dsp->mpeBendRangeSetting(); r >= 0.0f) { midiState.mpeBendRange = r; break; }
+    for (auto& n : nodes)
+        if (const float d = n->dsp->slideWavetableSetting(); d >= 0.0f)
+        {
+            midiState.slideWavetableDepth = d;
+            break;
+        }
 
     // the pitch-bend range comes from the first Midi Controls module, if any
     midiState.bendRangeSemis = 2.0f;
@@ -177,12 +212,40 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             break;
         }
 
+    // the patch's own tuning (a Microtuning module in Global mode, 6.9.10):
+    // every pitch this block goes through it (a nested patch keeps the one
+    // around it unless it has its own), and whether the keys are Linear steps
+    const aquanode::tuning::Table* patchTuning = nullptr;
+    bool linearKeys = false;
+    for (auto& n : nodes)
+    {
+        if (patchTuning == nullptr)
+            patchTuning = n->dsp->globalTuningTable();
+        linearKeys = linearKeys || n->dsp->usesLinearKeys();
+    }
+    const aquanode::tuning::Scope tuningScope (patchTuning);
+    for (auto& n : nodes)
+        n->dsp->setLinearKeysInPatch (linearKeys);
+
+    // a played key a Discard MIDI in Global mode leaves out: no one hears it
+    auto keyDiscarded = [&nodes] (int note)
+    {
+        for (auto& n : nodes)
+            if (n->dsp->discardsPlayedKey (note))
+                return true;
+        return false;
+    };
+
     // the editor's own MIDI (the on-screen keys with MPE on) joins at the start
     {
         const juce::SpinLock::ScopedTryLockType sl (uiMidiLock);
+        screenMidi.clear();
         if (sl.isLocked() && ! uiMidi.isEmpty())
         {
             midiMessages.addEvents (uiMidi, 0, -1, 0);
+            for (const auto meta : uiMidi)
+                if (! meta.getMessage().isNoteOnOrOff() && screenMidi.size() < screenMidi.capacity())
+                    screenMidi.push_back (meta.getMessage());
             uiMidi.clear();
         }
     }
@@ -192,6 +255,7 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // engine walks the buffer below so tapped notes are seen this block.
     keyboardState.processNextMidiBuffer (midiMessages, 0, numSamples, true);
     const bool mpe = mpeEnabled.load (std::memory_order_relaxed);
+    midiState.mpeSwitch = mpe;
 
     auto midiIt = midiMessages.begin();
     const auto midiEnd = midiMessages.end();
@@ -305,30 +369,83 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         return y;
     };
 
+    // a knob cable's value onto its knob
+    auto applyKnob = [] (ModuleInstance& node, const CompiledParamEdge& pe, float value)
+    {
+        if (pe.absolute)
+        {
+            if (pe.absoluteSource != nullptr && ! pe.absoluteSource->drivesKnobsNow())
+                return;   // (MIDI Learn before its control has moved: the knob as it is)
+
+            // 0..1 -> the knob's whole range (inverted for a negative depth),
+            // blended with the knob's own setting by |depth|: 100% = the curve alone
+            const float v = juce::jlimit (0.0f, 1.0f, value);
+            const float span = pe.maxValue - pe.minValue;
+            const float target = pe.depth >= 0.0f ? pe.minValue + v * span
+                                                  : pe.maxValue - v * span;
+            const float base = node.dsp->getParameterBase (pe.paramIdx);
+            node.dsp->addParamMod (pe.paramIdx, std::abs (pe.depth) * (target - base));
+        }
+        else
+        {
+            node.dsp->addParamMod (pe.paramIdx, (value * pe.polMul + pe.polAdd) * pe.scale);
+        }
+    };
+
     for (int s = 0; s < numSamples; ++s)
     {
         // sample-accurate MIDI -> global voice events (omni)
         while (midiIt != midiEnd && (*midiIt).samplePosition <= s)
         {
-            const auto msg = (*midiIt).getMessage();
+            const auto rawMsg = (*midiIt).getMessage();
+            auto msg = rawMsg;
+            // (6.9.15) the MPE module's Bend Range: a member channel's bend scaled from MPE's 48
+            // semitones, for everything that hears it (the voices, the plugins, MIDI Add)
+            if (mpe && msg.isPitchWheel() && msg.getChannel() >= 2 && midiState.mpeBendRange < 47.999f)
+                msg = juce::MidiMessage::pitchWheel (msg.getChannel(), juce::jlimit (0, 16383,
+                          8192 + (int) std::lround ((msg.getPitchWheelValue() - 8192) * (double) midiState.mpeBendRange / 48.0)));
+
+            // one of the on-screen keys' own (pressure, bend, slide): played, not learned
+            screenMidiNow = false;
+            if (! screenMidi.empty() && ! msg.isNoteOnOrOff())
+                for (auto it = screenMidi.begin(); it != screenMidi.end(); ++it)
+                    if (it->getRawDataSize() == rawMsg.getRawDataSize()
+                        && std::memcmp (it->getRawData(), rawMsg.getRawData(), (size_t) rawMsg.getRawDataSize()) == 0)
+                    {
+                        screenMidi.erase (it);
+                        screenMidiNow = true;
+                        break;
+                    }
 
             // hosted plugins hear the host MIDI as it is: notes when their
             // Midi In is empty, everything else always
-            if (! graph->rawNodes.empty()
-                && ! (msg.isNoteOn() && aquanode::tuning::shouldFilterNote (msg.getNoteNumber())))
+            const bool keyLeftOut = msg.isNoteOn()
+                                    && (aquanode::tuning::shouldFilterNote (msg.getNoteNumber()) || keyDiscarded (msg.getNoteNumber()));
+            if (! graph->rawNodes.empty() && ! keyLeftOut)
             {
                 const bool isNote = msg.isNoteOnOrOff();
-                for (int ni : (isNote ? graph->keyboardRawNodes : graph->rawNodes))
+                // (6.9.12) with MPE, a finger's own bend, pressure and Slide (on its
+                // member channel) belong to its note: only what plays the keys hears
+                // them - a plugin fed by MIDI Add has its own notes on those channels,
+                // and the finger's bend would detune whichever of them sat there
+                const bool fingerExpression = mpe && msg.getChannel() >= 2
+                    && (msg.isPitchWheel() || msg.isChannelPressure() || msg.isAftertouch()
+                        || (msg.isController() && msg.getControllerNumber() == 74));
+                for (int ni : ((isNote || fingerExpression) ? graph->keyboardRawNodes : graph->rawNodes))
                     nodes[(size_t) ni]->dsp->deliverRawMidi (msg);
             }
-            if (msg.isNoteOn() && aquanode::tuning::shouldFilterNote (msg.getNoteNumber()))
-                {}   // a key the MTS-ESP master's keyboard map leaves out
+            if (keyLeftOut)
+                {}   // a key the tuning's keyboard map (or a Global Discard MIDI) leaves out
             else if (mpe && msg.getChannel() >= 2 && ! msg.isNoteOff() && ! msg.isAllNotesOff() && ! msg.isAllSoundOff())
                 mpeMessage (*graph, msg);   // a member channel: its note's own expression
             else if (msg.isNoteOn())
                 keyboardEvent (*graph, { msg.getNoteNumber(), msg.getFloatVelocity(), true });
             else if (msg.isNoteOff())
+            {
+                if (mpe && msg.getChannel() >= 2 && mpeChanNote[msg.getChannel()] == msg.getNoteNumber())
+                    mpeChanNote[msg.getChannel()] = -1;   // the finger let go
                 keyboardEvent (*graph, { msg.getNoteNumber(), 0.0f, false });
+            }
             else if (msg.isAllNotesOff() || msg.isAllSoundOff())
             {
                 std::fill (std::begin (sustainedKeys), std::end (sustainedKeys), false);
@@ -336,6 +453,7 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             }
             else
                 handleControlMessage (*graph, msg);
+            screenMidiNow = false;
             ++midiIt;
         }
 
@@ -397,28 +515,7 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // envelope on a cutoff knob moves each note's filter by that
             // note's envelope) - that part is applied in the voice loop below.
             const auto& pedges = graph->incomingParams[ni];
-            auto applyParamEdge = [&node] (const CompiledParamEdge& pe, float value)
-            {
-                if (pe.absolute)
-                {
-                    if (pe.absoluteSource != nullptr && ! pe.absoluteSource->drivesKnobsNow())
-                        return;   // (Midi Learn before its control has moved: the knob as it is)
-
-                    // 0..1 -> the knob's whole range (inverted for a
-                    // negative depth), blended with the knob's own
-                    // setting by |depth|: 100% = the curve alone
-                    const float v = juce::jlimit (0.0f, 1.0f, value);
-                    const float span = pe.maxValue - pe.minValue;
-                    const float target = pe.depth >= 0.0f ? pe.minValue + v * span
-                                                          : pe.maxValue - v * span;
-                    const float base = node.dsp->getParameterBase (pe.paramIdx);
-                    node.dsp->addParamMod (pe.paramIdx, std::abs (pe.depth) * (target - base));
-                }
-                else
-                {
-                    node.dsp->addParamMod (pe.paramIdx, (value * pe.polMul + pe.polAdd) * pe.scale);
-                }
-            };
+            auto applyParamEdge = [&node, &applyKnob] (const CompiledParamEdge& pe, float value) { applyKnob (node, pe, value); };
 
             auto globalEdgeValue = [&nodes, this] (const CompiledParamEdge& pe)
             {
@@ -808,3 +905,10 @@ void AquanodeModularAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         resetAllPending.store (true, std::memory_order_release);
     }
 }
+
+const juce::Array<int>& AquanodeModularAudioProcessor::blockSizeChoices()
+{
+    static const juce::Array<int> c { 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 };
+    return c;
+}
+

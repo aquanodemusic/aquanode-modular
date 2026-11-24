@@ -169,8 +169,8 @@ private:
     juce::TextButton moveOnlyButton { "Move Only" };      // every gesture moves and zooms the view (PatchCanvas::setMoveOnly)
     juce::TextButton cloneButton   { "Clone Selected" };
     juce::TextButton deleteButton  { "Delete Selected" };
-    juce::TextButton exportButton  { "Export Patch" };
-    juce::TextButton importButton  { "Import Patch" };
+    juce::TextButton exportButton  { "Save Patch" };
+    juce::TextButton importButton  { "Load Patch" };
     juce::TextButton renderButton  { "Render" };
     juce::TextButton pluginBlockButton { "CPU" };   // the CPU menu: the plugins' block, CPU Sleep, the Android hint (app-wide)
     juce::TextButton cpuSleepButton { "CPU Sleep" };      // sleep on silence for effects and filters (app-wide)
@@ -180,6 +180,13 @@ private:
     // doing the work (never shown): a menu item presses its button.
     juce::TextButton patchMenuButton { "Patch" };   // Initialize, Import, Export, Render
     juce::TextButton editMenuButton  { "Edit" };    // Clone, Delete, Region Select, Move Only
+
+    // (6.9.10) the computer keyboard as a MIDI keyboard (desktop; Edit menu,
+    // off unless switched on, remembered): Z S X D C V G B H N J M , = C4 up,
+    // Q 2 W 3 E R 5 T 6 Y 7 U I 9 O 0 P = C5 up, into the played keys
+    struct ComputerKeys;
+    std::unique_ptr<ComputerKeys> computerKeys;
+    void setComputerKeys (bool on);
     juce::TextButton viewMenuButton  { "View" };    // Keys, Sidebar, Mutator
     void showPatchMenu();
     void showEditMenu();

@@ -125,7 +125,7 @@ static ModuleDescriptor multibandDelayDescriptor()
     d.section = ModuleSection::Effect;
     d.sidebarOrder = 43;
     d.searchKeywords = "echo bands split crossover";
-    d.sockets = { audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out") };
+    d.sockets = { audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out"), tempoIn() };
     d.params = {
         makeRotary ("lowTime",  "Low Time",  1.0f, 2000.0f, 500.0f, 0, "ms", true),
         makeRotary ("midTime",  "Mid Time",  1.0f, 2000.0f, 375.0f, 0, "ms", true),

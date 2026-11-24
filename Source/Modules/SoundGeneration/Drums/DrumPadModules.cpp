@@ -252,7 +252,7 @@ ModuleDescriptor PadDrumModule::makeDescriptor (Kit k)
         d.description = "The 808's sixteen voices on 4 x 4 pads, physically modelled (bridged-T resonators, the six square waves, "
                         "the clap's sawtooth envelope) and fitted to recordings of the machine at every knob setting: its own Tone, "
                         "Decay, Snappy and Tuning move between them. Tap a pad to hear and edit it; each pad also has Level, Pan, "
-                        "Tune, Decay, Tone and three knobs on the model itself. Midi In plays the pads from Base Note up.";
+                        "Tune, Decay, Tone and three knobs on the model itself. MIDI In plays the pads from Base Note up.";
     }
     else if (k == Kit::TR909)
     {
@@ -261,17 +261,20 @@ ModuleDescriptor PadDrumModule::makeDescriptor (Kit k)
         d.description = "The 909's voices on 4 x 4 pads, modelled and fitted to recordings of the machine - kicks, snares, toms, "
                         "clap and rim from their circuits, the hats and cymbals as the 6-bit cymbal recordings the machine plays. "
                         "Every pad can take any of the 71 fitted sounds. Tap a pad to hear and edit it: Level, Pan, Tune, Decay, Tone "
-                        "and three knobs on the model. Midi In plays the pads from Base Note up.";
+                        "and three knobs on the model. MIDI In plays the pads from Base Note up.";
     }
     else
     {
         d.typeId = "osc.drumpads";
         d.displayName = "Drum Pads";
-        d.description = "Sixteen pads for drum sounds you load (wav, aiff, flac, ogg, mp3): tap LOAD in the tweaker above the pads. "
+        d.description = "Sixteen pads for drum sounds you load (wav, aiff, flac, ogg, mp3): LOAD PAD puts one on the selected pad "
+                        "(replacing what is there), LOAD MANY up to 16 at once onto the empty pads, in order. "
                         "Each pad has Level, Pan, Tune, Decay (shortens and fades the sound), Tone (darker or thinner) and a choke "
-                        "group. The sounds are saved with the patch. Midi In plays the pads from Base Note up.";
+                        "group: pads in the same group (1 - 4) cut each other off - hitting one stops the others still ringing, "
+                        "as a closed hi-hat silences the open one; None rings on whatever else plays. The sounds are saved "
+                        "with the patch. MIDI In plays the pads from Base Note up.";
     }
-    d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("out", "Audio Out") };
+    d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("out", "Audio Out") };
     d.params.push_back (makeRotary ("level", "Level", 0.0f, 1.0f, 0.7f, 0));
     d.params.push_back (makeSteppedList ("base", "Base Note", midiNoteNameChoices(), 36, 0).noMod());
     for (int i = 0; i < kPads; ++i)
@@ -673,8 +676,12 @@ namespace
             else
             {
                 addAndMakeVisible (loadButton);
+                addAndMakeVisible (loadManyButton);
                 addAndMakeVisible (clearButton);
                 loadButton.onClick = [this] { chooseSample(); };
+                loadManyButton.onClick = [this] { chooseMany(); };   // (6.9.16)
+                loadButton.setTooltip ("A sound for the selected pad (it replaces the one there)");
+                loadManyButton.setTooltip ("Up to 16 sounds at once: they go onto the empty pads, in order");
                 clearButton.onClick = [this] { if (auto* mm = mod()) { mm->clearPadSample (mm->selectedPad); refresh (true); } };
             }
             addAndMakeVisible (chokeBox);
@@ -701,8 +708,9 @@ namespace
             if (soundBox.isVisible()) soundBox.setBounds (top.reduced (1));
             else
             {
-                loadButton.setBounds (top.removeFromLeft (64).reduced (1));
-                clearButton.setBounds (top.removeFromLeft (64).reduced (1));
+                loadButton.setBounds (top.removeFromLeft (70).reduced (1));
+                loadManyButton.setBounds (top.removeFromLeft (78).reduced (1));
+                clearButton.setBounds (top.removeFromLeft (58).reduced (1));
                 nameArea = top.reduced (4, 0);
             }
             r.removeFromTop (4);
@@ -761,7 +769,7 @@ namespace
             {
                 g.setColour (juce::Colours::white.withAlpha (0.5f));
                 g.setFont (juce::Font (juce::FontOptions (11.0f)));
-                g.drawText (mm->kit() == Kit::Samples ? "Tap LOAD to put a sound on this pad" : "rendering...", waveArea, juce::Justification::centred);
+                g.drawText (mm->kit() == Kit::Samples ? "Tap LOAD PAD (or LOAD MANY) to put sounds on the pads" : "rendering...", waveArea, juce::Justification::centred);
             }
             if (mm->kit() == Kit::Samples && ! nameArea.isEmpty())
             {
@@ -923,10 +931,60 @@ namespace
                 });
         }
 
+        // (6.9.16) up to 16 sounds at once, onto the pads that have none (in order)
+        void chooseMany()
+        {
+            auto* mm = mod();
+            if (mm == nullptr) return;
+            chooser = std::make_shared<juce::FileChooser> ("Load drum sounds (up to 16)", juce::File(),
+                                                           aqp::android::pickerPatterns ("*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3"));
+            juce::Component::SafePointer<PadDrumEditor> safe (this);
+            auto weak = module;
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+                                      | juce::FileBrowserComponent::canSelectMultipleItems,
+                [safe, weak] (const juce::FileChooser& fc)
+                {
+                    auto* target = dynamic_cast<PadDrumModule*> (weak.get());
+                    if (target == nullptr) return;
+                    int pad = 0;
+                    auto nextEmpty = [&]
+                    {
+                        while (pad < kPads)
+                        {
+                            if (target->currentSample (pad) == nullptr) return pad;   // (the sound renders later)
+                            ++pad;
+                        }
+                        return -1;
+                    };
+                    int loaded = 0;
+                    for (const auto& url : fc.getURLResults())
+                    {
+                        if (loaded >= kPads) break;
+                        const int p = nextEmpty();
+                        if (p < 0) break;
+                        juce::MemoryBlock data;
+                        if (aqp::files::readDocument (url, data).isNotEmpty()) continue;
+                        juce::String name = url.isLocalFile() ? url.getLocalFile().getFileNameWithoutExtension() : juce::String();
+                       #if JUCE_ANDROID
+                        if (name.isEmpty())
+                            if (auto doc = juce::AndroidDocument::fromDocument (url); doc.hasValue())
+                                name = doc.getInfo().getName().upToLastOccurrenceOf (".", false, false);
+                       #endif
+                        if (name.isEmpty()) name = juce::URL::removeEscapeChars (url.getFileName()).upToLastOccurrenceOf (".", false, false);
+                        auto s = readSampleData (std::move (data), name);
+                        if (s == nullptr) continue;
+                        target->loadPadSample (p, std::move (s));
+                        ++pad;
+                        ++loaded;
+                    }
+                    if (safe != nullptr) safe->refresh (true);
+                });
+        }
+
         juce::WeakReference<SynthModule> module;
         juce::Colour accent;
         juce::ComboBox padBox, soundBox, chokeBox;
-        juce::TextButton loadButton { "LOAD" }, clearButton { "CLEAR" };
+        juce::TextButton loadButton { "LOAD PAD" }, loadManyButton { "LOAD MANY" }, clearButton { "CLEAR" };
         std::vector<std::unique_ptr<KnobUi>> knobs;
         juce::Rectangle<int> waveArea, gridArea, nameArea;
         std::shared_ptr<juce::FileChooser> chooser;

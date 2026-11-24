@@ -476,7 +476,7 @@ public:
         d.sockets = modInputs();
         d.sockets.push_back (audioIn ("fmIn", "FM In"));
         d.sockets.push_back (audioIn ("extIn", "Ext In"));
-        d.sockets.push_back (midiIn ("addMidiIn", "Add Midi In"));
+        d.sockets.push_back (midiIn ("addMidiIn", "Add MIDI In"));
         d.sockets.push_back (audioOut ("audioOut", "Audio Out"));
         d.sockets.push_back (audioOut ("waveOut", "Wave Out"));
         d.sockets.push_back (modOut ("levelOut", "Level Out"));
@@ -675,7 +675,7 @@ public:
                         "Env 2, Env 3, LFO 1, LFO 2 and the wheel. Wave Out carries the noise to oscillator "
                         "3's FM In for the hardware's FM Noise.";
         d.sockets = modInputs();
-        d.sockets.push_back (midiIn ("addMidiIn", "Add Midi In"));
+        d.sockets.push_back (midiIn ("addMidiIn", "Add MIDI In"));
         d.sockets.push_back (audioOut ("audioOut", "Audio Out"));
         d.sockets.push_back (audioOut ("waveOut", "Wave Out"));
         d.sockets.push_back (modOut ("levelOut", "Level Out"));
@@ -1297,9 +1297,9 @@ public:
     {
         auto d = baseDescriptor ("arp", "Arpeggiator", ModuleSection::Utility, 30, kArpTable);
         d.description = "Aquanova's arpeggiator: the held notes up, down or as played over 1-4 octaves, at its "
-                        "own 64-191 BPM or synced to the host, with gate time and latch. Its Midi Out plays the "
-                        "oscillators' and noise's Add Midi In.";
-        d.sockets = { midiIn ("midiIn", "Midi In"), midiOut ("midiOut", "Midi Out") };
+                        "own 64-191 BPM or synced to the host, with gate time and latch. Its MIDI Out plays the "
+                        "oscillators' and noise's Add MIDI In.";
+        d.sockets = { midiIn ("midiIn", "MIDI In"), midiOut ("midiOut", "MIDI Out") };
         return d;
     }
 

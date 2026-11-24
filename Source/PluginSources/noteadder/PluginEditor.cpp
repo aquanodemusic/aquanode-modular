@@ -2472,7 +2472,7 @@ void NoteAdderEditor::populateCloudVelCombo(juce::ComboBox& cb)
 {
     static const char* names[] = {
         "ppp (8)","pp (16)","p (24)","mp (32)","mf (48)",
-        "f (64)","ff (80)","fff (96)","ffff (112)","max (127)"
+        "f (64)","ff (80)","fff (96)","ffff (112)","full (127)"
     };
     for (int i = 0; i < 10; ++i)
         cb.addItem(names[i], i + 1);

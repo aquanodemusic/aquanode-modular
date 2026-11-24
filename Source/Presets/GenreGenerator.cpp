@@ -338,6 +338,7 @@ namespace
                     s.set (id, "cutoff", cut);
                     s.set (id, "resonance", res * 0.9f);
                     s.setChoice (id, "mode", "Bandpass");
+                    s.set (id, "morph", 50.0f);   // (6.9.19: the Type knob, bandpass)
                 }
                 else if (kind == "notch")
                 {

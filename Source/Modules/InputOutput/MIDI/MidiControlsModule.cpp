@@ -5,7 +5,7 @@ static aquanode::ModuleDescriptor midiControlsDescriptor()
     using namespace aquanode;
     ModuleDescriptor d;
     d.typeId = "io.midicontrols";
-    d.displayName = "Midi Controls";
+    d.displayName = "MIDI Controls";
     d.description =
         "Pitch bend, mod wheel, aftertouch, any CC and the sustain pedal as modulation cables - "
         "mod wheel into a cutoff, aftertouch into vibrato. The pedal holds keys and bend bends "

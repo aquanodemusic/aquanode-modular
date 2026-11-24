@@ -15,6 +15,8 @@
  */
 
 #include "synth_base.h"
+#include "vita_file_chooser.h"
+#include "vita_soundscapes.h"
 #include "synth_oscillator.h"
 
 #include "sample_source.h"
@@ -183,6 +185,24 @@ void SynthBase::connectModulation(vital::ModulationConnection* connection) {
     mod_connections_.push_back(connection);
     modulation_change_queue_.enqueue(change);
   }
+  aqUpdateFrameFree();
+}
+
+// (Aquanode, 6.9.12) which oscillators' wavetable frame nothing modulates: there the
+// default MPE map lets a note's Slide move the frame (message thread)
+void SynthBase::aqUpdateFrameFree() {
+  bool free_frame[vital::kNumOscillators];
+  for (int i = 0; i < vital::kNumOscillators; ++i)
+    free_frame[i] = true;
+  for (vital::ModulationConnection* connection : mod_connections_) {
+    if (connection->source_name.empty())
+      continue;
+    for (int i = 0; i < vital::kNumOscillators; ++i)
+      if (connection->destination_name == "osc_" + std::to_string(i + 1) + "_wave_frame")
+        free_frame[i] = false;
+  }
+  for (int i = 0; i < vital::kNumOscillators; ++i)
+    aq_frame_free_[i].store(free_frame[i], std::memory_order_relaxed);
 }
 
 bool SynthBase::connectModulation(const std::string& source, const std::string& destination) {
@@ -208,6 +228,7 @@ void SynthBase::disconnectModulation(vital::ModulationConnection* connection) {
   mod_connections_.remove(connection);
   change.disconnecting = true;
   modulation_change_queue_.enqueue(change);
+  aqUpdateFrameFree();
 }
 
 void SynthBase::disconnectModulation(const std::string& source, const std::string& destination) {
@@ -228,6 +249,7 @@ void SynthBase::clearModulations() {
     connection->source_name = "";
     connection->destination_name = "";
   }
+  aqUpdateFrameFree();
 
   int num_connections = static_cast<int>(getModulationBank().numConnections());
   for (int i = 0; i < num_connections; ++i)
@@ -383,6 +405,7 @@ bool SynthBase::loadFromJson(const json& data) {
   engine_->allSoundsOff();
   try {
     bool result = LoadSave::jsonToState(this, save_info_, data);
+    presetMpeLoaded();   // (Aquanode, 6.9.10: the preset's MPE Enabled, applied)
     pauseProcessing(false);
     return result;
   }
@@ -410,7 +433,7 @@ bool SynthBase::loadFromFile(File preset, std::string& error) {
     return false;
   }
   
-  setPresetName(preset.getFileNameWithoutExtension());
+  setPresetName(vitaDisplayName(preset));
 
   SynthGuiInterface* gui_interface = getGuiInterface();
   if (gui_interface) {
@@ -685,6 +708,7 @@ bool SynthBase::loadLibraryPreset(int index, std::string& error) {
   }
 
   library_.setCurrentPreset(index);
+  current_soundscape_ = -1;
   clearActiveFile();
   setPresetName(entry.name);
   markPresetUnchanged();
@@ -695,6 +719,76 @@ bool SynthBase::loadLibraryPreset(int index, std::string& error) {
     gui_interface->notifyFresh();
   }
   return true;
+}
+
+bool SynthBase::loadSoundscape(int index, std::string& error) {
+  json state;
+  if (!VitaSoundscapes::build(index, state, error))
+    return false;
+  storeCurrentPreset();
+  try {
+    if (!loadFromJson(state)) {
+      error = "Preset was created with a newer version.";
+      return false;
+    }
+  }
+  catch (const json::exception& e) {
+    error = "Preset is corrupted.";
+    return false;
+  }
+  library_.setCurrentPreset(-1);
+  current_soundscape_ = index;
+  clearActiveFile();
+  setPresetName(VitaSoundscapes::name(index));
+  markPresetUnchanged();
+
+  SynthGuiInterface* gui_interface = getGuiInterface();
+  if (gui_interface) {
+    gui_interface->updateFullGui();
+    gui_interface->notifyFresh();
+  }
+  return true;
+}
+
+void SynthBase::generateKind(const std::string& kind, uint32_t seed) {
+  if (kind == "Growl") { generateGrowl(seed); return; }
+  if (seed == 0) seed = (uint32_t)Random::getSystemRandom().nextInt();
+  storeCurrentPreset();
+  json state; std::string error;
+  if (!VitaSoundscapes::generate(kind, seed, state, error))
+    return;
+  try { loadFromJson(state); }
+  catch (const json::exception&) { loadInitPreset(); return; }
+  library_.setCurrentPreset(-1);
+  current_soundscape_ = -1;
+  clearActiveFile();
+  setPresetName(state["preset_name"].get<std::string>());
+  markPresetUnchanged();
+  SynthGuiInterface* gui_interface = getGuiInterface();
+  if (gui_interface) {
+    gui_interface->updateFullGui();
+    gui_interface->notifyFresh();
+  }
+}
+
+void SynthBase::generateGrowl(uint32_t seed) {
+  if (seed == 0) seed = (uint32_t)Random::getSystemRandom().nextInt();
+  storeCurrentPreset();
+  loadInitPreset();
+  json state = saveToJson();
+  VitaSoundscapes::growl(seed, state);
+  try { loadFromJson(state); }
+  catch (const json::exception&) { loadInitPreset(); }
+  library_.setCurrentPreset(-1);
+  current_soundscape_ = -1;
+  clearActiveFile();
+  setPresetName(state["preset_name"].get<std::string>());
+  markPresetUnchanged();
+  SynthGuiInterface* gui_interface = getGuiInterface();
+  if (gui_interface) {
+    gui_interface->updateFullGui();
+    gui_interface->notifyFresh();
+  }
 }
 
 void SynthBase::presetSaved(const File& file) {
@@ -736,6 +830,10 @@ bool SynthBase::saveToActiveFile() {
 
 void SynthBase::setMpeEnabled(bool enabled) {
   midi_manager_->setMpeEnabled(enabled);
+}
+
+bool SynthBase::isMpeEnabled() const {
+  return midi_manager_->isMpeEnabled();
 }
 
 void SynthBase::processAudio(AudioSampleBuffer* buffer, int channels, int samples, int offset) {

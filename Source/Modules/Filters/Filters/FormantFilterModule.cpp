@@ -42,7 +42,7 @@ bool FormantFilterModule::magnitudeResponseDb (const float* hz, float* db, int n
     double fq[kFormants], lvl[kFormants];
     for (int f = 0; f < kFormants; ++f)
     {
-        const double centre = (kFreq[i0][f] * (1.0f - t) + kFreq[i1][f] * t) * sizeScale;
+        const double centre = stretched (kFreq[i0][f] * (1.0f - t) + kFreq[i1][f] * t, getParameterBase (pStretch)) * sizeScale;
         const double fc = juce::jlimit (60.0, sampleRate * 0.22, centre);
         fq[f] = 2.0 * std::sin (juce::MathConstants<double>::pi * fc / sampleRate);
         lvl[f] = kLevel[i0][f] * (1.0f - t) + kLevel[i1][f] * t;
@@ -76,6 +76,7 @@ void FormantFilterModule::renderLane (int lane, const StereoFrame* inputs, Stere
     const float t = vowelPos - (float) i0;
 
     const float sizeScale = std::pow (2.0f, param (pSize) / 12.0f);
+    const float stretch = param (pStretch);
 
     // Resonance sets the band-pass damping: less damping = sharper, ringier
     // peaks. The floor stops it from going unstable at the top of the knob.
@@ -91,7 +92,7 @@ void FormantFilterModule::renderLane (int lane, const StereoFrame* inputs, Stere
 
         for (int f = 0; f < kFormants; ++f)
         {
-            const float centre = (kFreq[i0][f] * (1.0f - t) + kFreq[i1][f] * t) * sizeScale;
+            const float centre = stretched (kFreq[i0][f] * (1.0f - t) + kFreq[i1][f] * t, stretch) * sizeScale;
             const float lvl    =  kLevel[i0][f] * (1.0f - t) + kLevel[i1][f] * t;
 
             const float fc = juce::jlimit (60.0f, (float) (sampleRate * 0.22), centre);
@@ -120,7 +121,8 @@ static ModuleDescriptor formantFilterDescriptor()
     d.description =
         "The Formant module's vowel bank aimed at whatever you patch in: three band-passes on the "
         "peaks of A E I O U, with Vowel morphing between them, so a saw pad turns into a choir "
-        "and a drum loop starts talking. An LFO cable onto Vowel makes talking pads. Flexible lane: "
+        "and a drum loop starts talking. An LFO cable onto Vowel makes talking pads. Stretch spreads the peaks "
+        "apart or squeezes them together over the spectrum. Flexible lane: "
         "fed per-voice, each note can hold its own vowel.";
     d.section = ModuleSection::Filter;
     d.sidebarOrder = 6;
@@ -133,7 +135,8 @@ static ModuleDescriptor formantFilterDescriptor()
         makeRotary ("size",      "Size",      -12.0f, 12.0f, 0.0f, 0, "st"),
         makeRotary ("resonance", "Resonance", 0.0f, 100.0f, 88.0f, 0, "%"),
         makeRotary ("dryWet",    "Dry/Wet",   0.0f, 100.0f, 100.0f, 1, "%"),
-        makeRotary ("level",     "Level",     0.0f, 4.0f, 1.6f, 1)
+        makeRotary ("level",     "Level",     0.0f, 4.0f, 1.6f, 1),
+        makeRotary ("stretch",   "Stretch",   -100.0f, 100.0f, 0.0f, 1, "%")   // (6.9.19)
     };
     return d;
 }

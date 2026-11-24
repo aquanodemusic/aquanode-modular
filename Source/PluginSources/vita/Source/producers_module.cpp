@@ -44,6 +44,7 @@ namespace vital {
       oscillators_[i]->useInput(input(kRetrigger), OscillatorModule::kRetrigger);
       oscillators_[i]->useInput(input(kMidi), OscillatorModule::kMidi);
       oscillators_[i]->useInput(input(kActiveVoices), OscillatorModule::kActiveVoices);
+      oscillators_[i]->useInput(input(kAqSlide), OscillatorModule::kAqSlide);
     }
 
     sample_destination_ = createBaseControl("sample_destination");

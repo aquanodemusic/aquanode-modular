@@ -78,6 +78,7 @@ namespace covegroove
         // the dice: what they throw
         enum class Random { Everything, Groove, Kit, Sounds, Effects, Mix, Preset };
         void randomize (Random what);
+        void reseed (juce::int64 seed) { dice.setSeed (seed); }   // (6.9.11) the Random Plugin Preset module's
 
         // .covegroove files (the whole state)
         bool savePreset (const juce::File& f);

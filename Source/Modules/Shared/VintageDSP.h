@@ -451,6 +451,14 @@ struct OnePole   // TPT one-pole, lp and hp outputs
         const float y = v + s; s = y + v; return y;
     }
     float hp (float x, double hz, double sr) { return x - lp (x, hz, sr); }
+    // (6.9.11) the same with g worked out once (gFor): the same numbers, no tan per sample
+    static float gFor (double hz, double sr) { return (float) std::tan (kPi * std::clamp (hz, 1.0, sr * 0.45) / sr); }
+    float lpG (float x, float g)
+    {
+        const float v = (x - s) * g / (1.0f + g);
+        const float y = v + s; s = y + v; return y;
+    }
+    float hpG (float x, float g) { return x - lpG (x, g); }
 };
 
 //==============================================================================
@@ -610,6 +618,10 @@ struct SmoothHall
     OnePole damp[N]; OnePole eqLo[2], eqHi[2];
     double modPh[N] {}; double sr { 48000.0 };
     double len[N] {};
+    // (6.9.11) cached: what the knobs and the rate give
+    float lastLowDb { 1.0e9f }, lastHighDb { 1.0e9f }, glNow { 1.0f }, ghNow { 1.0f }, lastRt { -1.0f }, passGain[N] {};
+    double coefSr { -1.0 }, lastDampHz { -1.0 };
+    float gLo { 0.0f }, gHi { 0.0f }, gDamp { 0.0f };
 
     void prepare (double newSr)
     {
@@ -645,13 +657,28 @@ struct SmoothHall
     std::array<float, 2> process (float inL, float inR, float rt60s, double highDampHz,
                                   float preDelayMs, float lowGainDb, float highGainDb, float wet)
     {
+        // (6.9.11) the gains and filter coefficients worked out when a knob moves, not
+        // every sample - the same numbers as before
+        if (lowGainDb != lastLowDb || highGainDb != lastHighDb)
+        {
+            lastLowDb = lowGainDb; lastHighDb = highGainDb;
+            glNow = std::pow (10.0f, lowGainDb / 20.0f); ghNow = std::pow (10.0f, highGainDb / 20.0f);
+        }
+        if (sr != coefSr) { coefSr = sr; gLo = OnePole::gFor (250.0, sr); gHi = OnePole::gFor (4000.0, sr); lastDampHz = -1.0; lastRt = -1.0f; }
+        if (highDampHz != lastDampHz) { lastDampHz = highDampHz; gDamp = OnePole::gFor (highDampHz, sr); }
+        const float rt = std::max (0.1f, rt60s) * 1.06f;   // measured: the diffusers shave ~6% off
+        if (rt != lastRt)
+        {
+            lastRt = rt;
+            for (int i = 0; i < N; ++i) passGain[i] = (float) std::pow (10.0, -3.0 * (len[i] / sr) / rt);    // RT60 gain per pass
+        }
         // pre-EQ: shelving made from one-pole splits (low < 250 Hz, high > 4 kHz)
-        const float gl = std::pow (10.0f, lowGainDb / 20.0f), gh = std::pow (10.0f, highGainDb / 20.0f);
+        const float gl = glNow, gh = ghNow;
         float x[2] { inL, inR };
         for (int c = 0; c < 2; ++c)
         {
-            const float lo = eqLo[c].lp (x[c], 250.0, sr);
-            const float hi = eqHi[c].hp (x[c], 4000.0, sr);
+            const float lo = eqLo[c].lpG (x[c], gLo);
+            const float hi = eqHi[c].hpG (x[c], gHi);
             x[c] = x[c] + (gl - 1.0f) * lo + (gh - 1.0f) * hi;
         }
 
@@ -675,12 +702,10 @@ struct SmoothHall
         float sum = 0.0f; for (float v : y) sum += v;
         const float h = sum * (2.0f / N);
 
-        const float rt = std::max (0.1f, rt60s) * 1.06f;   // measured: the diffusers shave ~6% off
         for (int i = 0; i < N; ++i)
         {
-            const float g = (float) std::pow (10.0, -3.0 * (len[i] / sr) / rt);    // RT60 gain per pass
-            float v = (y[i] - h) * g;
-            v = damp[i].lp (v, highDampHz, sr);
+            float v = (y[i] - h) * passGain[i];
+            v = damp[i].lpG (v, gDamp);
             const float injection = (i & 1) ? m : -m;
             lines[i].push (v + injection * 0.35f);
         }

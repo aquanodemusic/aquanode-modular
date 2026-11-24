@@ -17,6 +17,7 @@
 // passes Cyan on unchanged.
 //==============================================================================
 #include "SpectralAnalysis.h"
+#include "LightColour.h"
 
 using namespace aquanode;
 using namespace aquanode::spectral;
@@ -24,8 +25,17 @@ using namespace aquanode::spectral;
 namespace
 {
     constexpr int kSources = 3;
-    const juce::Colour kSourceColour[kSources] = { juce::Colour (0xff3fe6f2), juce::Colour (0xffff6fbe), juce::Colour (0xffffd23f) };
-    const juce::Colour kDeltaColour (0xffffd23f);   // (Yellow: the delta takes its place)
+    // (6.9.15) A, B and C/Delta: their colours from the knobs (in nm), set by each view as it paints
+    const juce::Colour kOriginalColour[kSources] = { juce::Colour (0xff3fe6f2), juce::Colour (0xffff6fbe), juce::Colour (0xffffd23f) };
+    constexpr float kDefaultNm[kSources] = { 487.0f, 730.0f, 578.0f };   // (cyan, pink - a purple - and yellow, as before)
+    juce::Colour kSourceColour[kSources] = { kOriginalColour[0], kOriginalColour[1], kOriginalColour[2] };
+    juce::Colour kDeltaColour (0xffffd23f);   // (C's: the delta takes its place)
+    ParamSpec lightKnob (const char* id, const char* label, float def)
+    {
+        auto p = makeRotary (id, label, aquanode::light::kMinNm, aquanode::light::kMaxNm, def, 4, {}, false, 1.0f).noMod();
+        p.textFromValue = [] (double v) { return aquanode::light::textOf (v); };
+        return p;
+    }
     constexpr float kSpeedSmooth[4] = { 0.0f, 0.55f, 0.8f, 0.94f };   // Very Fast, Fast, Medium, Slow
 
     const juce::StringArray& fftChoices() { static const juce::StringArray c { "1024", "2048", "4096", "8192", "16384" }; return c; }
@@ -36,24 +46,25 @@ class SpectrumCompareModule final : public SynthModule,
 {
 public:
     enum P { pView, pStyle, pPrecision, pLow, pHigh, pTop, pRange, pDeltaRange, pSmooth, pFft, pWindow, pScale, pLabels,
-             pHold, pFreeze, pDelta, pSpeed };
+             pHold, pFreeze, pDelta, pSpeed, pColA, pColB, pColC, pFreezeA, pFreezeB, pFreezeC };
 
     static ModuleDescriptor descriptor()
     {
         ModuleDescriptor d;
         d.typeId = "util.spectrumcompare";
         d.displayName = "Periodogram";
-        d.description = "A periodogram: x = frequency, y = amplitude (dBFS). Up to three sounds over each other - Cyan, "
-                        "Pink and Yellow - or, with Delta on, Yellow is the difference Cyan minus Pink around a centre "
+        d.description = "A periodogram: x = frequency, y = amplitude (dBFS). Up to three sounds over each other - A, "
+                        "B and C - or, with Delta on, C is the difference A minus B around a centre "
                         "line, where one is louder than the other. As a graph or as bars; Reassigned draws every partial "
                         "at the frequency spectral reassignment finds for it, finer than the FFT's bins. Speed from Very "
                         "Fast to Slow, a faint Envelope that falls slowly (or holds), any range; a tap reads out the "
-                        "frequency, note and levels. Thru passes Cyan on, so it can sit in a chain.";
+                        "frequency, note and levels. Thru passes A on, so it can sit in a chain. Each has its colour as light "
+                        "(nm; past 700 the purples, which no single wavelength makes) and its own Freeze.";
         d.section = ModuleSection::Utility;
         d.sidebarOrder = 41;
-        d.sockets = { audioIn ("in1", "Cyan"), audioIn ("in2", "Pink"), audioIn ("in3", "Yellow"), audioOut ("thru", "Thru") };
+        d.sockets = { audioIn ("in1", "A"), audioIn ("in2", "B"), audioIn ("in3", "C"), audioOut ("thru", "Thru") };
         d.params = {
-            makeCombo ("view", "View", { "All", "Cyan + Pink", "Yellow Only", "Cyan Only", "Pink Only" }, 0, 0, 2).noMod(),
+            makeCombo ("view", "View", { "All", "A + B", "C Only", "A Only", "B Only" }, 0, 0, 2).noMod(),
             makeCombo ("style", "Style", { "Graph", "Bars" }, 0, 0, 1).noMod(),
             makeCombo ("precision", "Reassign", { "Off", "On" }, 0, 0, 1).noMod(),
 
@@ -70,10 +81,16 @@ public:
 
             makeCombo ("labels", "Labels", { "Off", "On" }, 1, 3, 1).noMod(),
             makeCombo ("hold", "Envelope", { "Off", "Slow", "Hold" }, 1, 3, 1).noMod().whenMissing (0.0f),
-            makeCombo ("freeze", "Freeze", { "Run", "Freeze" }, 0, 3, 1).noMod(),
+            makeCombo ("freeze", "Freeze (all)", { "Run", "Freeze" }, 0, 3, 1).noMod().hide(),   // (6.9.15: one each now)
             // (after the old ones, so saved patches keep their places)
             makeCombo ("delta", "Delta", { "Off", "On" }, 0, 0, 1).noMod().whenMissing (1.0f),
-            makeCombo ("speed", "Speed", { "Very Fast", "Fast", "Medium", "Slow" }, 1, 2, 2).noMod().whenMissing (2.0f)
+            makeCombo ("speed", "Speed", { "Very Fast", "Fast", "Medium", "Slow" }, 1, 2, 2).noMod().whenMissing (2.0f),
+            // (6.9.15) each one's colour as light (nm; past 700 the purples), and its own freeze
+            lightKnob ("colA", "A Colour", kDefaultNm[0]), lightKnob ("colB", "B Colour", kDefaultNm[1]),
+            lightKnob ("colC", "C/Delta Colour", kDefaultNm[2]),
+            makeCombo ("freezeA", "Freeze A", { "Off", "On" }, 0, 5, 1).noMod(),
+            makeCombo ("freezeB", "Freeze B", { "Off", "On" }, 0, 5, 1).noMod(),
+            makeCombo ("freezeC", "Freeze C/Delta", { "Off", "On" }, 0, 5, 1).noMod()
         };
         return d;
     }
@@ -174,7 +191,7 @@ private:
             bool due = false;
             for (int s = 0; s < n; ++s)
                 due = a.step (scratch[(size_t) i][(size_t) s]) || due;
-            if (! due || knob (pFreeze) > 0.5f)
+            if (! due || knob (pFreeze) > 0.5f || knob (pFreezeA + i) > 0.5f)
                 continue;
 
             a.analyse();   // the latest frame is all the display wants
@@ -214,6 +231,12 @@ namespace
         {
             g.fillAll (juce::Colour (0xff0b0d10));
             auto* m = mod();
+            if (m != nullptr)   // (6.9.15) this view's colours, from its knobs
+            {
+                for (int k = 0; k < kSources; ++k)
+                    kSourceColour[k] = aquanode::light::colourAt (m->knob (SpectrumCompareModule::pColA + k), kDefaultNm[k], kOriginalColour[k]);
+                kDeltaColour = kSourceColour[2];
+            }
             if (m == nullptr)
                 return;
             const auto plot = plotArea().toFloat();
@@ -286,7 +309,7 @@ namespace
             // legend
             {
                 auto legend = getLocalBounds().removeFromTop (14).reduced (6, 0);
-                const char* names[3] = { "Cyan", "Pink", delta ? "Cyan - Pink" : "Yellow" };
+                const char* names[3] = { "A", "B", delta ? "A - B" : "C" };
                 const juce::Colour cols[3] = { kSourceColour[0], kSourceColour[1], kDeltaColour };
                 for (int k = 0; k < 3; ++k)
                 {
@@ -296,10 +319,18 @@ namespace
                     g.fillRect (cell.removeFromLeft (10).toFloat().withSizeKeepingCentre (8.0f, 3.0f));
                     g.drawText (names[k], cell.withTrimmedLeft (3), juce::Justification::centredLeft);
                 }
-                if (m->knob (SpectrumCompareModule::pFreeze) > 0.5f)
                 {
+                    juce::String frozen;
+                    if (m->knob (SpectrumCompareModule::pFreeze) > 0.5f) frozen = "FROZEN";
+                    else
+                    {
+                        const char* fn[3] = { "A", "B", delta ? "Delta" : "C" };
+                        juce::StringArray f;
+                        for (int k = 0; k < 3; ++k) if (m->knob (SpectrumCompareModule::pFreezeA + k) > 0.5f) f.add (fn[k]);
+                        if (! f.isEmpty()) frozen = "FROZEN: " + f.joinIntoString (" ");
+                    }
                     g.setColour (juce::Colours::white.withAlpha (0.6f));
-                    g.drawText ("FROZEN", legend, juce::Justification::centredRight);
+                    g.drawText (frozen, legend, juce::Justification::centredRight);
                 }
             }
 
@@ -506,8 +537,10 @@ namespace
 
         void drawDelta (juce::Graphics& g, juce::Rectangle<float> plot, bool bars) const
         {
-            const auto& a = shown[0];
-            const auto& b = shown[1];
+            // (6.9.15) Freeze C/Delta: the difference as it was
+            const bool held = mod()->knob (SpectrumCompareModule::pFreezeC) > 0.5f && ! heldA.empty();
+            const auto& a = held ? heldA : shown[0];
+            const auto& b = held ? heldB : shown[1];
             const float mid = plot.getY() + yOfDelta (0.0f);
             // only where both are in the window shown (below it a difference means little)
             const float floorDb = mod()->knob (SpectrumCompareModule::pTop) - range();
@@ -589,9 +622,15 @@ namespace
                 }
                 changed = true;
             }
+            if (m->knob (SpectrumCompareModule::pFreezeC) < 0.5f)   // (6.9.15) the delta's own freeze
+            {
+                heldA = shown[0];
+                heldB = shown[1];
+            }
             if (changed || probe.has_value())
                 repaint();
         }
+        std::vector<float> heldA, heldB;
 
         juce::WeakReference<SynthModule> module;
         std::array<std::vector<float>, kSources> shown, peak;

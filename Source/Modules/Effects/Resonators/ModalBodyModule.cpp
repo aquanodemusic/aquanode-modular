@@ -212,11 +212,11 @@ static ModuleDescriptor modalBodyDescriptor()
     d.description =
         "Plays any sound into a resonating object: up to 24 tuned modes shaped like a bar, a plate, a drum skin, a glass, "
         "a tube or a wooden box. Material makes the high modes die sooner (metal rings, wood thuds), Bright lets more of "
-        "the input reach them, Stretch bends the ratios. With Track on MIDI, notes on Midi In retune it.";
+        "the input reach them, Stretch bends the ratios. With Track on MIDI, notes on MIDI In retune it.";
     d.section = ModuleSection::Effect;
     d.sidebarOrder = 75;
     d.searchKeywords = "resonator corpus modal physical body bowl chime";
-    d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+    d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
     d.params = {
         makeCombo  ("shape",    "Shape", modalbody::shapeNames(), 3, 0, 2),
         makeRotary ("pitch",    "Pitch",    30.0f, 2000.0f, 220.0f, 0, "Hz", true),

@@ -38,8 +38,11 @@ public:
     enum MorphType { mOff = 0, mRandomAmp, mLowPass, mHighPass, mPhaseDisperse, kNumMorphTypes };
 
     static constexpr int kBaseLength = 2048;
-    static constexpr int kNumMips    = 6;                     // 2048 ... 64 samples per cycle
-    static constexpr int kMipStride  = 2048 + 1024 + 512 + 256 + 128 + 64;
+    static constexpr int kNumMips    = 10;                    // 2048 ... 64 samples per cycle, then (6.9.21)
+                                                              // four 64-sample copies with 15, 7, 3, 1 harmonics
+    static constexpr int kOldMips    = 6;                     // (read with CPU > Anti-alias off: as before)
+    static int mipLength (int mip) { return mip < kOldMips ? kBaseLength >> mip : kBaseLength >> (kOldMips - 1); }
+    static constexpr int kMipStride  = 2048 + 1024 + 512 + 256 + 128 + 64 + 4 * 64;
     static constexpr int kMaxUnison  = 16;
 
     struct Table
@@ -56,7 +59,7 @@ public:
 
         const float* cycle (int frame, int morph, int mip) const
         {
-            static const int mipOffset[kNumMips] = { 0, 2048, 3072, 3584, 3840, 3968 };
+            static const int mipOffset[kNumMips] = { 0, 2048, 3072, 3584, 3840, 3968, 4032, 4096, 4160, 4224 };
             return data.data() + ((size_t) (frame * numMorphs + morph) * kMipStride) + mipOffset[mip];
         }
     };

@@ -81,7 +81,7 @@ static ModuleDescriptor kickDescriptor()
     d.description =
         "Classic analog kick: a sine with an exponential pitch-drop envelope, a click transient and "
         "tanh drive. Trig In takes a Clock, Euclid or Step Seq gate; it also fires on MIDI "
-        "note-on, so it is polyphonic from the keyboard and mono from a sequencer. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a hit, alongside Trig In. "
+        "note-on, so it is polyphonic from the keyboard and mono from a sequencer. MIDI In plays it from notes instead (a Piano Roll, an Arp...; with nothing patched it hears the played keys): every note is a hit, alongside Trig In. "
         "Model Snap Kick plays a kick-clap measured from a drum track: a sine swept down to its note, held, then cut short, "
         "with a bright crack on top - Tune, Drop, P Decay and Decay shape the kick, Click is the crack, Drive the saturation.";
     d.section = ModuleSection::Oscillator;
@@ -89,7 +89,7 @@ static ModuleDescriptor kickDescriptor()
     d.sockets = {
         modIn    ("trigIn",   "Trig In"),
         audioOut ("audioOut", "Audio Out"),
-        midiIn   ("midiIn",   "Midi In")
+        midiIn   ("midiIn",   "MIDI In")
     };
     d.params = {
         makeRotary ("tune",       "Tune",     25.0f, 200.0f, 50.0f, 0, "Hz", true),

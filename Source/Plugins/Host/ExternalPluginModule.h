@@ -50,6 +50,7 @@ namespace aquanode::plugins
         // itself reports: the patch passes it on to the host
         int latencySamples() const override { return activeBlock.load (std::memory_order_relaxed) + pluginLatency.load (std::memory_order_relaxed); }
         bool wantsRawMidi() const override { return true; }
+        bool retunesByMpeBend() const override { return true; }   // (6.9.10: a patch tuning bends its notes)
         // a VST3 may be a synth or an effect: the keys reach it while its Midi In is empty
         bool playedKeysReachRawMidi (const ModuleDescriptor&) const override { return true; }
         void rawMidiMessage (const juce::MidiMessage& message) override;

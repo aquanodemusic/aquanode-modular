@@ -119,7 +119,12 @@ class MidiManager : public MidiInputCallback {
     force_inline int lowerMasterChannel() { return mpe_zone_layout_.getLowerZone().getMasterChannel() - 1; }
     force_inline int upperMasterChannel() { return mpe_zone_layout_.getUpperZone().getMasterChannel() - 1; }
 
-    void setMpeEnabled(bool enabled) { mpe_enabled_ = enabled; }
+    // (Aquanode, 6.9.15) switching MPE on or off, every channel's wheel back to the middle: a bend
+    // heard the other way stayed on (as a zoned wheel, or a channel's) and detuned the notes after
+    // (Aquanode, 6.9.15) switching MPE on or off, every channel's wheel back to the middle: a bend
+    // heard the other way stayed on (as a zoned wheel, or a channel's) and detuned the notes after
+    void setMpeEnabled(bool enabled);
+    bool isMpeEnabled() const { return mpe_enabled_; }   // (Aquanode, 6.9.12)
 
     midi_map getMidiLearnMap() { return midi_learn_map_; }
     void setMidiLearnMap(const midi_map& midi_learn_map) { midi_learn_map_ = midi_learn_map; }

@@ -135,7 +135,8 @@ namespace {
 void SynthSection::showLibraryBrowser(Component* anchor, VitaLibrary::Kind kind, const String& current,
                                       std::function<void()> load_file,
                                       std::function<void(const VitaLibrary::Entry&)> load_entry,
-                                      std::function<json()> add_current) {
+                                      std::function<json()> add_current,
+                                      std::vector<std::pair<std::string, std::function<void()>>> extras) {
   VitaLibrary* library = findLibrary(this);
   if (library == nullptr)
     return;
@@ -152,12 +153,23 @@ void SynthSection::showLibraryBrowser(Component* anchor, VitaLibrary::Kind kind,
     bool selected = entries[i].name == current.toStdString();
     options.addItem(kLibraryEntryOffset + i, entries[i].displayName(), selected);
   }
+  // (Aquanode, 6.9.12) what the section adds below (Vita's own tables, the generator)
+  static constexpr int kExtraOffset = 500;
+  if (!extras.empty())
+    options.addItem(-1, "");
+  for (int i = 0; i < (int)extras.size(); ++i)
+    options.addItem(kExtraOffset + i, extras[i].first);
 
   Component::SafePointer<SynthSection> safe(this);
   showPopupSelector(anchor, Point<int>(0, anchor->getHeight()), options,
-                    [safe, kind, current, load_file, load_entry, add_current](int id) {
+                    [safe, kind, current, load_file, load_entry, add_current, extras](int id) {
     if (safe == nullptr)
       return;
+    if (id >= kExtraOffset && id < kExtraOffset + (int)extras.size()) {
+      if (extras[(size_t)(id - kExtraOffset)].second)
+        extras[(size_t)(id - kExtraOffset)].second();
+      return;
+    }
     VitaLibrary* library = findLibrary(safe.getComponent());
     if (id == kLoadFileId && load_file)
       load_file();

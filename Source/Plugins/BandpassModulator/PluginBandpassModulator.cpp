@@ -27,7 +27,7 @@ namespace
             aquanode::plugins::whole::Def x;
             x.pluginId = "bandpassmod";
             x.kind = "Effect";
-            x.description = "Bandpass Modulator whole, as one module: the band-pass jumping around its range in time with the song (random from its seeded generator, or along its shapes, Skew pushing the jumps), Note Lock on chosen notes or on the notes held on Midi In, the distortion, tempo echo and autopan on the band - the plugin's own engine. Every knob takes cables.";
+            x.description = "Bandpass Modulator whole, as one module: the band-pass jumping around its range in time with the song (random from its seeded generator, or along its shapes, Skew pushing the jumps), Note Lock on chosen notes or on the notes held on MIDI In, the distortion, tempo echo and autopan on the band - the plugin's own engine. Every knob takes cables.";
             x.section = aquanode::ModuleSection::Effect;
             x.midi = true;
             x.audioIn = true;

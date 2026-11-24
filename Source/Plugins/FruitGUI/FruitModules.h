@@ -22,6 +22,14 @@ public:
         if (count < kMax)
             events[count++] = { sampleOffset, { juce::jlimit (0, 127, note), velocity, on } };
     }
+    // (6.9.14) MPE from the keys: a note with its own bend, pressure and Slide, and its
+    // expression between - only for a synth that plays them (set when it is wired)
+    std::atomic<bool> mpeOk { false };
+    void pushEvent (int sampleOffset, const aquanode::MidiDriverEvent& e) noexcept
+    {
+        if (count < kMax)
+            events[count++] = { sampleOffset, e };
+    }
     void sortBlock() noexcept
     {
         std::stable_sort (events.begin(), events.begin() + count, [] (const Timed& a, const Timed& b)

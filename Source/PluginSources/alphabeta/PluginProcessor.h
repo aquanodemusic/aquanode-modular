@@ -1,4 +1,5 @@
 #pragma once
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include <JuceHeader.h>
 #include <array>
 #include <vector>
@@ -508,7 +509,7 @@ public:
         if (ctx != nullptr && ctx->midi.mpe)
             for (int ch = 2; ch <= 16; ++ch)
                 if (isPlayingChannel(ch)) { memberChannel = ch; break; }
-        float target = (float)juce::MidiMessage::getMidiNoteInHertz(midiNote);
+        float target = (float) ::aquanode::tuning::noteToHz((double) midiNote);
 
         if (glideOnStart && glideTime > 0.001f && currentFreq > 10.0f)
             targetFreq = target;
@@ -549,7 +550,7 @@ public:
     // Mono/legato: move to a new note without restarting the envelopes
     void legatoTo(int midiNote, bool glide) {
         noteNumber = midiNote;
-        targetFreq = (float)juce::MidiMessage::getMidiNoteInHertz(midiNote);
+        targetFreq = (float) ::aquanode::tuning::noteToHz((double) midiNote);
         if (!glide || glideTime <= 0.001f) currentFreq = targetFreq;
     }
 

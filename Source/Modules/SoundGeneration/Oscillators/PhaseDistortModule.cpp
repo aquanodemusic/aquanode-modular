@@ -127,7 +127,7 @@ static ModuleDescriptor phaseDistortDescriptor()
     d.sidebarOrder = 10;
     d.sockets = {
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

@@ -361,7 +361,7 @@ void ExternalPluginModule::updatePlayHead()
     juce::AudioPlayHead::PositionInfo info;
     const int offset = samplesThisHostBlock - kBlockSize;
     bool fromHost = false;
-    if (hostPlayHead != nullptr)
+    if (hostPlayHead != nullptr && ! tempoFromLane())   // (6.9.14: a fed Tempo In wins over the host's tempo)
         if (auto host = hostPlayHead->getPosition(); host && host->getBpm() && *host->getBpm() > 0.0)   // (one without a tempo - standalone, Android - does not count)
         {
             info = *host;
@@ -580,7 +580,7 @@ static aquanode::ModuleDescriptor externalPluginDescriptor()
     d.displayName = "VST3 Plugin";
     d.description =
         "Any VST3 plugin of yours in the patch: Load... and point at its .vst3 folder or file (nothing is "
-        "scanned). Audio In goes into an effect, Midi In (the keys while nothing is patched there) into a synth; "
+        "scanned). Audio In goes into an effect, MIDI In (the keys while nothing is patched there) into a synth; "
         "Window opens the plugin's own interface. The patch keeps which plugin it was and its whole state. "
         "Block Size is the block the plugin runs in behind the patch - 32 samples by default, its latency, "
         "reported to the host with the plugin's own; give a plugin that behaves differently at small blocks "
@@ -589,8 +589,9 @@ static aquanode::ModuleDescriptor externalPluginDescriptor()
     d.sidebarOrder = 60;
     d.sockets = {
         audioIn  ("audioIn",  "Audio In"),
-        midiIn   ("midiIn",   "Midi In"),
-        audioOut ("audioOut", "Audio Out")
+        midiIn   ("midiIn",   "MIDI In"),
+        audioOut ("audioOut", "Audio Out"),
+        tempoIn()   // (6.9.14: tempo per lane - its play head's BPM)
     };
     d.params = {
         // the block the plugin runs in, behind the patch (its latency): 32 by

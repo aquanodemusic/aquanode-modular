@@ -25,6 +25,9 @@ struct RotaryCabinet
         float drumDepth { 0.0f };         // % - the drum's own Doppler (its turning scoop; the Rotary module has none)
         float drive { 0.0f };             // %
         float levelDb { 0.0f };
+        // (6.9.11) the horn's speed at Slow and at Fast in RPM (the drum keeps
+        // its usual share of it); < 0: kSpeeds (the Rotary module)
+        double slowRpm { -1.0 }, fastRpm { -1.0 };
     };
 
     // rotor speeds in Hz at Rate 100 %: { drum, horn } for Stop, Slow, Fast
@@ -32,6 +35,17 @@ struct RotaryCabinet
     // seconds to get 90 % of the way there at Inertia's middle setting, per target:
     // { drum, horn } - the light horn is always quicker than the heavy drum
     static constexpr double kSpinTime[3][2] = { { 0.12, 0.10 }, { 0.27, 0.18 }, { 0.14, 0.09 } };
+    static constexpr double kSlowRpm = 0.792 * 60.0, kFastRpm = 7.68 * 60.0;   // the horn's, as above
+
+    // { drum, horn } in Hz for a switch position, Rate and the RPM knobs
+    static void targetSpeeds (const Settings& s, int sp, double& drum, double& horn)
+    {
+        double rate = s.rate * 0.01;
+        if (sp == 1 && s.slowRpm >= 0.0) rate *= s.slowRpm / kSlowRpm;
+        if (sp == 2 && s.fastRpm >= 0.0) rate *= s.fastRpm / kFastRpm;
+        drum = kSpeeds[sp][0] * rate;
+        horn = kSpeeds[sp][1] * rate;
+    }
 
     void prepare (double sampleRate, const Settings& s)
     {
@@ -47,24 +61,27 @@ struct RotaryCabinet
         xo1 = xo2 = 0.0f;
         hornPhase = 1.6;
         drumPhase = 0.0;
-        const int sp = juce::jlimit (0, 2, s.speed);
-        const double rate = s.rate * 0.01;
-        drumSpeed = kSpeeds[sp][0] * rate;
-        hornSpeed = kSpeeds[sp][1] * rate;
+        targetSpeeds (s, juce::jlimit (0, 2, s.speed), drumSpeed, hornSpeed);
     }
 
     void process (const Settings& s, float inL, float inR, float& outLeft, float& outRight)
     {
         // ---- the rotors: each heads for its speed with its own inertia
         const int sp = juce::jlimit (0, 2, s.speed);
-        const double rate = s.rate * 0.01;
-        const double inertia = 0.25 * std::pow (48.0, s.inertia * 0.01);
+        if (s.inertia != lastInertiaPct) { lastInertiaPct = s.inertia; inertiaMul = 0.25 * std::pow (48.0, s.inertia * 0.01); }
+        const double inertia = inertiaMul;
         // a slowing rotor coasts (the time is the target's: Slow / Stop)
+        double dTarget = 0.0, hTarget = 0.0;
+        targetSpeeds (s, sp, dTarget, hTarget);
         const double dTime = kSpinTime[sp][0] * inertia, hTime = kSpinTime[sp][1] * inertia;
-        const double dCoef = 1.0 - std::pow (10.0, -1.0 / (sr * juce::jmax (0.001, dTime)));
-        const double hCoef = 1.0 - std::pow (10.0, -1.0 / (sr * juce::jmax (0.001, hTime)));
-        drumSpeed += dCoef * (kSpeeds[sp][0] * rate - drumSpeed);
-        hornSpeed += hCoef * (kSpeeds[sp][1] * rate - hornSpeed);
+        if (dTime != lastDTime || hTime != lastHTime)
+        {
+            lastDTime = dTime; lastHTime = hTime;
+            dCoefNow = 1.0 - std::pow (10.0, -1.0 / (sr * juce::jmax (0.001, dTime)));
+            hCoefNow = 1.0 - std::pow (10.0, -1.0 / (sr * juce::jmax (0.001, hTime)));
+        }
+        drumSpeed += dCoefNow * (dTarget - drumSpeed);
+        hornSpeed += hCoefNow * (hTarget - hornSpeed);
 
         constexpr double twoPi = juce::MathConstants<double>::twoPi;
         drumPhase += twoPi * drumSpeed / sr;
@@ -143,5 +160,7 @@ private:
     double hornPhase { 1.6 }, drumPhase { 0.0 };   // radians
     double hornSpeed { 0.0 }, drumSpeed { 0.0 };   // Hz
     Memo xoMemo;
+    double lastDTime { -1.0 }, lastHTime { -1.0 }, dCoefNow { 0.0 }, hCoefNow { 0.0 };   // (worked out when they change)
+    double lastInertiaPct { -1.0 }, inertiaMul { 1.0 };
 };
 }

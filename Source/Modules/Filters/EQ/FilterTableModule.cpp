@@ -9,6 +9,14 @@
 // their spectrum, on the same octave scale, becomes the frame's EQ curve. A
 // .wav that is not a wavetable gives eight moments through the sound. The
 // curves are saved with the patch.
+// (6.9.18) Load is a menu: the built-in tables (Vita's, Massif's, a generated
+// one - the Wavetable module's) or Load Sample... (wav, aiff, flac, ogg, mp3):
+// eight frames picked evenly from the first to the last, whatever the count.
+// (6.9.19) Skew: the more it is turned, the quieter the curve's low parts get
+// (a power curve on the frame's level, its peaks kept), so the sound leans to
+// the quiet side and the peaks stand out. Output up to +4 dB. The view shows
+// the frames as their spectra (the curves) or as waveforms (each frame's
+// curve played as the harmonics of one cycle) - the view only, not the sound.
 // Global. Input: 0 = Audio In. Output: 0 = Audio Out.
 #include "../../Core/ModuleCore.h"
 #include "../../Shared/FxKit.h"
@@ -24,6 +32,14 @@ namespace filtertable
 
     inline float bandHz (float i) { return kLoHz * std::pow (kHiHz / kLoHz, i / (float) (kBands - 1)); }
     inline float octavesFrom (float hz, float ref) { return std::log2 (hz / ref); }
+
+    // (6.9.19) Skew 0..1: the curve's low parts pushed down (a power curve on -18..+18 dB)
+    inline float skewDb (float db, float skew)
+    {
+        if (skew <= 0.0f) return db;
+        const float u = juce::jlimit (0.0f, 1.0f, (db + 18.0f) / 36.0f);
+        return std::pow (u, 1.0f + 3.0f * skew) * 36.0f - 18.0f + juce::jmax (0.0f, db - 18.0f);
+    }
 
     // a curve as bumps on the octave scale: gain at hz for bumps (centre, dB, width oct)
     struct Bump { float hz, db, width; };
@@ -100,10 +116,15 @@ namespace filtertable
     }
 }
 
+// (6.9.18) the built-in tables (Plugins/Vita/PluginVita.cpp, as the Wavetable module uses them)
+int aqBuiltinTableCount (int group);
+std::string aqBuiltinTableName (int group, int i);
+std::vector<float> aqBuiltinTable (int group, int i, uint32_t seed, std::string& name);
+
 class FilterTableModule : public SynthModule
 {
 public:
-    enum ParamIndex { pTable = 0, pPosition, pDepth, pShift, pSharp, pOutput, pDryWet };
+    enum ParamIndex { pTable = 0, pPosition, pDepth, pShift, pSharp, pOutput, pDryWet, pSkew, pView };
 
     FilterTableModule() { rebuildTable (0); }
 
@@ -140,12 +161,13 @@ public:
             shownPosition.store (pos, std::memory_order_relaxed);
             const float depth = param (pDepth) * 0.01f;
             const float shift = param (pShift) * 0.01f * 1.6f;   // +-1.6 bands (about an octave)
+            const float skew = juce::jlimit (0.0f, 1.0f, param (pSkew) * 0.01f);
             // the curve's average gain mostly taken back out: scanning the
             // table changes the colour, much less the loudness
             float dbs[filtertable::kBands], mean = 0.0f;
             for (int i = 0; i < filtertable::kBands; ++i)
             {
-                dbs[i] = curveAt (pos, (float) i - shift) * depth;
+                dbs[i] = filtertable::skewDb (curveAt (pos, (float) i - shift), skew) * depth;
                 mean += dbs[i] / (float) filtertable::kBands;
             }
             for (int i = 0; i < filtertable::kBands; ++i)
@@ -189,12 +211,20 @@ public:
     int shownTable() const { return builtTable; }
     juce::String loadedName() const { return loaded.name; }
 
-    // a wavetable of your own (message thread): "" when it worked, else what went wrong
+    // a wavetable or any sound of your own (message thread): "" when it worked, else what went wrong
     juce::String loadWavetable (const juce::MemoryBlock& data, const juce::String& name)
     {
-        juce::WavAudioFormat wav;
-        std::unique_ptr<juce::AudioFormatReader> reader (wav.createReaderFor (new juce::MemoryInputStream (data, false), true));
-        if (reader == nullptr || reader->lengthInSamples < 64) return "not a .wav file it can read";
+        // (6.9.18: any of the formats the app reads, not only .wav)
+        static juce::AudioFormatManager formats;
+        if (formats.getNumKnownFormats() == 0)
+        {
+            formats.registerBasicFormats();
+           #if JUCE_USE_MP3AUDIOFORMAT
+            formats.registerFormat (new juce::MP3AudioFormat(), false);
+           #endif
+        }
+        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (std::make_unique<juce::MemoryInputStream> (data, false)));
+        if (reader == nullptr || reader->lengthInSamples < 64) return "not a sound file it can read";
         const int len = (int) std::min<juce::int64> (reader->lengthInSamples, (juce::int64) (1 << 22));
         juce::AudioBuffer<float> audio ((int) reader->numChannels, len);
         reader->read (&audio, 0, len, 0, true, true);
@@ -211,6 +241,18 @@ public:
                 { frame = juce::String (juce::CharPointer_UTF8 (bytes + i + 11), 4).getIntValue(); break; }
         }
         if (frame <= 0 && len % 2048 == 0 && len / 2048 >= 1 && len / 2048 <= 256) frame = 2048;
+        return curvesFrom (mono, frame, name);
+    }
+
+    // (6.9.18) a built-in table: Vita's (0), Massif's (1) or a generated one (2), 2048-sample frames
+    juce::String loadBuiltIn (int group, int index, uint32_t seed);
+
+    // the eight curves from a sound: eight of a table's frames, spread evenly from the first
+    // to the last (frame > 0), else eight moments through it
+    juce::String curvesFrom (const std::vector<float>& mono, int frame, const juce::String& name)
+    {
+        const int len = (int) mono.size();
+        if (len < 64) return "too short";
         const bool table = frame >= 64 && juce::isPowerOfTwo (frame) && len / frame >= 1;
 
         std::array<std::array<float, filtertable::kBands>, filtertable::kFrames> curves {};
@@ -320,16 +362,96 @@ public:
         addAndMakeVisible (loadButton);
         loadButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff22303a));
         loadButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-        loadButton.setTooltip ("Loads a wavetable (.wav) of your own as the Loaded table: each frame's spectrum becomes an EQ curve");
-        loadButton.onClick = [this] { load(); };
+        loadButton.setTooltip ("A built-in table, or a wavetable or any sound of your own, as the Loaded table: eight of its frames become the EQ curves");
+        loadButton.onClick = [this] { showLoadMenu(); };   // (6.9.18: a menu)
+        // (6.9.19) the frames as spectra or as waveforms (the view only)
+        addAndMakeVisible (viewButton);
+        viewButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff22303a));
+        viewButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        viewButton.setTooltip ("Show the frames as their spectra (the EQ curves) or as waveforms");
+        viewButton.onClick = [this]
+        {
+            if (auto* mm = module.get()) mm->setParameter ("view", waveMode() ? 0.0f : 1.0f);
+            updateViewButton();
+            repaint();
+        };
+        updateViewButton();
         startTimerHz (20);
     }
 
-    void resized() override { loadButton.setBounds (getWidth() - 58, 6, 50, 18); }
+    void resized() override
+    {
+        loadButton.setBounds (getWidth() - 66, 6, 58, 18);
+        viewButton.setBounds (getWidth() - 136, 6, 66, 18);
+    }
+
+    bool waveMode() const
+    {
+        auto* mm = module.get();
+        return mm != nullptr && mm->getParameterBase (FilterTableModule::pView) > 0.5f;
+    }
+    void updateViewButton() { viewButton.setButtonText (waveMode() ? "Waveform" : "Spectrum"); }
+
+    // (6.9.19) a curve as one cycle: harmonic h (at 40 Hz x h on the curve's scale,
+    // its level the curve's, less 6 dB per octave as the curves were taken), peak-normalised
+    static void cycleFrom (std::function<float (float)> dbAtBand, float* out, int n)
+    {
+        constexpr int kH = 48;
+        static float sinT[1024];
+        static bool ready = false;
+        if (! ready) { for (int i = 0; i < 1024; ++i) sinT[i] = std::sin (juce::MathConstants<float>::twoPi * (float) i / 1024.0f); ready = true; }
+        float amp[kH + 1] {};
+        const float bandsPerOct = (float) (filtertable::kBands - 1) / std::log2 (filtertable::kHiHz / filtertable::kLoHz);
+        for (int h = 1; h <= kH; ++h)
+        {
+            const float band = std::log2 ((float) h) * bandsPerOct;
+            if (band > (float) (filtertable::kBands - 1)) break;
+            amp[h] = juce::Decibels::decibelsToGain (dbAtBand (band)) / (float) h;
+        }
+        float peak = 1.0e-6f;
+        for (int i = 0; i < n; ++i)
+        {
+            float v = 0.0f;
+            for (int h = 1; h <= kH; ++h)
+                if (amp[h] > 0.0f) v += amp[h] * sinT[(h * i * 1024 / n) & 1023];
+            out[i] = v;
+            peak = juce::jmax (peak, std::abs (v));
+        }
+        for (int i = 0; i < n; ++i) out[i] /= peak;
+    }
+
+    // (6.9.18) Load: the built-in tables, or a file
+    void showLoadMenu()
+    {
+        juce::PopupMenu m;
+        m.addItem (1, "Load Sample...");
+        m.addSeparator();
+        static const char* const groups[3] = { "Vita's Tables", "Massif's Tables", "Generate (a new one each time)" };
+        for (int g = 0; g < 3; ++g)
+        {
+            juce::PopupMenu sub;
+            for (int i = 0; i < aqBuiltinTableCount (g); ++i)
+                sub.addItem (100 + g * 1000 + i, juce::String (aqBuiltinTableName (g, i)));
+            if (sub.getNumItems() > 0) m.addSubMenu (groups[g], sub);
+        }
+        juce::Component::SafePointer<FilterTableView> safe (this);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&loadButton), [safe] (int r)
+        {
+            if (safe == nullptr || r <= 0) return;
+            if (r == 1) { safe->load(); return; }
+            auto* mod = dynamic_cast<FilterTableModule*> (safe->module.get());
+            if (mod == nullptr) return;
+            const int g = (r - 100) / 1000, i = (r - 100) % 1000;
+            if (mod->loadBuiltIn (g, i, (uint32_t) juce::Random::getSystemRandom().nextInt (1 << 30)).isEmpty())
+                mod->setParameter ("table", (float) (filtertable::tableNames().size() - 1));
+            safe->repaint();
+        });
+    }
 
     void load()
     {
-        chooser = std::make_unique<juce::FileChooser> ("Load a wavetable", juce::File(), aqp::android::pickerPatterns ("*.wav"));
+        chooser = std::make_unique<juce::FileChooser> ("Load a wavetable or a sound", juce::File(),
+                                                       aqp::android::pickerPatterns ("*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3"));
         juce::Component::SafePointer<FilterTableView> safe (this);
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe] (const juce::FileChooser& fc)
         {
@@ -383,6 +505,45 @@ public:
             return p;
         };
 
+        if (waveMode())
+        {
+            // (6.9.19) the frames as waveforms, stacked the same way
+            static constexpr int n = 96;
+            auto wavePath = [&front] (const float* w, float dx, float dy)
+            {
+                juce::Path p;
+                for (int i = 0; i < n; ++i)
+                {
+                    const float x = front.getX() + front.getWidth() * (float) i / (float) (n - 1) + dx;
+                    const float y = front.getCentreY() - w[i] * front.getHeight() * 0.42f - dy;
+                    if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
+                }
+                return p;
+            };
+            float w[n];
+            for (int f = filtertable::kFrames - 1; f >= 0; --f)
+            {
+                const float back = (float) f / (float) (filtertable::kFrames - 1);
+                cycleFrom ([m, f] (float band)
+                {
+                    const int b0 = juce::jmin (filtertable::kBands - 2, (int) band);
+                    const float t = band - (float) b0;
+                    return m->frameValue (f, b0) * (1.0f - t) + m->frameValue (f, b0 + 1) * t;
+                }, w, n);
+                const bool near = std::abs (back - pos) < 0.5f / (float) (filtertable::kFrames - 1);
+                g.setColour (juce::Colours::white.withAlpha (near ? 0.45f : 0.16f));
+                g.strokePath (wavePath (w, back * depthX, back * depthY), juce::PathStrokeType (1.0f));
+            }
+            g.setColour (juce::Colours::white.withAlpha (0.12f));
+            g.drawHorizontalLine ((int) front.getCentreY(), front.getX(), front.getRight());
+            const float skew = juce::jlimit (0.0f, 1.0f, m->getParameterBase (FilterTableModule::pSkew) * 0.01f);
+            cycleFrom ([m, pos, skew] (float band) { return filtertable::skewDb (m->curveAt (pos, band), skew); }, w, n);
+            g.setColour (juce::Colour (0xffffe08a));
+            g.strokePath (wavePath (w, pos * depthX, pos * depthY), juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            drawLabel (g, *m, r, pos);
+            return;
+        }
+
         // the frames, back (the last) to front (the first)
         for (int f = filtertable::kFrames - 1; f >= 0; --f)
         {
@@ -401,10 +562,16 @@ public:
         // the 0 dB line and the curve playing now, at its place in the stack
         g.setColour (juce::Colours::white.withAlpha (0.12f));
         g.drawHorizontalLine ((int) front.getCentreY(), front.getX(), front.getRight());
-        auto now = curvePath ([m, pos] (float band) { return m->curveAt (pos, band); }, pos * depthX, pos * depthY);
+        const float skew = juce::jlimit (0.0f, 1.0f, m->getParameterBase (FilterTableModule::pSkew) * 0.01f);
+        auto now = curvePath ([m, pos, skew] (float band) { return filtertable::skewDb (m->curveAt (pos, band), skew); }, pos * depthX, pos * depthY);
         g.setColour (juce::Colour (0xffffe08a));
         g.strokePath (now, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        drawLabel (g, *m, r, pos);
+    }
 
+    void drawLabel (juce::Graphics& g, FilterTableModule& mod, juce::Rectangle<float> r, float pos)
+    {
+        auto* m = &mod;
         g.setColour (juce::Colours::white.withAlpha (0.6f));
         g.setFont (juce::Font (juce::FontOptions (10.0f)));
         const int st = juce::jmax (0, m->shownTable());
@@ -421,8 +588,10 @@ private:
         auto* m = dynamic_cast<FilterTableModule*> (module.get());
         if (m == nullptr) return;
         const float p = m->shownPosition.load (std::memory_order_relaxed);
-        if (p != lastPos || m->shownTable() != lastTable)
+        const float sk = m->getParameterBase (FilterTableModule::pSkew);
+        if (p != lastPos || m->shownTable() != lastTable || sk != lastSkew)
         {
+            lastSkew = sk;
             lastPos = p;
             lastTable = m->shownTable();
             repaint();
@@ -430,11 +599,19 @@ private:
     }
 
     juce::WeakReference<SynthModule> module;
-    float lastPos { -1.0f };
+    float lastPos { -1.0f }, lastSkew { -1.0f };
     int lastTable { -2 };
-    juce::TextButton loadButton { "Load" };
+    juce::TextButton loadButton { "Load..." }, viewButton { "Spectrum" };
     std::unique_ptr<juce::FileChooser> chooser;
 };
+
+juce::String FilterTableModule::loadBuiltIn (int group, int index, uint32_t seed)
+{
+    std::string name;
+    const auto frames = aqBuiltinTable (group, index, seed, name);
+    if (frames.empty()) return "no such table";
+    return curvesFrom (frames, 2048, juce::String (name));
+}
 
 std::unique_ptr<juce::Component> FilterTableModule::createExtraContentComponent()
 {
@@ -450,7 +627,8 @@ static ModuleDescriptor filterTableDescriptor()
         "A wavetable of EQ curves: eight frames per table (vowels, dark to bright, petals opening, a walking "
         "comb ...), and Position glides through them - put an LFO or an envelope on Position and the sound's "
         "colour travels. Depth scales the curve (negative turns it upside down), Shift slides it up or down, "
-        "Sharp narrows the bands.";
+        "Sharp narrows the bands, Skew makes the curve's low parts quieter (the peaks stand out). The view shows "
+        "the frames as spectra or as waveforms.";
     d.section = ModuleSection::Filter;
     d.sidebarOrder = 60;
     d.searchKeywords = "wavetable eq formant vowel morph";
@@ -461,8 +639,10 @@ static ModuleDescriptor filterTableDescriptor()
         makeRotary ("depth",    "Depth",    -200.0f, 200.0f, 100.0f, 0, "%"),
         makeRotary ("shift",    "Shift",    -100.0f, 100.0f, 0.0f, 1, "%"),
         makeRotary ("sharp",    "Sharp",    0.5f, 4.0f, 1.4f, 1, {}, true),
-        makeRotary ("output",   "Output",   -18.0f, 12.0f, 0.0f, 1, "dB"),
-        makeRotary ("dryWet",   "Dry/Wet",  0.0f, 100.0f, 100.0f, 1, "%")
+        makeRotary ("output",   "Output",   -18.0f, 4.0f, 0.0f, 1, "dB"),    // (6.9.19: up to +4 dB, was +12)
+        makeRotary ("dryWet",   "Dry/Wet",  0.0f, 100.0f, 100.0f, 1, "%"),
+        makeRotary ("skew",     "Skew",     0.0f, 100.0f, 0.0f, 0, "%"),     // (6.9.19)
+        makeCombo  ("view",     "View", { "Spectrum", "Waveform" }, 0, 0, 2).noMod().hide()   // (6.9.19, the card's view button)
     };
     d.extraSection = "Table";
     return d;
@@ -481,3 +661,12 @@ float filterTableFrameDb (aquanode::SynthModule* m, int frame, int band)
     auto* f = dynamic_cast<FilterTableModule*> (m);
     return f != nullptr ? f->frameValue (frame, band) : 0.0f;
 }
+
+#if AQUANODE_TEST_HARNESS
+// (test harness) a built-in table into a Filter Table EQ: "" when it worked
+juce::String filterTableLoadBuiltInForTest (SynthModule& m, int group, int index)
+{
+    auto* ft = dynamic_cast<FilterTableModule*> (&m);
+    return ft != nullptr ? ft->loadBuiltIn (group, index, 7) : juce::String ("not a Filter Table EQ");
+}
+#endif

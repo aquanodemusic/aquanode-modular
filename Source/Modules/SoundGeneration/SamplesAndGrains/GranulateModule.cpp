@@ -337,13 +337,13 @@ static ModuleDescriptor granulateDescriptor()
     d.sidebarOrder = 2;
     d.sockets = {
         modIn ("envIn", "Env In"),
-        midiIn ("addMidiIn", "Add Midi In"),
+        midiIn ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut", "Audio Out")
     };
     d.params = {
         makeRotary ("volume",    "Volume",     0.0f, 1.0f, 0.8f, 0),
         makeRotary ("grains",    "Grains",     1.0f, 32.0f, 8.0f, 0, {}, false, 1.0f),
-        makeRotary ("size",      "Size",       1.0f, 20.0f, 8.0f, 0, "%", true),
+        makeRotary ("size",      "Size",       0.1f, 25.0f, 8.0f, 0, "%", true),   // (6.9.15: was 1 - 20 %)
         makeRotary ("position",  "Position",   0.0f, 100.0f, 0.0f, 0, "%"),
         makeRotary ("spray",     "Spray",      0.0f, 100.0f, 10.0f, 0, "%"),
         makeRotary ("pitchDisp", "Pitch Disp", 0.0f, 100.0f, 0.0f, 1, "%"),

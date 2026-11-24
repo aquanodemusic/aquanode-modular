@@ -12,6 +12,7 @@
 //      -> amp envelope x velocity x main amp
 //  Global: sum -> volume -> 4-tap triangle chorus -> DC blocker -> limiter
 // ============================================================================
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include <cmath>
 #include <vector>
 #include <array>
@@ -596,7 +597,7 @@ public:
             masterRange[o] = rmin;
             mult[o][0] = 1 << (r0 - rmin); mult[o][1] = 1 << (r1 - rmin);
             for (int w = 0; w < 2; ++w) {
-                double hz = 440.0 * std::exp2((semis - 69.0) / 12.0 + p.range[o][w]);
+                double hz = ::aquanode::tuning::noteToHz((double) semis) * std::exp2(p.range[o][w]);
                 zone[o][w] = Tables::zoneFor(hz);
                 tab[o][w] = tables->table(p.wave[o][w], zone[o][w]);
             }
@@ -658,8 +659,8 @@ public:
             const int r0 = p.range[o][0], r1 = p.range[o][1], rmin = std::min(r0, r1);
             masterRange[o] = rmin; mult[o][0] = 1 << (r0 - rmin); mult[o][1] = 1 << (r1 - rmin);
         }
-        double hz1 = 440.0 * std::exp2((base + pitchModSemis(pitchM + pitch1) + det - 69.0) / 12.0 + masterRange[0]);
-        double hz2 = 440.0 * std::exp2((base + pitchModSemis(pitchM + pitch2) - det - 69.0) / 12.0 + masterRange[1]);
+        double hz1 = ::aquanode::tuning::noteToHz((double) (base + pitchModSemis(pitchM + pitch1) + det)) * std::exp2(masterRange[0]);
+        double hz2 = ::aquanode::tuning::noteToHz((double) (base + pitchModSemis(pitchM + pitch2) - det)) * std::exp2(masterRange[1]);
         // mip zone from the actual (modulated) frequency of each wave - measured: the
         // original follows matrix pitch (constant offsets, LFO, glide) block by block
         {

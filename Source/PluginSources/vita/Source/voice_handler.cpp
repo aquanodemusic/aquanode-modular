@@ -14,6 +14,7 @@
  * along with vital.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "../../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "voice_handler.h"
 
 #include "synth_constants.h"
@@ -102,6 +103,7 @@ namespace vital {
     lift_.owner = &voice_router_;
     aftertouch_.owner = &voice_router_;
     slide_.owner = &voice_router_;
+    aq_slide_.owner = &voice_router_;
     active_mask_.owner = &voice_router_;
     mod_wheel_.owner = &voice_router_;
     pitch_wheel_.owner = &voice_router_;
@@ -126,6 +128,7 @@ namespace vital {
     reset_.clearTrigger();
     aftertouch_.clearTrigger();
     slide_.clearTrigger();
+    aq_slide_.clearTrigger();
 
     for (Voice* voice : aggregate_voice->voices) {
       if (voice->hasNewEvent()) {
@@ -170,6 +173,7 @@ namespace vital {
             voice->shiftSlideEvent(num_samples / getOversampleAmount());
           else {
             slide_.trigger(voice->voice_mask(), voice->slide(), slide_sample);
+            aq_slide_.trigger(voice->voice_mask(), voice->aqSlide(), slide_sample);
             voice->clearSlideEvent();
           }
         }
@@ -198,6 +202,7 @@ namespace vital {
 
       aftertouch_.trigger_value = utils::maskLoad(aftertouch_.trigger_value, voice->aftertouch(), mask);
       slide_.trigger_value = utils::maskLoad(slide_.trigger_value, voice->slide(), mask);
+      aq_slide_.trigger_value = utils::maskLoad(aq_slide_.trigger_value, voice->aqSlide(), mask);
 
       bool dead = voice->key_state() == Voice::kDead;
       poly_float active_value = dead ? 0.0f : 1.0f;
@@ -213,7 +218,7 @@ namespace vital {
       pitch_wheel_percent_.trigger_value = utils::maskLoad(pitch_wheel_percent_.trigger_value,
                                                            pitch_wheel_percent, mask);
 
-      mono_float local_pitch_bend = voice->state().local_pitch_bend * kLocalPitchBendRange;
+      mono_float local_pitch_bend = voice->state().local_pitch_bend * local_pitch_bend_range_;
       local_pitch_bend_.trigger_value = utils::maskLoad(local_pitch_bend_.trigger_value, local_pitch_bend, mask);
     }
   }
@@ -654,7 +659,9 @@ namespace vital {
       return;
 
     mono_float tuned_note = note;
-    if (tuning_)
+    if (const auto* aqt = ::aquanode::tuning::current())   // (Aquanode: a Microtuning in the patch)
+      tuned_note = (mono_float) ::aquanode::tuning::tablePitch(*aqt, note);
+    else if (tuning_)
       tuned_note = tuning_->convertMidiNote(note);
 
     poly_float last_note = tuned_note;
@@ -671,6 +678,7 @@ namespace vital {
     voice->setLocalPitchBend(pitch_wheel_values_[channel]);
     voice->setAftertouch(pressure_values_[channel]);
     voice->setSlide(slide_values_[channel]);
+    voice->setSlideSeen(slide_seen_values_[channel]);
     active_voices_.push_back(voice);
 
     sortVoicePriority();
@@ -705,7 +713,9 @@ namespace vital {
             mono_float old_note = getNote(old_note_value);
             int old_channel = getChannel(old_note_value);
             mono_float tuned_note = old_note;
-            if (tuning_)
+            if (const auto* aqt = ::aquanode::tuning::current())   // (Aquanode: a Microtuning in the patch)
+              tuned_note = (mono_float) ::aquanode::tuning::tablePitch(*aqt, (int) old_note);
+            else if (tuning_)
               tuned_note = tuning_->convertMidiNote(old_note);
 
             total_notes_++;
@@ -714,6 +724,7 @@ namespace vital {
             voice->setLocalPitchBend(pitch_wheel_values_[channel]);
             voice->setAftertouch(pressure_values_[channel]);
             voice->setSlide(slide_values_[channel]);
+            voice->setSlideSeen(slide_seen_values_[channel]);
           }
           else {
             voice->deactivate(sample);
@@ -751,18 +762,25 @@ namespace vital {
 
   void VoiceHandler::setChannelSlide(int channel, mono_float slide, int sample) {
     slide_values_[channel] = slide;
+    slide_seen_values_[channel] = true;
     for (Voice* voice : active_voices_) {
-      if (voice->state().channel == channel && voice->held())
+      if (voice->state().channel == channel && voice->held()) {
         voice->setSlide(slide, sample);
+        voice->setSlideSeen(true);
+      }
     }
   }
 
   void VoiceHandler::setChannelRangeSlide(int from_channel, int to_channel, mono_float slide, int sample) {
     for (Voice* voice : active_voices_) {
       int channel = voice->state().channel;
-      if (channel >= from_channel && channel <= to_channel)
+      if (channel >= from_channel && channel <= to_channel) {
         voice->setSlide(slide, sample);
+        voice->setSlideSeen(true);
+      }
     }
+    for (int c = from_channel; c <= to_channel && c < kNumMidiChannels; ++c)
+      if (c >= 0) slide_seen_values_[c] = true;
   }
 
   void VoiceHandler::setPolyphony(int polyphony) {

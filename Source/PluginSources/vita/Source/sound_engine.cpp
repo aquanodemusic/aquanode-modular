@@ -46,6 +46,10 @@ namespace vital {
     modulation_processors_.reserve(kMaxModulationConnections);
   }
 
+  void SoundEngine::setLocalPitchBendRange(mono_float semis) {
+    voice_handler_->setLocalPitchBendRange(semis);
+  }
+
   SoundEngine::~SoundEngine() {
     voice_handler_->prepareDestroy();
   }
@@ -386,6 +390,14 @@ namespace vital {
     mono_float bps = bpm / 60.0f;
     if (bps_->value() != bps)
       bps_->set(bps);
+  }
+
+  float SoundEngine::aqSlideShown(int index) const {
+    return voice_handler_->aqSlideShown(index);
+  }
+
+  void SoundEngine::setAqSlideDepth(int index, float frames) {
+    voice_handler_->setAqSlideDepth(index, frames);
   }
 
   Wavetable* SoundEngine::getWavetable(int index) {

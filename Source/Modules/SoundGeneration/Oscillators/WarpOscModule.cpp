@@ -575,7 +575,7 @@ static ModuleDescriptor warpOscDescriptor()
         modIn    ("pitchIn",   "Pitch In"),
         modIn    ("fmIn",      "FM In"),
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

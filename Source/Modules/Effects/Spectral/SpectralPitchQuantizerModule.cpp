@@ -1282,7 +1282,7 @@ static ModuleDescriptor spectralPitchQuantizerDescriptor()
         "pass untouched. Engines: Multi (default) moves the partials it recognizes, notes from A#3 up carry "
         "their harmonics; Mono is the denser module; Bright is Multi plus Pass Quiet (quiet partials "
         "keep their pitch, brighter), Flicker (added unsteadiness), Snap (a pill on a note's own row "
-        "tunes it onto its semitone) and Midi In (held notes pass unquantized). Tolerance and Intonation keep "
+        "tunes it onto its semitone) and MIDI In (held notes pass unquantized). Tolerance and Intonation keep "
         "partials near their semitone and their detune, Clean drops the noise around moved partials, Glide "
         "slides onto new targets, Warp sets from which note harmonics travel along (Mono: bends the moves), "
         "Top Fold folds upper harmonics onto the map, Air adds highs. Latency: 4096 samples.";
@@ -1290,7 +1290,7 @@ static ModuleDescriptor spectralPitchQuantizerDescriptor()
     d.sidebarOrder = 62;
     d.sockets = {
         audioIn  ("audioIn",  "Audio In"),
-        midiIn   ("midiIn",   "Midi In"),     // (6.2) held notes are let free
+        midiIn   ("midiIn",   "MIDI In"),     // (6.2) held notes are let free
         audioOut ("audioOut", "Audio Out")
     };
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../Engine/Tuning.h"
 //==============================================================================
 // The physically modelled instruments as playable engines: notes in, stereo
 // out. The Strings, Cello, Clarinet, Acoustic Guitar and Electric Guitar
@@ -24,11 +25,12 @@
 //==============================================================================
 #include "PhysInstruments.h"
 #include "StudioVoicing.h"
+#include "PizzModal.h"
 #include <array>
 
 namespace aquanode::physinst
 {
-    inline double midiHz (double note) { return 440.0 * std::pow (2.0, (note - 69.0) / 12.0); }
+    inline double midiHz (double note) { return aquanode::tuning::noteToHz (note); }   // (the patch tuning, 6.9.10)
 
     // the live controls, read once per sample
     struct LiveControls
@@ -100,7 +102,7 @@ namespace aquanode::physinst
             bool pizzicato { false }, legato { false };
             double breathAmount { 0.0 };
             double decay { 1.0 }, sustain { 1.0 };   // Decay (s) / Sustain (0..1), see DecayEnv
-            int studio { 0 };                        // 0 classic, 1 Arco Studio, 2 Pizz Studio, 3 Pizz Mellow
+            int studio { 0 };                        // 0 classic, 1 Arco Studio, 2 Pizz Studio, 3 Pizz Mellow, 4 Pizz Modal
         };
 
         void prepare (double sampleRate, bool section)
@@ -115,7 +117,7 @@ namespace aquanode::physinst
                 bodyL[(size_t) i].build (info.bf, info.bq, info.bg, info.bn, sr, 1.0, section ? 0.01 : 0.0, 7, maxModes);
                 bodyR[(size_t) i].build (info.bf, info.bq, info.bg, info.bn, sr, 1.0, section ? 0.01 : 0.0, 11, maxModes);
             }
-            for (auto& s : strings) s.str.prepare (sr);
+            for (auto& s : strings) { s.str.prepare (sr); s.mp.prepare (sr); }
             directHp.set (2000.0, sr);
             builtStudio = -1;
             buildStudio();
@@ -124,7 +126,7 @@ namespace aquanode::physinst
 
         void reset()
         {
-            for (auto& s : strings) { s.str.reset(); s.note = -1; s.sustained = false; }
+            for (auto& s : strings) { s.resetVoice(); s.note = -1; s.sustained = false; }
             for (auto& b : bodyL) b.reset();
             for (auto& b : bodyR) b.reset();
             stack.clear();
@@ -151,7 +153,7 @@ namespace aquanode::physinst
                 {
                     bool moved = false;
                     for (auto& s : strings)
-                        if (s.note == prev && s.str.isActive())
+                        if (s.note == prev && s.active())
                         {
                             startOne (s, note, f * s.det, dyn * s.dynScale, inst, s.pan, true, midiHz (prev) * s.det);
                             moved = true;
@@ -162,7 +164,7 @@ namespace aquanode::physinst
             else
                 stack.push (note);
             // re-struck: the same key's strings let go first
-            for (auto& s : strings) if (s.note == note && s.str.isHeld()) s.str.release();
+            for (auto& s : strings) if (s.note == note && s.held()) s.release();
             const int players = std::clamp (set.players, 1, 8);
             for (int p = 0; p < players; ++p)
             {
@@ -184,15 +186,15 @@ namespace aquanode::physinst
                 // back to the key still held
                 const int back = stack.top();
                 for (auto& s : strings)
-                    if (s.note == note && s.str.isActive())
+                    if (s.note == note && s.active())
                         startOne (s, back, midiHz (back) * s.det, s.lastDyn, instrumentFor (back), s.pan, true, midiHz (note) * s.det);
                 return;
             }
             for (auto& s : strings)
-                if (s.note == note && s.str.isHeld())
+                if (s.note == note && s.held())
                 {
                     if (sustain) s.sustained = true;
-                    else s.str.release();
+                    else s.release();
                 }
         }
 
@@ -201,24 +203,32 @@ namespace aquanode::physinst
             sustain = on;
             if (! on)
                 for (auto& s : strings)
-                    if (s.sustained) { s.sustained = false; s.str.release(); }
+                    if (s.sustained) { s.sustained = false; s.release(); }
         }
 
-        void allNotesOff() { for (auto& s : strings) { s.sustained = false; s.str.release(); } stack.clear(); }
+        void allNotesOff() { for (auto& s : strings) { s.sustained = false; s.release(); } stack.clear(); }
 
-        bool isSounding() const { for (const auto& s : strings) if (s.str.isActive()) return true; for (auto q : quiet) if (q < kQuietMax) return true; return false; }
+        bool isSounding() const { for (const auto& s : strings) if (s.active()) return true; for (auto q : quiet) if (q < kQuietMax) return true; return false; }
 
         void process (const LiveControls& c, double& outL, double& outR)
         {
             busL.fill (0.0); busR.fill (0.0);
+            double modalL = 0.0, modalR = 0.0;
             const double a = std::clamp (set.breathAmount, 0.0, 1.0);
             std::array<bool, 4> any {};
             for (auto& s : strings)
             {
-                if (! s.str.isActive()) continue;
+                if (! s.active()) continue;
                 if (a > 0.0 && ! set.pizzicato) s.str.setDynamic ((1.0 - a) * s.lastDyn + a * c.breathOf (s.channel));
-                const double x = s.str.process (c.bendOf (s.channel), c.vibScale) * s.gain * s.env.next (decayCoef, set.sustain);
+                const double x = (s.modal ? s.mp.process (c.bendOf (s.channel)) : s.str.process (c.bendOf (s.channel), c.vibScale))
+                                 * s.gain * s.env.next (decayCoef, set.sustain);
                 const double pl = std::cos ((s.pan + 1.0) * 0.25 * kPi) * 1.41421356, pr = std::sin ((s.pan + 1.0) * 0.25 * kPi) * 1.41421356;
+                if (s.modal)
+                {
+                    // Pizz Modal: the measured partials carry the body and the room already
+                    if (isSection) { modalL += x * pl; modalR += x * pr; } else { modalL += x; modalR += x; }
+                    continue;
+                }
                 busL[(size_t) s.inst] += x * pl;
                 busR[(size_t) s.inst] += x * pr;
                 any[(size_t) s.inst] = true;
@@ -248,14 +258,20 @@ namespace aquanode::physinst
                     l += b; r += b;
                 }
             }
-            outL = l;
-            outR = r;
+            outL = l + modalL;
+            outR = r + modalR;
         }
 
     private:
         struct Str
         {
             BowedString str;
+            pizzmodal::Voice mp;     // Pizz Modal plays this instead of the string
+            bool modal { false };
+            bool active() const { return modal ? mp.isActive() : str.isActive(); }
+            bool held() const { return modal ? mp.isHeld() : str.isHeld(); }
+            void release() { if (modal) mp.release(); else str.release(); }
+            void resetVoice() { str.reset(); mp.reset(); }
             int note { -1 }, inst { 0 }, channel { 1 };
             double det { 1.0 }, dynScale { 1.0 }, pan { 0.0 }, gain { 1.0 }, lastDyn { 0.7 };
             bool sustained { false };
@@ -272,13 +288,13 @@ namespace aquanode::physinst
         Str& freeString()
         {
             Str* best = nullptr;
-            for (auto& s : strings) if (! s.str.isActive()) { best = &s; break; }
+            for (auto& s : strings) if (! s.active()) { best = &s; break; }
             if (best == nullptr)
             {
                 // the oldest released one, else the oldest of all
-                for (auto& s : strings) if (! s.str.isHeld() && (best == nullptr || s.age < best->age)) best = &s;
+                for (auto& s : strings) if (! s.held() && (best == nullptr || s.age < best->age)) best = &s;
                 if (best == nullptr) for (auto& s : strings) if (best == nullptr || s.age < best->age) best = &s;
-                best->str.reset();
+                best->resetVoice();
             }
             return *best;
         }
@@ -312,9 +328,20 @@ namespace aquanode::physinst
             const auto info = instrumentInfo ((Bowed) inst);
             const double a = std::clamp (set.breathAmount, 0.0, 1.0);
             s.lastDyn = dyn;
-            if (set.studio >= 2 && set.pizzicato) studioPluck (b, note);
-            s.str.start (note, f, a > 0.0 && ! set.pizzicato ? (1.0 - a) * dyn : dyn, info, b, set.pizzicato, (uint64_t) (++counter) * 31u + 5u,
-                         glide ? fromF : 0.0, delay, 0.0);
+            s.modal = set.pizzicato && set.studio == 4;
+            if (s.modal)
+            {
+                // Pizz Modal: the partials of a measured cello pizzicato (a section: fewer each)
+                s.str.reset();
+                s.mp.start (note, f, dyn, set.brightness, (uint64_t) (++counter) * 31u + 5u, delay, players > 2 ? 96 : pizzmodal::Voice::kMaxPartials);
+            }
+            else
+            {
+                s.mp.reset();
+                if (set.studio >= 2 && set.pizzicato) studioPluck (b, note);
+                s.str.start (note, f, a > 0.0 && ! set.pizzicato ? (1.0 - a) * dyn : dyn, info, b, set.pizzicato, (uint64_t) (++counter) * 31u + 5u,
+                             glide ? fromF : 0.0, delay, 0.0);
+            }
             s.note = note; s.inst = inst; s.pan = pan; s.channel = curChannel;
             s.gain = (set.pizzicato ? 2.0 : 1.0) / std::sqrt ((double) std::max (1, players)) * kOutGain * levelFor (inst);
             s.sustained = false;
@@ -328,7 +355,7 @@ namespace aquanode::physinst
         {
             if (set.studio == builtStudio) return;
             builtStudio = set.studio;
-            if (set.studio <= 0) return;
+            if (set.studio <= 0 || set.studio >= 4) return;
             for (int i = 0; i < 4; ++i)
             {
                 const studio::Id id = set.studio == 1 ? (i < 2 ? studio::ViolinArco : studio::CelloArco)

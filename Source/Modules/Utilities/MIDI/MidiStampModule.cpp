@@ -17,6 +17,7 @@
 // Inputs: Midi In (the played keys when empty). Output: Midi Out.
 //==============================================================================
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/MpeFollow.h"
 #include "../../Shared/MidiTake.h"
 #include "../../../Engine/PluginProcessor.h"
 #include "../../../Plugins/Host/PluginCatalog.h"
@@ -64,7 +65,7 @@ public:
 
     void blockStart() override
     {
-        clock.blockStart (tempoBpm, sampleRate, hostPlayHead);
+        clock.blockStart (tempoBpm, sampleRate, tempoFromLane() ? nullptr : hostPlayHead);
         // the newest clip, latched for the block (and acknowledged, so the card
         // never reuses one this thread may still read)
         for (;;)
@@ -76,17 +77,26 @@ public:
     }
 
     //=== the played keys (audio thread) ========================================
+    bool acceptsMpeEvents() const override { return true; }   // (6.9.11: its notes follow the leading finger)
     int processMidiEvent (const MidiDriverEvent& in, MidiDriverEvent*, int) override
     {
+        mpeFollow.heard (in);
+        if (in.isExpression) return 0;
         if (in.isOn) addHeld (in.note); else removeHeld (in.note);
         return 0;
     }
+    aquanode::MpeFollow mpeFollow;
     void midiDriverHeldNoteOn (int note) override { addHeld (note); }
     void midiDriverHeldNoteOff (int note) override { removeHeld (note); }
     void midiDriverAllHeldOff() override { numHeld = 0; }
     void midiAllNotesOff() override { numHeld = 0; }
 
-    int midiDriverAdvanceEvents (double, MidiDriverEvent* events, int maxEvents) override
+    // (6.9.11) its notes, then the leading finger's MPE on them
+    int midiDriverAdvanceEvents (double sr, MidiDriverEvent* events, int maxEvents) override
+    {
+        return mpeFollow.decorate (events, advanceNotes (sr, events, maxEvents), maxEvents);
+    }
+    int advanceNotes (double, MidiDriverEvent* events, int maxEvents)
     {
         clock.tick();
         const double beat = clock.beat;
@@ -138,9 +148,9 @@ public:
             "(Variation: velocities, timing, now and then a dropped note or an octave jump); Vary varies the same clip "
             "again. It plays while a key is held (Hold, in the held key) or all the time (Loop, in time with the bars, in "
             "Key or the held key); Octave moves it. Beats play the drum modules' pads. To Piano Roll puts the clip into "
-            "the patch's Piano Roll to edit (a new one, wired like the stamp, if there is none); Save MIDI saves it.";
+            "the patch's Piano Roll to edit (a new one, wired like the stamp, if there is none); Save MIDI saves it. With MPE, the notes it plays take the bend, pressure and slide of the finger that leads (the latest pressed) and follow them while they sound; what it records and saves is plain MIDI.";
         d.section = ModuleSection::Utility;
-        d.sockets = { midiIn ("midiIn", "Midi In"), midiOut ("midiOut", "Midi Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), midiOut ("midiOut", "MIDI Out"), tempoIn() };
         juce::StringArray stamps;
         for (int i = 0; i < stampdata::kNumStamps; ++i) stamps.add (stampdata::stampNames[i]);
         d.params = {

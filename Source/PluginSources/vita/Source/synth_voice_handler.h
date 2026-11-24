@@ -56,6 +56,8 @@ namespace vital {
       output_map& getPolyModulations() override;
       ModulationConnectionBank& getModulationBank() { return modulation_bank_; }
       Wavetable* getWavetable(int index) { return producers_->getWavetable(index); }
+      void setAqSlideDepth(int index, float frames) { producers_->setAqSlideDepth(index, frames); }
+      float aqSlideShown(int index) const { return producers_->aqSlideShown(index); }
       void setOscillatorRandomSeed(int index, int seed) { producers_->setOscillatorRandomSeed(index, seed); }
       void setOscillatorWarpCurve(int index, const LineGenerator* curve) { producers_->setOscillatorWarpCurve(index, curve); }
       Sample* getSample() { return producers_->getSample(); }

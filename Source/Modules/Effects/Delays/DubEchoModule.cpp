@@ -268,14 +268,15 @@ static ModuleDescriptor dubEchoDescriptor()
         "saturation, Tone darkens every repeat a little more, and Feedback above 100 % lets the loop sing on its own. "
         "Head 2 adds a second playback head at a musical ratio of Time; Wow and Flutter wobble the tape, and turning "
         "Time glides the pitch of the repeats, as a tape does. Noise is the machine's playback hiss on top (shaped "
-        "after a Roland RE-201's); Echo Noise records noise onto the tape with the sound, so it repeats, darkens and "
+        "after a classic three-head tape echo's); Echo Noise records noise onto the tape with the sound, so it repeats, darkens and "
         "builds up with Feedback.";
     d.section = ModuleSection::Effect;
     d.sidebarOrder = 3;
     d.listedAfter = "fx.echo";
     d.sockets = {
         audioIn ("audioIn", "Audio In"),
-        audioOut ("audioOut", "Audio Out")
+        audioOut ("audioOut", "Audio Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     d.params = {
         makeRotary ("time",      "Time",      40.0f, 2000.0f, 352.0f, 0, "ms", true),

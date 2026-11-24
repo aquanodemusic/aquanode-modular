@@ -46,7 +46,7 @@ public:
 
     void processSample (const aquanode::StereoFrame* inputs, aquanode::StereoFrame* outputs) override
     {
-        const int listen = juce::jlimit (0, 3, juce::roundToInt (param (pListen)));
+        const int listen = juce::jlimit (0, 4, juce::roundToInt (param (pListen)));
         float targetA = listen == 1 ? 0.0f : 1.0f;                       // A, and A in the difference
         float targetB = listen == 1 ? 1.0f : (listen == 2 ? -1.0f : 0.0f);
         if (listen == 3)
@@ -55,6 +55,13 @@ public:
             const float b = juce::jlimit (0.0f, 1.0f, param (pBalance) * 0.01f);
             targetA = 1.0f - b;
             targetB = b;
+        }
+        else if (listen == 4)
+        {
+            // (6.9.21) Equal Power: as the Crossfade module, a quarter circle
+            const float b = juce::jlimit (0.0f, 1.0f, param (pBalance) * 0.01f);
+            targetA = std::cos (b * juce::MathConstants<float>::halfPi);
+            targetB = std::sin (b * juce::MathConstants<float>::halfPi);
         }
         gainA += juce::jlimit (-step, step, targetA - gainA);
         gainB += juce::jlimit (-step, step, targetB - gainB);

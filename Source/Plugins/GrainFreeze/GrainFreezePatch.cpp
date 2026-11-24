@@ -78,7 +78,7 @@ public:
         d.section = ModuleSection::Oscillator;
         d.accent = kit::accentOf (kPlugin);
         d.sidebarOrder = 400;
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out") };
         d.params = {
             makeButton ("load", "Load Sound", 0, 2),
             makeButton ("play", "Play / Stop", 0, 2),

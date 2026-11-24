@@ -252,6 +252,7 @@ juce::String SpectralResynthModule::describe (const Edit& e)
         case Op::Reverse:       return "Reverse" + regions;
         case Op::Rotate:        return "Rotate " + juce::String (juce::roundToInt (e.amount)) + juce::String (juce::CharPointer_UTF8 ("\xc2\xb0")) + regions;
         case Op::Smear:         return "Smear " + juce::String (juce::roundToInt (e.amount)) + " ms" + regions;
+        case Op::Paint:         return "Paint " + juce::String (juce::roundToInt (e.amount)) + " dB" + regions;
         case Op::NoteRemove:    return where + "Remove";
         case Op::NoteGain:      return where + "Gain " + signedAmount (e.amount, 0) + " dB";
         case Op::NoteTranspose: return where + "Transpose " + signedAmount (e.amount, 0) + " st";
@@ -327,6 +328,16 @@ void SpectralResynthModule::uiButtonClicked (const juce::String& paramId)
     if (paramId == "record")
     {
         toggleRecording();
+        return;
+    }
+    if (paramId == "initBlank")
+    {
+        // (6.9.16) an empty sound to paint on (silence, saved with the patch like a take)
+        const double rate = sampleRate > 0.0 ? sampleRate : 48000.0;
+        auto blank = std::make_shared<juce::AudioBuffer<float>> (1, (int) std::lround (kBlankSeconds * rate));
+        blank->clear();
+        newSoundByHand();
+        setLoadedSample (std::move (blank), rate);
         return;
     }
     if (paramId != "loadSample")
@@ -484,7 +495,8 @@ namespace
     const char* opKey (SpectralResynthModule::Op op)
     {
         static const char* keys[] = { "delete", "keep", "gain", "transpose", "reverse", "rotate", "smear",
-                                      "noteRemove", "noteGain", "noteTranspose", "noteUnison", "noteFundOnly", "noteNoFund", "noteOddOnly" };
+                                      "noteRemove", "noteGain", "noteTranspose", "noteUnison", "noteFundOnly", "noteNoFund", "noteOddOnly",
+                                      "paint" };
         return keys[(int) op];
     }
 }
@@ -548,7 +560,7 @@ void SpectralResynthModule::loadCustomState (const juce::String& state)
             Edit ed;
             const auto key = c->getStringAttribute ("op");
             bool known = false;
-            for (int i = 0; i <= (int) Op::NoteOddOnly; ++i)
+            for (int i = 0; i <= (int) Op::Paint; ++i)
                 if (key == opKey ((Op) i)) { ed.op = (Op) i; known = true; }
             if (! known)
                 continue;
@@ -887,14 +899,16 @@ static ModuleDescriptor spectralResynthDescriptor()
         "A sound - loaded, or recorded from Rec In (up to two minutes, saved with the patch) - taken apart and played "
         "from the keys. Bins plays its own spectrum back (untouched: as it was); Partials plays it as sine partials "
         "and noise. Select regions to delete, keep, transpose, reverse, rotate or turn up, one edit after another; tap "
-        "a note to remove, move, double or thin it with all its harmonics. Speed, Freeze and Position play time "
+        "a note to remove, move, double or thin it with all its harmonics. Init Blank gives an empty sound, and "
+        "Paint adds sound where a region is - a narrow one a tone, a wider one noise - at the Level set. "
+        "Speed, Freeze and Position play time "
         "without touching the pitch. FM In bends the pitch, Env In takes an ADSR.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 3;
     d.sockets = {
         modIn ("fmIn",  "FM In"),
         modIn ("envIn", "Env In"),
-        midiIn ("addMidiIn", "Add Midi In"),
+        midiIn ("addMidiIn", "Add MIDI In"),
         audioIn ("recIn", "Rec In"),
         audioOut ("audioOut", "Audio Out")
     };
@@ -944,7 +958,8 @@ static ModuleDescriptor spectralResynthDescriptor()
         partialsOnly (makeRotary ("sines", "Sines", 0.0f, 2.0f, 1.0f, 4)),
         partialsOnly (makeRotary ("noise", "Noise", 0.0f, 2.0f, 1.0f, 4)),
         partialsOnly (makeRotary ("partials", "Partials", 1.0f, 2048.0f, 2048.0f, 4, {}, true, 1.0f)),   // the N strongest tracks
-        partialsOnly (makeRotary ("spread", "Spread", 0.0f, 1.0f, 0.25f, 4))
+        partialsOnly (makeRotary ("spread", "Spread", 0.0f, 1.0f, 0.25f, 4)),
+        makeButton ("initBlank", "Init Blank", 0, 2)   // (6.9.16)
     };
     d.rowSections = { { 0, "Sound" }, { 1, "Analysis" }, { 2, "Playback" }, { 3, "Pitch & Tone" } };
     d.extraSection = "Editor";

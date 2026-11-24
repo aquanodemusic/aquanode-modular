@@ -1,4 +1,5 @@
 #include "EffectAdders.h"
+#include <set>
 #include "../Engine/PluginProcessor.h"
 #include "../Modules/Effects/Spectral/SpectralLockModule.h"
 
@@ -23,12 +24,55 @@ namespace
         return -1;
     }
 
+    // (6.9.11) the module selected in the patch when a quick add is tapped
+    int& quickAddAnchor() { static int id = -1; return id; }
+
+    // a module's first audio output ("" none)
+    juce::String audioOutputOf (const ModuleDescriptor& d)
+    {
+        for (const auto& so : d.sockets)
+            if (so.kind == SocketKind::Audio && so.direction == SocketDirection::Output && so.id != "tempoOut")
+                return so.id;
+        return {};
+    }
+
+    // Builds `steps` in a row from (x, y), the first fed by `sources`, the last
+    // into `dests`; returns the x after the row
+    int buildRow (AquanodeModularAudioProcessor& p, const std::vector<Step>& steps, Dice& dice,
+                  const std::vector<std::pair<int, juce::String>>& sources,
+                  const std::vector<std::pair<int, juce::String>>& dests, int x, int y)
+    {
+        PatchSketch s (p);
+        int prev = -1;
+        for (const auto& step : steps)
+        {
+            const int id = s.add (step.type, 0);
+            if (id < 0)
+                continue;
+            if (step.setup != nullptr)
+                step.setup (s, id, dice);
+            p.setModulePosition (id, { x, y });
+            x += 300;
+            if (prev < 0)
+                for (const auto& src : sources)
+                    p.addCable (src.first, src.second, id, "audioIn");
+            else
+                p.addCable (prev, "audioOut", id, "audioIn");
+            prev = id;
+        }
+        if (prev >= 0)
+            for (const auto& d : dests)
+                p.addCable (prev, "audioOut", d.first, d.second);
+        return x;
+    }
+
     // Puts `steps` in front of Audio Out: everything that fed Audio Out now
     // feeds the first step, the last step feeds Audio Out, and Audio Out
     // moves right to make room.
-    void insertBeforeOutput (AquanodeModularAudioProcessor& p, const std::vector<Step>& steps, Dice& dice)
+    void insertBeforeOutput (AquanodeModularAudioProcessor& p, const std::vector<Step>& steps, Dice& dice, int out = -1)
     {
-        const int out = findAudioOut (p);
+        if (out < 0)
+            out = findAudioOut (p);
         if (out < 0 || steps.empty())
             return;
 
@@ -43,31 +87,73 @@ namespace
                 p.removeCable (i);
             }
 
-        PatchSketch s (p);
-        int prev = -1, x = outPos.x;
-        for (const auto& step : steps)
-        {
-            const int id = s.add (step.type, 0);
-            if (id < 0)
-                continue;
-            if (step.setup != nullptr)
-                step.setup (s, id, dice);
-            p.setModulePosition (id, { x, outPos.y });
-            x += 300;
+        const int x = buildRow (p, steps, dice, sources, { { out, juce::String ("audioIn") } }, outPos.x, outPos.y);
+        p.setModulePosition (out, { x, outPos.y });
+    }
 
-            if (prev < 0)
-                for (const auto& src : sources)
-                    p.addCable (src.first, src.second, id, "audioIn");
-            else
-                p.addCable (prev, "audioOut", id, "audioIn");
-            prev = id;
-        }
-
-        if (prev >= 0)
+    // (6.9.11) a quick add goes where the patch's selection says: right after
+    // the selected module (whatever it fed now comes from the new chain; fed
+    // nothing, the chain goes on into Audio Out); a selected module with no
+    // sound out (a MIDI module, a piano roll) - at the end of its lane, on the
+    // one cable into its Audio Out; nothing selected - in front of Audio Out
+    void insertChain (AquanodeModularAudioProcessor& p, const std::vector<Step>& steps, Dice& dice)
+    {
+        const int anchor = quickAddAnchor();
+        auto* inst = anchor >= 0 ? p.getInstance (anchor) : nullptr;
+        if (inst == nullptr || steps.empty())
         {
-            p.addCable (prev, "audioOut", out, "audioIn");
-            p.setModulePosition (out, { x, outPos.y });
+            insertBeforeOutput (p, steps, dice);
+            return;
         }
+        if (inst->descriptor().typeId == "io.audioOut")
+        {
+            insertBeforeOutput (p, steps, dice, anchor);
+            return;
+        }
+        const auto& cables = p.getCables();
+        const auto outSock = audioOutputOf (inst->descriptor());
+        if (outSock.isNotEmpty())
+        {
+            std::vector<std::pair<int, juce::String>> dests;
+            for (int i = (int) cables.size() - 1; i >= 0; --i)
+                if (cables[(size_t) i].fromModule == anchor && cables[(size_t) i].fromSocket == outSock)
+                {
+                    dests.push_back ({ cables[(size_t) i].toModule, cables[(size_t) i].toSocket });
+                    p.removeCable (i);
+                }
+            if (dests.empty())
+                if (const int out = findAudioOut (p); out >= 0)
+                    dests.push_back ({ out, juce::String ("audioIn") });
+            buildRow (p, steps, dice, { { anchor, outSock } }, dests, inst->position.x + 60, inst->position.y + 240);
+            return;
+        }
+        // the end of the selected module's lane: follow its cables to the
+        // first cable into an Audio Out (breadth first)
+        std::vector<int> queue { anchor };
+        std::set<int> seen { anchor };
+        for (size_t qi = 0; qi < queue.size(); ++qi)
+            for (int i = 0; i < (int) cables.size(); ++i)
+            {
+                const auto& c = cables[(size_t) i];
+                if (c.fromModule != queue[qi])
+                    continue;
+                auto* to = p.getInstance (c.toModule);
+                if (to == nullptr)
+                    continue;
+                if (to->descriptor().typeId == "io.audioOut" && c.toSocket == "audioIn")
+                {
+                    const auto src = std::make_pair (c.fromModule, c.fromSocket);
+                    const int out = c.toModule;
+                    auto* from = p.getInstance (c.fromModule);
+                    const auto at = from != nullptr ? from->position : to->position;
+                    p.removeCable (i);
+                    buildRow (p, steps, dice, { src }, { { out, juce::String ("audioIn") } }, at.x + 60, at.y + 240);
+                    return;
+                }
+                if (seen.insert (c.toModule).second)
+                    queue.push_back (c.toModule);
+            }
+        insertBeforeOutput (p, steps, dice);   // (a lane that reaches no Audio Out)
     }
 
     // ---- the chains ----------------------------------------------------------
@@ -336,6 +422,100 @@ namespace
         } };
     }
 
+    // (6.9.11) more of them, for the per-type quick adds and the new small chains
+    Step shimmerVerb()
+    {
+        return { "fx.shimmerverb", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "shift", d.chance (0.7f) ? 12.0f : (d.chance (0.5f) ? 7.0f : 24.0f));
+            s.set (id, "shimmer", d.range (30.0f, 60.0f));
+            s.set (id, "decay", d.range (4.0f, 12.0f));
+            s.set (id, "size", d.range (55.0f, 85.0f));
+            s.set (id, "dryWet", d.range (22.0f, 38.0f));
+        } };
+    }
+
+    Step bloomVerb()
+    {
+        return { "fx.bloomverb", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "size", d.range (45.0f, 85.0f));
+            s.set (id, "decay", d.range (2.5f, 9.0f));
+            s.set (id, "bloom", d.range (40.0f, 80.0f));
+            s.set (id, "swell", d.range (0.1f, 1.2f));
+            s.set (id, "dryWet", d.range (22.0f, 38.0f));
+        } };
+    }
+
+    Step tapeEcho()
+    {
+        return { "fx.tapeecho", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "rate", d.range (25.0f, 60.0f));
+            s.set (id, "intensity", d.range (30.0f, 60.0f));
+            s.set (id, "echo", d.range (40.0f, 70.0f));
+            s.set (id, "reverb", d.range (0.0f, 40.0f));
+            s.set (id, "wow", d.range (5.0f, 30.0f));
+            s.set (id, "mix", d.range (25.0f, 40.0f));
+        } };
+    }
+
+    Step octaver()
+    {
+        return { "fx.pitchshift", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "pitch", d.chance (0.6f) ? 12.0f : -12.0f);
+            s.set (id, "mix", d.range (20.0f, 35.0f));
+            s.set (id, "jitter", d.range (0.0f, 15.0f));
+        } };
+    }
+
+    Step widen()
+    {
+        return { "fx.stereowidth", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "width", d.range (130.0f, 170.0f));
+            s.set (id, "haas", d.range (0.0f, 8.0f));
+            s.set (id, "bassMono", d.range (120.0f, 220.0f));
+        } };
+    }
+
+    Step formant()
+    {
+        return { "filter.formant", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.set (id, "vowel", d.range (0.0f, 100.0f));
+            s.set (id, "size", d.range (-4.0f, 4.0f));
+            s.set (id, "resonance", d.range (60.0f, 88.0f));
+            s.set (id, "dryWet", d.range (35.0f, 65.0f));
+        } };
+    }
+
+    Step fold()
+    {
+        return { "fx.clipfold", [] (PatchSketch& s, int id, Dice& d)
+        {
+            s.setChoice (id, "mode", d.chance (0.7f) ? "Mirror" : "Wrap");
+            const float drv = d.range (3.0f, 12.0f);
+            s.set (id, "drive", drv);
+            s.set (id, "output", -0.5f * drv);
+            s.set (id, "mix", d.range (30.0f, 60.0f));
+        } };
+    }
+
+    Step bandDelay()
+    {
+        return { "fx.multibanddelay", [] (PatchSketch& s, int id, Dice& d)
+        {
+            const float t = d.range (220.0f, 520.0f);
+            s.set (id, "lowTime", t * 1.5f);
+            s.set (id, "midTime", t);
+            s.set (id, "highTime", t * 0.75f);
+            s.set (id, "spread", d.range (30.0f, 70.0f));
+            s.set (id, "dryWet", d.range (20.0f, 32.0f));
+        } };
+    }
+
     // picks `count` different entries of `pool`, keeping their order
     std::vector<Step> pick (const std::vector<Step>& pool, int count, Dice& dice)
     {
@@ -359,8 +539,50 @@ namespace
         a.apply = [label, chooser] (AquanodeModularAudioProcessor& p, juce::uint32 seed) -> juce::String
         {
             Dice dice (seed);
-            insertBeforeOutput (p, chooser (dice), dice);
+            insertChain (p, chooser (dice), dice);
             return label;
+        };
+        return a;
+    }
+
+    // (6.9.19) Filter FM: a resonant filter whose cutoff an Audio LFO sweeps at audio rate
+    EffectAdder filterFmAdder()
+    {
+        EffectAdder a;
+        a.id = "add.FilterFM";
+        a.label = "Filter FM";
+        a.tooltipBody = "Adds a resonant filter (an SVF, Multimode Drive, Ladder or Warm Ladder filter) with an Audio LFO on "
+                        "its cutoff: the cutoff swept at audio rate, for growls, bells and FM-like tones. Turn the Audio "
+                        "LFO's Rate (or Key Track it to the notes) and the cable's depth to taste.";
+        a.apply = [] (AquanodeModularAudioProcessor& p, juce::uint32 seed) -> juce::String
+        {
+            Dice dice (seed);
+            static const char* const types[] = { "filter.svf", "filter.aquafilter", "filter.ladder", "filter.warmladder" };
+            const juce::String type = types[dice.index (4)];
+            int filterId = -1;
+            float cutoff = 1000.0f;
+            const Step step { type, [&filterId, &cutoff, type] (PatchSketch& s, int id, Dice& d)
+            {
+                filterId = id;
+                cutoff = d.range (500.0f, 2200.0f);
+                s.set (id, "cutoff", cutoff);
+                s.set (id, "resonance", type == "filter.warmladder" ? d.range (4.0f, 7.0f) : d.range (0.35f, 0.65f));
+            } };
+            insertChain (p, { step }, dice);
+            if (filterId < 0)
+                return {};
+            PatchSketch s (p);
+            const int lfo = s.add ("util.audiolfo", 0);
+            if (lfo < 0)
+                return {};
+            s.setChoice (lfo, "wave", dice.chance (0.7f) ? "Sine" : "Triangle");
+            s.set (lfo, "rate", dice.range (40.0f, 420.0f));
+            // the cable's depth: the cutoff swung by about +-70 % of itself (a knob cable is linear over the knob's range)
+            const float span = type == "filter.warmladder" ? 19000.0f - 25.0f : 20000.0f - 20.0f;
+            s.mod (lfo, "modOut", filterId, "cutoff", juce::jlimit (0.005f, 0.2f, 0.7f * cutoff / span));
+            if (auto* f = p.getInstance (filterId))
+                p.setModulePosition (lfo, { f->position.x, f->position.y + 300 });
+            return juce::String ("Filter FM");
         };
         return a;
     }
@@ -370,8 +592,8 @@ namespace
     {
         EffectAdder a;
         a.id = "add.MidiAdd";
-        a.label = "Midi Add";
-        a.tooltipBody = "Adds a Midi Add at the start of the patch and patches its Midi Out into the Add Midi In "
+        a.label = "MIDI Add";
+        a.tooltipBody = "Adds a MIDI Add at the start of the patch and patches its MIDI Out into the Add MIDI In "
                         "of every generator, so each played key becomes a chord (a different voicing with every "
                         "tap).";
         a.apply = [] (AquanodeModularAudioProcessor& p, juce::uint32 seed) -> juce::String
@@ -396,15 +618,15 @@ namespace
                 return {};
 
             PatchSketch s (p);
-            const int add = s.add ("util.midiadd", 0);
+            const int add = s.add ("util.graphicmidiadd", 0);
             if (add < 0)
                 return {};
-            for (int k = 0; k < 4; ++k)
-                s.set (add, "note" + juce::String (k + 1), v[k]);
+            for (int k = 0; k < 7; ++k)
+                s.set (add, "note" + juce::String (k + 1), k < 4 ? v[k] : 0.0f);
             p.setModulePosition (add, { topLeft.x - 300, topLeft.y });
             for (int t : targets)
                 p.addCable (add, "midiOut", t, "addMidiIn");
-            return "Midi Add";
+            return "MIDI Add";
         };
         return a;
     }
@@ -442,7 +664,7 @@ namespace
         EffectAdder a;
         a.id = "add.Chord";
         a.label = "Chord";
-        a.tooltipBody = "Adds a Graphic Midi Add in front of every synth in the patch, so each note becomes a chord - "
+        a.tooltipBody = "Adds a Graphic MIDI Add in front of every synth in the patch, so each note becomes a chord - "
                         "the DnB Chord it starts with; its Chord menu has Minor 7th, Minor 9th, 6/9 and Major 7th. "
                         "Synths played by the same notes share one; nothing is added when the patch has no synth.";
         a.apply = [] (AquanodeModularAudioProcessor& p, juce::uint32) -> juce::String
@@ -579,9 +801,65 @@ const std::vector<EffectAdder>& effectAdders()
                 if (d.chance (0.5f)) v.push_back (chorus());
                 return v;
             }));
+        // (6.9.11) one effect of a type, and more small chains
+        v.push_back (chainAdder ("Shimmer",
+            "Adds a Shimmer Reverb in front of Audio Out (or after the selected module): a long room that rises an "
+            "octave, sometimes a fifth or two octaves.",
+            [] (Dice&) { return std::vector<Step> { shimmerVerb() }; }));
+        v.push_back (chainAdder ("Bloom Verb",
+            "Adds a Bloom Reverb that swells in after each note.",
+            [] (Dice&) { return std::vector<Step> { bloomVerb() }; }));
+        v.push_back (chainAdder ("Tape Echo",
+            "Adds a Tape Echo: repeats off tape heads, a little wow and its spring.",
+            [] (Dice&) { return std::vector<Step> { tapeEcho() }; }));
+        v.push_back (chainAdder ("Chorus",
+            "Adds one chorus: a Chorus, a Liquid Chorus or an Ensemble.",
+            [] (Dice& d) { const int k = d.index (3); return std::vector<Step> { k == 0 ? chorus() : k == 1 ? liquidChorus() : ensemble() }; }));
+        v.push_back (chainAdder ("Phaser",
+            "Adds a slow Stereo Phaser.",
+            [] (Dice&) { return std::vector<Step> { phaser() }; }));
+        v.push_back (chainAdder ("Flanger",
+            "Adds a Flanger, its feedback up or turned over.",
+            [] (Dice&) { return std::vector<Step> { flanger() }; }));
+        v.push_back (chainAdder ("Width",
+            "Adds a Stereo Width: wider, with the bass kept in the middle.",
+            [] (Dice&) { return std::vector<Step> { widen() }; }));
+        v.push_back (chainAdder ("Formant",
+            "Adds a Formant Filter, part of the way in: the sound takes a vowel.",
+            [] (Dice&) { return std::vector<Step> { formant() }; }));
+        v.push_back (chainAdder ("Fold",
+            "Adds a Clip Fold, mixed in: the peaks fold back over, for bite.",
+            [] (Dice&) { return std::vector<Step> { fold() }; }));
+        v.push_back (chainAdder ("Octaver",
+            "Adds a Pitch Shift an octave up or down, mixed in under the sound.",
+            [] (Dice&) { return std::vector<Step> { octaver() }; }));
+        v.push_back (chainAdder ("Dream",
+            "Adds a chorus into a Shimmer Reverb.",
+            [] (Dice& d) { return std::vector<Step> { d.chance (0.5f) ? chorus() : liquidChorus(), shimmerVerb() }; }));
+        v.push_back (chainAdder ("Psy Echo",
+            "Adds a Stereo Phaser into a tempo Echo, sometimes a Stereo Delay.",
+            [] (Dice& d) { return std::vector<Step> { phaser(), d.chance (0.6f) ? echo() : crossDelay() }; }));
+        v.push_back (chainAdder ("Grit",
+            "Adds a Drive into Bitcrush or Clip Fold, held together by a Compressor.",
+            [] (Dice& d) { return std::vector<Step> { drive(), d.chance (0.5f) ? bitcrush() : fold(), compressor() }; }));
+        v.push_back (chainAdder ("Dub Space",
+            "Adds a Tape Echo into a Bloom Reverb.",
+            [] (Dice&) { return std::vector<Step> { tapeEcho(), bloomVerb() }; }));
+        v.push_back (chainAdder ("Band Echo",
+            "Adds a Multiband Delay (lows, mids and highs each their own time) into a Stereo Width.",
+            [] (Dice&) { return std::vector<Step> { bandDelay(), widen() }; }));
+        v.push_back (filterFmAdder());   // (6.9.19)
+        v.push_back (chainAdder ("Octave Wash",
+            "Adds an octave Pitch Shift into a long Bloom Reverb.",
+            [] (Dice&) { return std::vector<Step> { octaver(), bloomVerb() }; }));
         return v;
     }();
     return list;
+}
+
+void setQuickAddAnchor (int moduleId)
+{
+    quickAddAnchor() = moduleId;
 }
 
 void addSpectralLockEnding (AquanodeModularAudioProcessor& p, juce::uint32 seed, int scaleIndex)

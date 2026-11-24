@@ -60,8 +60,8 @@ public:
                         "transistor ladder for the low-passes, state variable for BP / HP, with the quadratic or cubic "
                         "resonance curve) or Original (FreeAlpha 3.3: its drive curves and Chamberlin filter). "
                         "The envelope sweeps the cutoff up to 3 octaves either way (Amount); it starts on "
-                        "the input's level (Auto) or on the notes at Midi In (MIDI). Env Out is the envelope.";
-        d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "Midi In"),
+                        "the input's level (Auto) or on the notes at MIDI In (MIDI). Env Out is the envelope.";
+        d.sockets = { audioIn ("audioIn", "Audio In"), midiIn ("midiIn", "MIDI In"),
                       audioOut ("audioOut", "Audio Out"), modOut ("envOut", "Env Out") };
         d.params = {
             makeCombo ("mode", "Model", { "Native", "Original" }, 0, 0, 2).noMod(),

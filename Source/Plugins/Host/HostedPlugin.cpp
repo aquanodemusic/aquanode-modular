@@ -18,9 +18,10 @@ ModuleDescriptor makeHostedDescriptor (const HostedSpec& spec)
 
     if (spec.audioIn)  d.sockets.push_back (audioIn ("audioIn", "Audio In"));
     if (spec.sideIn)   d.sockets.push_back (audioIn ("sideIn", spec.sideInLabel));
-    if (spec.midiIn)   d.sockets.push_back (midiIn ("midiIn", "Midi In"));
+    if (spec.midiIn)   d.sockets.push_back (midiIn ("midiIn", "MIDI In"));
     d.sockets.push_back (audioOut ("audioOut", "Audio Out"));
-    if (spec.midiOut)  d.sockets.push_back (midiOut ("midiOut", "Midi Out"));
+    if (spec.midiOut)  d.sockets.push_back (midiOut ("midiOut", "MIDI Out"));
+    d.sockets.push_back (tempoIn());   // (6.9.10: tempo per lane - its play head's BPM)
     // the block the plugin runs in: Global (the top bar's Plugin Block) or its own
     d.params.push_back (makeCombo ("blockSize", "Block", HostedPluginModule::blockChoices(), 0, 0, 2).noMod().hide().whenMissing (0.0f));   // (the card's Block pill)
 
@@ -32,12 +33,22 @@ ModuleDescriptor makeHostedDescriptor (const HostedSpec& spec)
         { "tabla", 12.0f }, { "am20", 10.0f }, { "aquamassif", 7.0f }, { "reflex", -6.0f } };
     if (const auto it = levelTrims.find (spec.pluginId); it != levelTrims.end())
         d.params.push_back (makeOutputTrim (it->second));
+
+    // (6.9.10) Vita's card: MPE on with Aquanode's MPE (as before) or as the
+    // preset says, and the per-finger bend range 48 or the preset's - Preset
+    // and Preset keep a mono, range-2 preset like Abyssal Pulse as it was made
+    if (spec.pluginId == "vita")
+    {
+        d.params.push_back (makeCombo ("mpeMode", "MPE", { "Follow Aquanode", "Preset" }, 0, 0, 3).noMod());
+        d.params.push_back (makeCombo ("bendRange", "Bend Range", { "48", "Preset" }, 0, 0, 2).noMod());
+    }
     return d;
 }
 
 const juce::StringArray& HostedPluginModule::blockChoices()
 {
-    static const juce::StringArray c { "Global", "16", "32", "64", "128", "256", "512" };
+    // (6.9.10: 1, 2, 4 and 8 added - patches keep their choice by name)
+    static const juce::StringArray c { "Global", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512" };
     return c;
 }
 
@@ -49,10 +60,10 @@ std::atomic<int>& HostedPluginModule::globalBlockSize()
 
 int HostedPluginModule::wantedBlock() const
 {
-    static const int sizes[] = { 16, 32, 64, 128, 256, 512 };
     const int c = pBlock >= 0 ? (int) std::lround (param (pBlock)) : 0;
-    if (c >= 1 && c <= 6) return sizes[c - 1];
-    return juce::jlimit (16, kMaxBlockSize, globalBlockSize().load (std::memory_order_relaxed));
+    static const int sizes[] = { 0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 };   // (as blockChoices)
+    if (c >= 1 && c <= 10) return juce::jmin (kMaxBlockSize, sizes[c]);
+    return juce::jlimit (1, kMaxBlockSize, globalBlockSize().load (std::memory_order_relaxed));
 }
 
 //==============================================================================
@@ -229,6 +240,9 @@ void HostedPluginModule::prepare (double newSampleRate)
 
     const int channels = juce::jmax (1, mainIns + sideChannels, outs);
     pBlock = paramIndex ("blockSize");
+    pMpeMode = paramIndex ("mpeMode");     // (Vita's card only)
+    pBendRange = paramIndex ("bendRange");
+    lastMpePolicy = -1;
     blockSize = wantedBlock();
     io.setSize (channels, kMaxBlockSize, false, true, false);
     io.clear();
@@ -265,6 +279,23 @@ void HostedPluginModule::reset()
 void HostedPluginModule::blockStart()
 {
     samplesThisHostBlock = 0;
+
+    // (6.9.12) the default MPE map's Slide depth, to a plugin that plays MPE
+    if (midiControls != nullptr)
+        if (auto* r = dynamic_cast<aquanode::MpeReceiver*> (plugin.get()))
+            r->setSlideWavetableDepth (midiControls->slideWavetableDepth);
+
+    // (6.9.10) Vita's card: its MPE and bend-range choices, when they move
+    if (pMpeMode >= 0)
+    {
+        const int policy = (param (pMpeMode) > 0.5f ? 1 : 0) | (pBendRange >= 0 && param (pBendRange) > 0.5f ? 2 : 0);
+        if (policy != lastMpePolicy)
+            if (auto* r = dynamic_cast<aquanode::MpeReceiver*> (plugin.get()))
+            {
+                r->setMpePolicy ((policy & 1) != 0, (policy & 2) != 0);
+                lastMpePolicy = policy;
+            }
+    }
 
     if (! rollCommandSeen || hostTransport.rollCommand != seenRollCommand)
     {
@@ -314,13 +345,36 @@ int HostedPluginModule::latencySamples() const
 
 void HostedPluginModule::rawMidiMessage (const juce::MidiMessage& message)
 {
-    // a note on a member channel: a plugin that plays MPE switches it on
-    if (! mpeOn && message.getChannel() >= 2 && message.isNoteOn())
+    // a note on a member channel - or its Slide, Pressure or Bend, which an MPE controller sends
+    // just before the note: a plugin that plays MPE switches it on (6.9.13: else the first
+    // note's Slide went missing)
+    if (! mpeOn && message.getChannel() >= 2
+        && (message.isNoteOn() || message.isPitchWheel() || message.isChannelPressure() || message.isControllerOfType (74)))
         if (auto* r = dynamic_cast<aquanode::MpeReceiver*> (plugin.get()))
         {
             r->enableMpe (true);
             mpeOn = true;
+            // (6.9.15) a bend it heard before (as one channel) stays on its pitch wheel otherwise:
+            // every channel's wheel back to the middle first
+            for (int ch = 1; ch <= 16; ++ch)
+                midiInBuffer.addEvent (juce::MidiMessage::pitchWheel (ch, 8192), pos);
         }
+
+    // (6.9.15) a member channel's next note starts unbent unless its own bend comes first
+    // (a released note's last bend stayed on the channel, and the next note there - from
+    // MIDI Add, or another finger - began detuned)
+    if (const int ch = message.getChannel(); ch >= 2 && ch <= 16)
+    {
+        auto& st = memberState[(size_t) ch];
+        if (message.isPitchWheel()) st.resetDue = false;
+        else if (message.isNoteOff()) { if (st.held > 0) --st.held; if (st.held == 0) st.resetDue = true; }
+        else if (message.isNoteOn())
+        {
+            if (st.resetDue && st.held == 0) midiInBuffer.addEvent (juce::MidiMessage::pitchWheel (ch, 8192), pos);
+            st.resetDue = false;
+            ++st.held;
+        }
+    }
 
     midiInBuffer.addEvent (message, pos);
 }
@@ -390,7 +444,7 @@ void HostedPluginModule::updatePlayHead()
     // (a play head without a tempo - the standalone app's and Android's audio player
     // has one that only counts samples - does not count: the plugin gets the patch's
     // own tempo and clock then, as everything else in the patch does)
-    if (hostPlayHead != nullptr)
+    if (hostPlayHead != nullptr && ! tempoFromLane())   // (6.9.14: a fed Tempo In wins over the host's tempo)
         if (auto host = hostPlayHead->getPosition(); host && host->getBpm() && *host->getBpm() > 0.0)
         {
             info = *host;

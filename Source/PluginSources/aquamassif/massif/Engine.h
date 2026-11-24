@@ -8,6 +8,7 @@
 //  mix -> [ins Pre Amp] -> amp (env^2) -> pan -> voice sum
 //  -> FX1 -> FX2 -> EQ -> master volume; bypass joins before FX1 / FX2 / EQ
 //  feedback taps: post F1 / post F2 / pre amp / post amp (+ [ins FB loop])
+#include "../../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "Patch.h"
 #include "Tables.h"
 #include "Modulators.h"
@@ -23,7 +24,7 @@ namespace massif
 constexpr int kMaxVoices = 64;
 constexpr int kCtrl = 16;                 // control-rate block
 
-inline float midiHz (float note) { return 440.0f * std::exp2 ((note - 69.0f) / 12.0f); }
+inline float midiHz (float note) { return (float) ::aquanode::tuning::noteToHz ((double) note); }
 
 // ---------------------------------------------------------------------------
 struct OscState
@@ -85,6 +86,18 @@ struct Engine
     std::array<float, 17> chanBend {};
     std::array<float, 17> chanPress = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
     float voiceBendSemis (const Voice& v) const { return v.channel >= 2 && v.channel <= 16 ? chanBend[(size_t) v.channel] * 48.0f : 0.0f; }
+    // (6.9.12, Aquanode's default MPE map) each member channel's Slide (CC 74; -1: none sent): it moves an
+    // oscillator's wavetable position, the middle of the key the knob's place, up or down a quarter -
+    // for an oscillator whose position nothing in the matrix modulates
+    std::array<float, 17> chanSlide = [] { std::array<float, 17> a {}; a.fill (-1.0f); return a; }();
+    float voiceSlidePos (const Voice& v, int osc) const
+    {
+        if (v.channel < 2 || v.channel > 16 || chanSlide[(size_t) v.channel] < 0.0f) return 0.0f;
+        for (const auto& sl : patch.mod[(size_t) (kOsc1Pos + 5 * osc)].slot)
+            if (sl.source != msNone) return 0.0f;
+        return (chanSlide[(size_t) v.channel] - 0.5f) * 2.0f * slideDepth;
+    }
+    float slideDepth { 0.0f };   // (6.9.15: 0 unless the MPE module says)   // how far a full Slide moves it each way (Aquanode's MPE module)
     float voicePressure (const Voice& v) const
     {
         if (v.channel >= 2 && v.channel <= 16 && chanPress[(size_t) v.channel] >= 0.0f) return chanPress[(size_t) v.channel];
@@ -300,7 +313,7 @@ struct Engine
     }
 
     void allNotesOff() { for (auto& v : voices) if (v.active) { v.gate = false; for (int e = 0; e < 4; ++e) v.env[(size_t) e].release(); } held.clear(); }
-    void allSoundOff() { for (auto& v : voices) v.active = false; held.clear(); chanBend.fill (0.0f); chanPress.fill (-1.0f); }
+    void allSoundOff() { for (auto& v : voices) v.active = false; held.clear(); chanBend.fill (0.0f); chanPress.fill (-1.0f); chanSlide.fill (-1.0f); }
 
     // ---- modulation ----
     float sourceValue (const Voice& v, int s) const
@@ -593,7 +606,9 @@ struct Engine
             // the modulation oscillator switched off takes its four modulations with it (the oscillators play on)
             const float mOn = p.modOscOn ? 1.0f : 0.0f;
             const float rm = k[kModOscRM] * mOn, pm = k[kModOscPhase] * mOn, pmod = k[kModOscPos] * mOn, ffm = k[kModOscFltFM] * mOn;
-            const float pos[3] = { std::clamp (k[kOsc1Pos] + v.uniWt, 0.0f, 1.0f), std::clamp (k[kOsc2Pos] + v.uniWt, 0.0f, 1.0f), std::clamp (k[kOsc3Pos] + v.uniWt, 0.0f, 1.0f) };
+            const float pos[3] = { std::clamp (k[kOsc1Pos] + v.uniWt + voiceSlidePos (v, 0), 0.0f, 1.0f),
+                                   std::clamp (k[kOsc2Pos] + v.uniWt + voiceSlidePos (v, 1), 0.0f, 1.0f),
+                                   std::clamp (k[kOsc3Pos] + v.uniWt + voiceSlidePos (v, 2), 0.0f, 1.0f) };
             const float inten[3] = { k[kOsc1Intensity], k[kOsc2Intensity], k[kOsc3Intensity] };
             OscRead rdc[3];
             float vaSyncG[3] = { 1.0f, 1.0f, 1.0f };

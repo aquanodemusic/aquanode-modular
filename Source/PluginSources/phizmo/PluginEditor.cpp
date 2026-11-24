@@ -768,10 +768,18 @@ void PhizmoAudioProcessorEditor::addGenerateMenuItems(juce::PopupMenu& menu, int
     menu.addItem(9100, "Random Transwave");
     menu.addItem(9101, "Transwavify audio file...");
 
+    // 7.0.0: the built-in transwaves
+    {
+        juce::PopupMenu builtin;
+        for (int i = 0; i < ::twremake::count(); ++i)
+            builtin.addItem(9600 + i, ::twremake::name(i));
+        menu.addSubMenu("Built-in transwaves", builtin);
+    }
+
     const int origin = audioProcessor.getSlotOrigin(slot);
     menu.addItem(9102, origin == 1 ? "Re-roll (new seed)"
         : origin == 2 ? "Re-analyse (flip pitched/slice)"
-        : "Re-roll", origin != 0);
+        : "Re-roll", origin == 1 || origin == 2);
     menu.addItem(9103, "Export wave as .wav...", audioProcessor.isWavetableLoaded(slot));
 
     juce::PopupMenu framesMenu;
@@ -835,6 +843,12 @@ bool PhizmoAudioProcessorEditor::handleGenerateMenuResult(int result, int slot)
     if (result == 9100)
     {
         audioProcessor.generateRandomWavetable(slot, 0, frames, cycle, status);
+        showGenerateStatus(status);
+        return true;
+    }
+    if (result >= 9600 && result < 9600 + ::twremake::count())
+    {
+        audioProcessor.loadBuiltinTranswave(slot, result - 9600, status);
         showGenerateStatus(status);
         return true;
     }
@@ -1976,5 +1990,13 @@ void WavetableDisplay::paint(juce::Graphics& g)
         }
         else g.setColour(juce::Colour(0xff6040a0).withAlpha(0.6f));
         g.strokePath(wp, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // (6.9.16) where in the table it plays: a bar along the bottom, its marker moving with the position
+        auto bar = b.reduced(10.f, 0.f).removeFromBottom(6.f).translated(0.f, -5.f);
+        g.setColour(juce::Colour(0x446ec6ff));
+        g.fillRoundedRectangle(bar, 2.f);
+        const float mx = bar.getX() + juce::jlimit(0.f, 1.f, fp) * bar.getWidth();
+        g.setColour(isActive ? juce::Colour(0xffff6ec7) : juce::Colour(0xff6040a0));
+        g.fillRoundedRectangle(juce::Rectangle<float>(mx - 2.5f, bar.getY() - 2.f, 5.f, bar.getHeight() + 4.f), 2.f);
     }
 }

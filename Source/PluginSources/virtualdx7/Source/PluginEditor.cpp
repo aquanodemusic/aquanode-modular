@@ -414,6 +414,9 @@ void VDX7AudioProcessorEditor::rebuildBankList()
     if (numBanks > 1)   // a voice ROM is loaded: keep the starter bank reachable too
         bankBox.addItem (vdx7::factoryBankName (processor.roms(), vdx7::kStarterBankIndex),
                          vdx7::kStarterBankIndex + 1);
+    // Aquanode's own banks, always
+    for (int b = vdx7::kFirstAquanodeBank; b <= vdx7::kLastBankIndex; ++b)
+        bankBox.addItem (vdx7::factoryBankName (processor.roms(), b), b + 1);
 
     if (userLabel.isNotEmpty())
         bankBox.addItem (userLabel, kUserBankId);

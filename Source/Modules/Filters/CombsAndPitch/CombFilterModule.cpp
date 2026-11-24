@@ -40,6 +40,7 @@ void CombFilterModule::prepare (double sr)
 
     const size_t total = (size_t) kNumLanes * 2 * (size_t) lineLength;
     fbLine.assign (total, 0.0f);
+    for (auto& l : lanes) l.limiter.prepare (sr);
     ffLine.assign (total, 0.0f);
 
     reset();
@@ -60,6 +61,7 @@ void CombFilterModule::clearLane (int lane)
 {
     if (lane < 0 || lane >= kNumLanes || fbLine.empty())
         return;
+    lanes[lane].limiter.reset();
 
     for (int ch = 0; ch < 2; ++ch)
         for (int i = 0; i < lineLength; ++i)
@@ -144,6 +146,8 @@ void CombFilterModule::renderLane (int lane, const StereoFrame* inputs, StereoFr
         // keeps a runaway loop musical instead of destructive
         outputs[0][ch] = x * (1.0f - wet) + std::tanh (combed * 0.7f) * 1.2f * wet;
     }
+    if (param (pLimiter) > 0.5f)   // (6.9.19) never over full scale
+        L.limiter.process (outputs[0][0], outputs[0][1]);
 
     L.writePos = (L.writePos + 1) % lineLength;
 }
@@ -174,7 +178,9 @@ static ModuleDescriptor combFilterDescriptor()
         makeRotary ("damping",    "Damping",    0.0f, 100.0f, 45.0f, 0, "%"),
         makeRotary ("blend",      "Blend",      0.0f, 100.0f, 100.0f, 1, "%"),
         makeRotary ("pitchDepth", "Pitch Depth", 0.0f, 100.0f, 100.0f, 1, "%"),
-        makeRotary ("dryWet",     "Dry/Wet",    0.0f, 100.0f, 100.0f, 1, "%")
+        makeRotary ("dryWet",     "Dry/Wet",    0.0f, 100.0f, 100.0f, 1, "%"),
+        // (6.9.19) on for new cards; patches from before keep it off (as they sounded)
+        makeCombo ("limiter", "Limiter", { "Off", "On" }, 1, 1, 2).noMod().whenMissing (0.0f)
     };
     return d;
 }

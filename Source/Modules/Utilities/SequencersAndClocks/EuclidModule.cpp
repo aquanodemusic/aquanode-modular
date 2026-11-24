@@ -153,7 +153,8 @@ static ModuleDescriptor euclidDescriptor()
     d.sockets = {
         modIn  ("clockIn", "Clock In"),
         modIn  ("resetIn", "Reset In"),
-        unipolarOut ("gateOut", "Gate Out")
+        unipolarOut ("gateOut", "Gate Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     d.params = {
         makeRotary ("steps",  "Steps",  1.0f, 16.0f, 16.0f, 0, {}, false, 1.0f),

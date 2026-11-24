@@ -58,51 +58,51 @@ namespace
         static const std::vector<ModuleGroup> none;
         static const std::vector<ModuleGroup> inputOutput {
             { "Audio Routing",   { "io.audioIn", "io.audioOut" } },
-            { "MIDI",            { "io.keyboardmidi", "io.midicontrols", "io.midilearn" } } };
+            { "MIDI",            { "io.midicontrols", "io.midilearn" } } };
         static const std::vector<ModuleGroup> oscillators {
-            { "Oscillators",     { "osc.basic", "osc.additive", "osc.complex", "osc.drift", "osc.dualvco", "osc.dualvcoanalog", "osc.pd",
-                                   "osc.pwmosc", "osc.warp", "osc.unison", "osc.formant", "osc.acid303", "osc.randompreset", "osc.presetcloud" } },
+            { "Oscillators",     { "osc.basic", "osc.additive", "osc.complex", "osc.drift", "osc.dualvco", "osc.dualvcoanalog", "osc.syncosc", "osc.pd",
+                                   "osc.pwmosc", "osc.warp", "osc.unison", "osc.formant", "osc.acid303", "osc.randompreset", "osc.presetcloud" , "osc.supersaw", "osc.growl", "osc.formantfm", "osc.dxop", "osc.rawdata" } },
             { "Wavetables",      { "osc.wavetable", "osc.chordwavetable", "osc.transwave" } },
-            { "FM",              { "osc.dxop" } },
-            { "Physical Models", { "osc.bowed", "osc.pluck", "osc.wind", "osc.droplets", "osc.strings", "osc.cello", "osc.clarinet",
-                                   "osc.guitaracoustic", "osc.guitarelectric" } },
+            { "Physical Models", { "osc.bowed", "osc.pluck", "osc.wind", "osc.strings", "osc.cello", "osc.clarinet",
+                                   "osc.guitaracoustic", "osc.guitarelectric", "osc.drawbarorgan", "osc.sitar" } },
             { "Piano",           { "osc.piano", "osc.resynthpiano", "osc.grand", "osc.epiano" } },
-            { "Organ",           { "osc.drawbarorgan" } },
-            { "Ambient",         { "osc.softpad", "osc.summerwinds" } },
-            { "Drums",           { "osc.clap", "osc.snare", "osc.kick", "osc.hats", "osc.modaldrum", "osc.tr808", "osc.tr909", "osc.drumpads", "osc.drummorph" } },
+            { "Ambient",         { "osc.softpad", "osc.summerwinds", "osc.droplets" } },   // (6.9.15: Droplets here)
+            { "Drums",           { "osc.aquadrumkit", "osc.clap", "osc.snare", "osc.kick", "osc.hats", "osc.modaldrum", "osc.tr808", "osc.tr909", "osc.drumpads", "osc.drummorph" } },
             { "Samples",         { "osc.sampler", "osc.multisample", "osc.granulate", "osc.spectralresynth" } },
             { "Noise",           { "osc.noise" } } };
         static const std::vector<ModuleGroup> filters {
             { "Filters",         { "filter.lowpass", "filter.highpass", "filter.bandpass", "filter.notch", "filter.svf", "filter.warmladder", "filter.ladder",
-                                   "filter.dualfilter", "filter.aquafilter", "filter.formant" } },
-            { "EQ",              { "filter.bell", "filter.belleq", "filter.shelfeq", "filter.programeq", "filter.resonance", "filter.filtertable" } },
+                                   "filter.dualfilter", "filter.aquafilter", "filter.formant", "filter.panfilter", "filter.fmfilter", "filter.audiotofilter" } },
+            { "EQ",              { "filter.bell", "filter.belleq", "filter.shelfeq", "filter.programeq", "filter.resonance", "filter.filtertable", "filter.playableeq",
+                                   "filter.equalloudness", "filter.graphic7", "filter.rippleeq", "filter.tilteq" } },
             { "Combs & Pitch",   { "filter.combfilter", "fx.centercomb", "fx.pitcheq" } } };
         static const std::vector<ModuleGroup> effects {
-            { "Delays",          { "fx.delay", "fx.freedelay", "fx.echo", "fx.dubecho", "fx.crossdelay", "fx.adelaysr", "fx.multibanddelay" } },
-            { "Reverbs",         { "fx.reverb", "fx.aquaton", "fx.smoothhall", "fx.springer", "fx.irforge", "fx.convolver", "fx.bloomverb", "fx.shimmerverb" } },
+            { "Delays",          { "fx.delay", "fx.freedelay", "fx.echo", "fx.dubecho", "fx.tapeecho", "fx.crossdelay", "fx.adelaysr", "fx.multibanddelay" } },
+            { "Reverbs",         { "fx.reverb", "fx.aquaton", "fx.smoothhall", "fx.springer", "fx.springtank", "fx.irforge", "fx.convolver", "fx.bloomverb", "fx.shimmerverb" } },
             { "Grains",          { "fx.granulation" } },
             { "Modulation",      { "fx.chorus", "fx.liquidchor", "fx.ensemble", "fx.flanger", "fx.phaser", "fx.wah", "fx.stereophaser",
                                    "fx.tapewobble", "fx.anyfm", "fx.rotary", "fx.circulator" } },
             { "Pitch",           { "fx.pitchshift", "fx.spectrallock" } },
-            { "Distortion",      { "fx.drive", "fx.clippreserve", "fx.bitcrush", "fx.srreduce", "fx.waveshaper", "fx.splinefold" } },
+            { "Distortion",      { "fx.drive", "fx.clippreserve", "fx.bitcrush", "fx.srreduce", "fx.nyquistfolder", "fx.waveshaper", "fx.splinefold" } },
             { "Exciters",        { "fx.noiseexciter" } },
             { "Dynamics",        { "fx.compress", "fx.opto", "fx.fet", "fx.sidechaincomp", "fx.threebandcomp", "fx.limiter", "fx.clipfold" } },
             { "Resonators",      { "fx.resonate", "fx.resonate5", "fx.vocode", "fx.modalbody" } },
             { "Glitch",          { "fx.beatrepeat", "fx.stutter", "fx.reverser", "fx.tapestop" } },
-            { "Stereo & Bands",  { "fx.stereowidth", "effect.bandsplitter", "fx.precision" } } };
+            { "Stereo & Bands",  { "fx.stereowidth", "effect.bandsplitter", "fx.precision", "fx.quadrature" } } };
         static const std::vector<ModuleGroup> utilities {
             { "Envelopes",       { "util.adsr", "util.analogeg", "util.curveenv", "util.dxenv", "util.dxpitcheg",
                                    "util.envfollow" } },
             { "LFOs",            { "util.multilfo", "util.randomlfo", "util.skewlfo", "util.drawlfo", "util.dxlfo",
-                                   "util.lfo" } },
+                                   "util.lfo", "util.audiolfo", "util.randomsweep" } },
             { "MIDI",            { "util.arp", "util.alwaysmidi", "util.discardmidi", "util.pianoroll", "util.mperoll", "util.velocity", "util.noterandom",
-                                   "util.midiadd", "util.graphicmidiadd", "util.keyboardmidi", "util.midicontrols", "util.mpe",
-                                   "util.midirain", "util.midibloom", "util.midistamp", "util.fruitarranger" } },
+                                   "util.graphicmidiadd", "util.microtuning", "util.midicontrols", "util.mpe",
+                                   "util.midirain", "util.midibloom", "util.midistamp" } },   // (6.9.21: the Fruit Arranger only under Utility Plugins)
             { "Sequencers & Clocks", { "util.clock", "util.tempo", "util.euclid", "util.stepseq", "util.gate" } },
             { "Control",         { "util.curvecv", "util.autolanes", "util.dcoffset", "util.samplehold", "util.slew", "util.quantize",
-                                   "util.dawmod", "util.keytrack", "util.logic", "util.vector" } },
-            { "Audio Tools",     { "util.volume", "util.mixer", "util.panning", "util.crossfade", "util.abswitch", "util.latency",
-                                   "util.ringmod", "util.splitter", "util.thru", "util.polysum", "util.record", "util.dcblock" } },
+                                   "util.dawmod", "util.keytrack", "util.logic", "util.vector", "util.xy" } },
+            { "Audio Tools",     { "util.volume", "util.mixer", "util.panning", "util.abswitch", "util.latency",
+                                   "util.ringmod", "util.splitter", "util.thru", "util.polysum", "util.record", "util.dcblock",
+                                   "util.phaseinvert" } },
             { "Routing",         { "util.reroutesend", "util.reroutereturn", "util.macro" } },
             { "Analysis",        { "util.spectrogram", "util.spectrumcompare", "util.waveform", "util.tuner", "util.cpuram", "util.inspector", "util.chordname" } },
             { "Notes",           { "util.text" } },
@@ -120,9 +120,14 @@ namespace
 
     // the group a module is listed in, by its type ("" for none); unlisted
     // types fall back on what their id says they are
+    // (6.9.16) plugins listed among the modules instead (Frequency Drawer: an oscillator to draw)
+    const juce::StringArray& pluginsAsModules() { static const juce::StringArray l { "plugin.frequencydrawer" }; return l; }
+
     juce::String groupOf (const ModuleDescriptor& d)
     {
         const auto& id = d.typeId;
+        if (pluginsAsModules().contains (id))
+            return "Oscillators";
         if (d.isPluginModule())
             return d.displayName.upToFirstOccurrenceOf (" - ", false, false);   // the plugin it comes from
         for (const auto& g : groupsOf (d.section))
@@ -162,6 +167,15 @@ namespace
         return best;
     }
 
+
+    // the Plugins' three groups: 0 sound generation, 1 effects, 2 utilities (the hosts,
+    // the note tools and the analysers whose audio passes through unchanged)
+    int pluginKind (const juce::String& id, ModuleSection section)
+    {
+        static const juce::StringArray utilityIds { "noteadder", "precisionutility", "fruitgui", "aquanode", "spectralcompare", "ecosee" };
+        if (utilityIds.contains (id) || section == ModuleSection::Utility) return 2;
+        return section == ModuleSection::Effect || section == ModuleSection::Filter ? 1 : 0;
+    }
 
     juce::String sectionTitle (ModuleSection section)
     {
@@ -536,6 +550,9 @@ void SidebarComponent::showTooltipFor (const Row& row)
     {
         title = "Add " + adder->label;
         body = adder->tooltipBody;
+        if (adder->id != "add.MidiAdd" && adder->id != "add.Chord")
+            body << " With a module selected in the patch, it goes right after that module (a MIDI module or a "
+                    "piano roll: at the end of its lane, right before its Audio Out).";
     }
     else
     {
@@ -614,7 +631,8 @@ void SidebarComponent::buildRows()
 
     // a list of modules with its groups' names between them (only when there
     // is more than one group); each group's name folds its modules away too
-    auto emitGrouped = [&] (const std::vector<const RegisteredModule*>& list, juce::Colour labelColour, const juce::String& keyBase)
+    auto emitGrouped = [&] (const std::vector<const RegisteredModule*>& list, juce::Colour labelColour, const juce::String& keyBase,
+                            bool alwaysNamed = false)
     {
         juce::StringArray groups;
         for (const auto* r : list)
@@ -624,7 +642,7 @@ void SidebarComponent::buildRows()
         for (const auto* r : list)
         {
             const auto g = groupOf (r->descriptor);
-            if (groups.size() > 1 && g != last)
+            if ((groups.size() > 1 || alwaysNamed) && g != last)
             {
                 Row label { { 16, y + 3, contentWidth - 26, 16 }, g, {}, labelColour };
                 label.isSubLabel = true;
@@ -657,7 +675,14 @@ void SidebarComponent::buildRows()
         std::vector<const RegisteredModule*> plain;
         for (const auto& r : ModuleFactory::instance().all())
         {
+            if (r.descriptor.section == section && pluginsAsModules().contains (r.descriptor.typeId))
+            {
+                plain.push_back (&r);   // (6.9.16: a plugin among the modules)
+                continue;
+            }
             if (r.descriptor.section != section || ! r.descriptor.listedInSidebar)
+                continue;
+            if (r.descriptor.typeId == "util.fruitarranger")   // (6.9.21: listed only under Utility Plugins)
                 continue;
             if (r.descriptor.isPluginModule())
                 pluginModules[pluginOfModule (r.descriptor)].push_back (&r);   // (in section order: this loop runs I/O, sound generation, filters...)
@@ -681,16 +706,9 @@ void SidebarComponent::buildRows()
             return byName (a, b);
         };
         std::sort (plain.begin(), plain.end(), byGroup);
-        for (auto& [gui, list] : pluginModules)   // (each plugin's own: by kind - synth, filter, effect, utility - then name)
+        for (auto& [gui, list] : pluginModules)   // (each plugin's own A-Z too - 6.9.14, as every list in the sidebar)
             std::stable_sort (list.begin(), list.end(), [] (const RegisteredModule* a, const RegisteredModule* b)
             {
-                auto rank = [] (ModuleSection sec)
-                {
-                    return sec == ModuleSection::Oscillator ? 0 : sec == ModuleSection::Filter ? 1
-                         : sec == ModuleSection::Effect ? 2 : sec == ModuleSection::Utility ? 3 : 4;
-                };
-                const int ra = rank (a->descriptor.section), rb = rank (b->descriptor.section);
-                if (ra != rb) return ra < rb;
                 return a->descriptor.displayName.compareNatural (b->descriptor.displayName) < 0;
             });
 
@@ -702,31 +720,57 @@ void SidebarComponent::buildRows()
         }
     }
 
-    // Plugins: the plugins merged into Aquanode Modular, all in one block.
+    // Plugins: the plugins merged into Aquanode Modular, in three groups (6.9.14):
+    // Sound Generation Plugins, Effect Plugins and Utility Plugins (the hosts and
+    // the tools: NoteAdder, PrecisionUtility, the analysers, Fruit DAW, the Fruit
+    // Arranger module, Aquanode Modular), each A-Z, each folding like a group.
     // Tapping a name (or its GUI pill) adds the original plugin as one card;
     // the Patch pill opens a menu that builds it out of its own modules instead.
     if (header ("plugins", "Plugins", pluginSectionColour()))
     {
-        // A-Z, like every list in the sidebar
-        std::vector<const aquanode::plugins::CatalogEntry*> sortedPlugins;
+        struct Item { juce::String name; const aquanode::plugins::CatalogEntry* entry; const RegisteredModule* module; };
+        std::vector<Item> groups[3];
         for (const auto& entry : aquanode::plugins::catalog())
-            sortedPlugins.push_back (&entry);
-        std::sort (sortedPlugins.begin(), sortedPlugins.end(), [] (auto* a, auto* b)
-                   { return a->name.compareNatural (b->name) < 0; });
-
-        for (const auto* entryPtr : sortedPlugins)
         {
-            const auto& entry = *entryPtr;
-            if (ModuleFactory::instance().find (entry.guiTypeId) == nullptr)
-                continue;   // its sources are not part of this build
+            if (pluginsAsModules().contains (entry.guiTypeId)) continue;      // (6.9.16: listed among the modules)
+            if (auto* reg = ModuleFactory::instance().find (entry.guiTypeId))   // (else its sources are not part of this build)
+                groups[pluginKind (entry.id, reg->descriptor.section)].push_back ({ entry.name, &entry, reg });
+        }
+        // (6.9.12) the Fruit Arranger - a module, but a DAW's playlist in its own right - is
+        // listed among them (6.9.21: only there, as a plugin with a GUI pill)
+        if (const auto* arranger = ModuleFactory::instance().find ("util.fruitarranger"))
+            groups[2].push_back ({ arranger->descriptor.displayName, nullptr, arranger });
 
-            Row row { { 14, y, contentWidth - 24, 22 }, entry.name, entry.guiTypeId, juce::Colours::white };
-            row.isPlugin = true;
-            row.pluginHasPatch = entry.hasPatchVersion();
-            if (auto* reg = ModuleFactory::instance().find (entry.guiTypeId))
-                row.colour = reg->descriptor.colour();
-            rows.push_back (row);
-            y += 25;
+        static const char* const names[3] = { "Sound Generation Plugins", "Effect Plugins", "Utility Plugins" };
+        for (int g = 0; g < 3; ++g)
+        {
+            auto& list = groups[g];
+            if (list.empty()) continue;
+            std::sort (list.begin(), list.end(), [] (const Item& a, const Item& b) { return a.name.compareNatural (b.name) < 0; });
+            Row label { { 16, y + 3, contentWidth - 26, 16 }, names[g], {}, pluginSectionColour() };
+            label.isSubLabel = true;
+            label.headerKey = juce::String ("plugins.") + names[g];
+            rows.push_back (label);
+            y += 21;
+            if (! expandedHeaders.contains (label.headerKey))
+                continue;
+            for (const auto& it : list)
+            {
+                if (it.entry == nullptr)   // the Fruit Arranger: a plugin's row, only its GUI pill (the module itself is added)
+                {
+                    Row row { { 22, y, contentWidth - 32, 22 }, it.name, it.module->descriptor.typeId, it.module->descriptor.colour() };
+                    row.isPlugin = true;
+                    row.pluginHasPatch = false;
+                    rows.push_back (row);
+                    y += 25;
+                    continue;
+                }
+                Row row { { 22, y, contentWidth - 32, 22 }, it.name, it.entry->guiTypeId, it.module->descriptor.colour() };
+                row.isPlugin = true;
+                row.pluginHasPatch = it.entry->hasPatchVersion();
+                rows.push_back (row);
+                y += 25;
+            }
         }
         y += 8;
     }
@@ -738,21 +782,65 @@ void SidebarComponent::buildRows()
         std::vector<const aquanode::plugins::CatalogEntry*> byName;
         for (const auto& entry : aquanode::plugins::catalog())
             byName.push_back (&entry);
-        std::sort (byName.begin(), byName.end(), [] (auto* a, auto* b) { return a->name.compareNatural (b->name) < 0; });
+        // (6.9.14) in the Plugins' order: the sound generation plugins' first, then the
+        // effect plugins', then the utility plugins', each A-Z
+        auto kindOf = [] (const aquanode::plugins::CatalogEntry* e)
+        {
+            const auto* reg = ModuleFactory::instance().find (e->guiTypeId);
+            return pluginKind (e->id, reg != nullptr ? reg->descriptor.section : ModuleSection::Oscillator);
+        };
+        std::sort (byName.begin(), byName.end(), [kindOf] (auto* a, auto* b)
+        {
+            const int ka = kindOf (a), kb = kindOf (b);
+            if (ka != kb) return ka < kb;
+            return a->name.compareNatural (b->name) < 0;
+        });
         std::vector<const RegisteredModule*> all;
+        std::vector<int> kindsOfAll;   // (6.9.17) each one's plugin kind, for the lines between kinds
         for (const auto* entry : byName)
             if (const auto found = pluginModules.find (entry->guiTypeId); found != pluginModules.end())
             {
                 for (auto* m : found->second)
+                {
                     all.push_back (m);
+                    kindsOfAll.push_back (kindOf (entry));
+                }
                 pluginModules.erase (found);
             }
         for (auto& [gui, list] : pluginModules)   // (any whose plugin is not in the catalog: at the end)
             for (auto* m : list)
+            {
                 all.push_back (m);
+                kindsOfAll.push_back (99);
+            }
         if (! all.empty() && header ("plugins.modules", "Plugin Modules", pluginSectionColour()))
         {
-            emitGrouped (all, pluginSectionColour(), "plugins.modules");
+            // (6.9.17) a thin line between the sound generation plugins' modules, the effect
+            // plugins' and the utility plugins', starting where the group names start
+            std::vector<const RegisteredModule*> part;
+            int partKind = -1;
+            bool any = false;
+            auto flush = [&]
+            {
+                if (part.empty()) return;
+                if (any)
+                {
+                    Row line { { 16, y + 3, contentWidth - 26, 3 }, {}, {}, pluginSectionColour() };
+                    line.isSeparator = true;
+                    rows.push_back (line);
+                    y += 9;
+                }
+                emitGrouped (part, pluginSectionColour(), "plugins.modules", true);
+                part.clear();
+                any = true;
+            };
+            for (size_t i = 0; i < all.size(); ++i)
+            {
+                const int k = kindsOfAll[i];
+                if (k != partKind) { flush(); partKind = k; }
+                part.push_back (all[i]);
+            }
+            flush();
             y += 8;
         }
     }
@@ -957,6 +1045,12 @@ void SidebarComponent::paint (juce::Graphics& g)
 
     for (const auto& row : rows)
     {
+        if (row.isSeparator)
+        {
+            g.setColour (text.withAlpha (0.28f));
+            g.fillRect (juce::Rectangle<float> ((float) row.area.getX(), (float) row.area.getCentreY() - 0.5f, (float) row.area.getWidth(), 1.0f));
+            continue;
+        }
         if (row.isToggle)
         {
             const auto r = row.area.toFloat().reduced (0.5f);
@@ -1199,7 +1293,7 @@ void SidebarComponent::mouseUp (const juce::MouseEvent& e)
                 return;
             }
 
-            if (row.isPlugin)
+            if (row.isPlugin && row.typeId.startsWith ("plugin."))   // (6.9.21: the Fruit Arranger's row adds its module, below)
             {
                 const auto pluginId = row.typeId.fromFirstOccurrenceOf ("plugin.", false, false);
                 const bool patch = row.pluginHasPatch && (pluginPatchPillArea (row).contains (e.getPosition()) || e.mods.isPopupMenu());

@@ -488,6 +488,36 @@ namespace
                 }
                 break;
             }
+            case Op::Paint:
+            {
+                // (6.9.16) sound where the region is, at the Level set (a sine's level, dB): a narrow
+                // stretch (a semitone or 60 Hz at most) a partial at its middle, a wider one noise
+                // filling it (its power in the bands it covers, as white noise of that level)
+                const float level = juce::Decibels::decibelsToGain (e.amount);
+                for (const auto& r : e.regions)
+                    for (int f = 0; f < frames; ++f)
+                    {
+                        const float t = (float) (f * hop);
+                        if (t < r.t0 || t > r.t1) continue;
+                        r.slice (t, spans);
+                        for (const auto& [lo, hi] : spans)
+                        {
+                            if (hi <= lo) continue;
+                            if (hi <= lo * 1.0594631f || hi - lo <= 60.0f)
+                            {
+                                cloud.push_back ({ t, std::sqrt (juce::jmax (1.0f, lo) * hi), level });
+                                continue;
+                            }
+                            for (int b = 0; b < B; ++b)
+                            {
+                                const float over = juce::jmin (hi, edges[(size_t) b + 1]) - juce::jmax (lo, edges[(size_t) b]);
+                                if (over > 0.0f)
+                                    cell (f, b) += level * level * over / (hi - lo);
+                            }
+                        }
+                    }
+                break;
+            }
             default: break;
         }
     }

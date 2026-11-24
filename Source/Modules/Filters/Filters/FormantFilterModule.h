@@ -13,6 +13,7 @@
 // vowel colour, high is a vocoder-ish singing resonance. Every knob is
 // modulatable: a cable onto Vowel makes talking pads.
 //
+// Stretch (6.9.19) spreads the peaks apart or squeezes them together.
 // Flexible lane: inside a per-voice chain each voice gets its own filter
 // state and can be given its own vowel; in a global chain it runs once.
 // Inputs: 0 = Audio In. Output: 0 = Audio Out.
@@ -22,7 +23,15 @@ public:
     static constexpr int kFormants = 3;
     static constexpr int kVowels = 5;   // A E I O U
 
-    enum ParamIndex { pVowel = 0, pSize, pResonance, pDryWet, pLevel };
+    enum ParamIndex { pVowel = 0, pSize, pResonance, pDryWet, pLevel, pStretch };
+
+    // (6.9.19) Stretch: the peaks spread apart (+) or squeezed together (-) on the
+    // octave scale, around 1 kHz: +100 % doubles their distances in octaves, -100 % halves them
+    static float stretched (float hz, float stretchPct)
+    {
+        if (stretchPct == 0.0f) return hz;
+        return 1000.0f * std::pow (hz / 1000.0f, std::exp2 (stretchPct * 0.01f));
+    }
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Flexible; }
 

@@ -2,6 +2,8 @@
 #include "../Engine/PluginProcessor.h"
 #include "../Plugins/Host/HostedPlugin.h"
 #include "../Modules/SoundGeneration/Oscillators/WarpOscModule.h"
+#include "../Plugins/Host/RandomPresetSources.h"
+#include "EffectAdders.h"
 
 namespace aquanode::plugins::tidebreeze { bool rollProgram (juce::AudioProcessor&, int category, juce::uint32 seed); }
 namespace aquanode::plugins::phizmo     { bool randomPreset (juce::AudioProcessor&, int style, juce::uint32 seed); }
@@ -34,12 +36,13 @@ namespace
     {
         PatchSketch& s;
         int last;
-        void then (int id) { s.wire (last, "audioOut", id, "audioIn"); last = id; }
+        juce::String lastOut { "audioOut" };   // (6.9.11: the first module's own output socket)
+        void then (int id) { s.wire (last, lastOut, id, "audioIn"); last = id; lastOut = "audioOut"; }
         void finish (int column, float level)
         {
             const int out = s.add ("io.audioOut", column);
             s.set (out, "level", level);
-            s.wire (last, "audioOut", out, "audioIn");
+            s.wire (last, lastOut, out, "audioIn");
         }
     };
 
@@ -317,6 +320,152 @@ namespace
         c.finish (3, chord ? 0.7f : 0.85f);
         s.layout();
         return chord ? "Tidebreeze Chord" : "Tidebreeze " + cat;
+    }
+
+    //==========================================================================
+    // (6.9.11) Physical Model, World, Drums and Experimental
+
+    // a module's first audio output
+    juce::String audioOutOf (PatchSketch& s, int id)
+    {
+        if (auto* m = s.dsp (id))
+            for (const auto& so : m->getDescriptor().sockets)
+                if (so.kind == SocketKind::Audio && so.direction == SocketDirection::Output)
+                    return so.id;
+        return "audioOut";
+    }
+
+    // the instrument's sound, voices summed where it plays per voice: the id
+    // a Chain goes on from (a Poly Sum, or the instrument itself)
+    int soundOf (PatchSketch& s, int id, int column)
+    {
+        auto* m = s.dsp (id);
+        if (m != nullptr && m->voiceMode() != VoiceMode::Global)
+        {
+            const int sum = s.add ("util.polysum", column);
+            s.set (sum, "amount", 0.5f);
+            s.wire (id, audioOutOf (s, id), sum, "audioIn");
+            return sum;
+        }
+        return id;
+    }
+
+    // one physical model, its knobs varied a little around the card's own sound
+    int physicalModel (PatchSketch& s, Dice& d, const juce::String& type)
+    {
+        const int id = s.add (type, 0);
+        if (id < 0) return -1;
+        if (type == "osc.sitar")
+        {
+            s.set (id, "jawari", d.range (55.0f, 85.0f));
+            s.set (id, "bright", d.range (45.0f, 75.0f));
+            s.set (id, "symp", d.range (35.0f, 65.0f));
+            s.set (id, "decay", d.range (5.0f, 12.0f));
+        }
+        else if (type == "osc.bowed")
+        {
+            s.set (id, "pressure", d.range (35.0f, 60.0f));
+            s.set (id, "position", d.range (8.0f, 22.0f));
+            s.set (id, "damp", d.range (20.0f, 50.0f));
+        }
+        else if (type == "osc.wind")
+        {
+            s.set (id, "breath", d.range (70.0f, 100.0f));
+            s.set (id, "tone", d.range (30.0f, 70.0f));
+            s.set (id, "noise", d.range (15.0f, 40.0f));
+            s.set (id, "vibrato", d.range (10.0f, 35.0f));
+        }
+        else if (type == "osc.pluck")
+        {
+            s.setChoice (id, "model", d.chance (0.5f) ? "Harp" : "Karplus");
+            s.set (id, "decay", d.jitterMul (2500.0f, 0.8f));
+            s.set (id, "damp", d.range (15.0f, 45.0f));
+            s.set (id, "color", d.range (55.0f, 90.0f));
+        }
+        else if (type == "osc.modaldrum")
+        {
+            s.set (id, "decay", d.jitterMul (900.0f, 0.8f));
+            s.set (id, "inharm", d.range (5.0f, 45.0f));
+            s.set (id, "bright", d.range (30.0f, 65.0f));
+        }
+        return id;
+    }
+
+    juce::String moduleName (PatchSketch& s, int id)
+    {
+        auto* m = s.dsp (id);
+        return m != nullptr ? m->getDescriptor().displayName : juce::String();
+    }
+
+    juce::String buildPhysical (AquanodeModularAudioProcessor& p, juce::uint32 seed, bool world)
+    {
+        static const char* const physical[] = { "osc.sitar", "osc.bowed", "osc.wind", "osc.pluck", "osc.modaldrum",
+                                                "osc.drawbarorgan", "osc.epiano", "osc.guitaracoustic", "osc.guitarelectric",
+                                                "osc.strings" };
+        static const char* const worldly[] = { "osc.sitar", "osc.sitar", "osc.bowed", "osc.wind", "osc.pluck", "osc.modaldrum" };
+        PatchSketch s (p);
+        Dice d (seed ^ 0x9b15cau);
+        const juce::String type = world ? worldly[d.index (6)] : physical[d.index (10)];
+        const int inst = physicalModel (s, d, type);
+        if (inst < 0) return {};
+        if (world)
+        {
+            // their own colour: the bowed one slides (an erhu's way), the pluck is a harp
+            // in a pentatonic, the wind breathes like a bamboo flute
+            if (type == "osc.bowed") { s.set (inst, "voices", 1.0f); s.set (inst, "glide", d.range (60.0f, 180.0f)); }
+            if (type == "osc.wind")  { s.set (inst, "noise", d.range (35.0f, 55.0f)); s.set (inst, "vibrato", d.range (25.0f, 45.0f)); }
+            if (type == "osc.pluck") s.setChoice (inst, "model", "Harp");
+        }
+        const int src = soundOf (s, inst, 1);
+        Chain c { s, src, src == inst ? audioOutOf (s, inst) : juce::String ("audioOut") };
+        if (! world && d.chance (0.3f)) c.then (chorus (s, 2, d, d.range (15.0f, 30.0f)));
+        if (d.chance (world ? 0.35f : 0.25f)) c.then (delay (s, 2, d, "1/4.", "1/8", 8.0f, 20.0f));
+        c.then (hall (s, 3, d, world ? 2.5f : 1.5f, world ? 6.0f : 4.0f, 15.0f, 30.0f));
+        // (each as loud as the rest: measured, two notes held)
+        float level = 0.85f;
+        if (type == "osc.strings") level = 0.22f;
+        if (type == "osc.modaldrum") level = 0.19f;
+        c.finish (4, level);
+        s.layout();
+        return (world ? "World " : "Physical ") + moduleName (s, inst);
+    }
+
+    // a drum machine that plays by itself: Cove Groove rolled, or Drum Morph
+    // with a kit of its own, running at the patch's tempo
+    juce::String buildDrums (AquanodeModularAudioProcessor& p, juce::uint32 seed)
+    {
+        PatchSketch s (p);
+        Dice d (seed ^ 0xd2a5u);
+        const int card = s.add ("plugin.covegroove", 0);
+        if (card < 0) return {};
+        if (auto* h = dynamic_cast<plugins::HostedPluginModule*> (s.dsp (card)))
+            if (auto* pl = h->getPlugin())
+            {
+                if (auto* src = plugins::randompreset::find ("covegroove"))
+                    src->roll (*pl, d.index (4), 0, 0, seed | 1u);
+                for (auto* prm : pl->getParameters())
+                    if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
+                    {
+                        if (withId->paramID == "run")   prm->setValueNotifyingHost (1.0f);
+                        if (withId->paramID == "clock")
+                            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (prm))
+                                prm->setValueNotifyingHost (ranged->convertTo0to1 (1.0f));   // the patch's tempo
+                    }
+            }
+        Chain c { s, card };
+        if (d.chance (0.4f))
+        {
+            const int comp = s.add ("fx.compress", 1);
+            s.set (comp, "threshold", d.range (-20.0f, -12.0f));
+            s.set (comp, "ratio", d.range (2.0f, 4.0f));
+            s.set (comp, "attack", d.range (10.0f, 30.0f));
+            s.set (comp, "release", d.range (80.0f, 200.0f));
+            s.set (comp, "makeup", 2.0f);
+            c.then (comp);
+        }
+        c.finish (2, 0.8f);
+        s.layout();
+        return "Drums";
     }
 
     //==========================================================================
@@ -611,6 +760,24 @@ const std::vector<ExtraEngine>& extraEngines()
             add ("Phizmo", cat, [c = juce::String (cat)] (auto& p, auto seed) { return buildPhizmo (p, seed, c); });
         for (const char* cat : { "Pad", "Bell", "Keys", "Chord" })
             add ("Atmospheric DnB", cat, [c = juce::String (cat)] (auto& p, auto seed) { return buildLiquid (p, seed, c); });
+        // (6.9.11)
+        add ("Models", "Physical Model", [] (auto& p, auto seed) { return buildPhysical (p, seed, false); });
+        add ("Models", "World", [] (auto& p, auto seed) { return buildPhysical (p, seed, true); });
+        add ("Cove Groove", "Drums", [] (auto& p, auto seed) { return buildDrums (p, seed); });
+        add ("Models", "Experimental", [] (auto& p, auto seed)
+        {
+            // a physical model or a slow FM bell, through two of the stranger quick adds
+            Dice d (seed ^ 0xe4be1u);
+            auto name = d.chance (0.6f) ? buildPhysical (p, seed, false) : buildSlowFM (p, seed, 2);
+            static const char* const adds[] = { "add.Spectral", "add.Fold", "add.Formant", "add.Octave Wash", "add.Lo-Fi",
+                                                "add.Ambient Wash", "add.Color", "add.Band Echo", "add.Grit" };
+            const int a = d.index (9);
+            int b = d.index (8); if (b >= a) ++b;
+            for (int k : { a, b })
+                if (auto* adder = findEffectAdder (adds[k]))
+                    adder->apply (p, seed + (juce::uint32) k * 7919u);
+            return "Experimental " + name.fromFirstOccurrenceOf (" ", false, false);
+        });
         return v;
     }();
     return list;

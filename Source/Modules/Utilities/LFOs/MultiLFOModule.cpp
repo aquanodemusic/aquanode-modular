@@ -243,7 +243,8 @@ void MultiLFOModule::blockStart()
         if (audioTable != published)
             audioTable = published;
     }
-    const double bpm = hostTransport.hasBpm ? hostTransport.bpm : (double) param (pBpm);
+    const double bpm = tempoFromLane() ? tempoBpm   // (6.9.10: a lane's tempo wins)
+                     : hostTransport.hasBpm ? hostTransport.bpm : (double) param (pBpm);
     beatsPerSecond = juce::jmax (1.0, bpm) / 60.0;
 }
 
@@ -375,7 +376,8 @@ static ModuleDescriptor multiLfoDescriptor()
     d.sidebarOrder = 2;
     d.sockets = {
         modOut ("modOut", "Mod Out"),
-        modOut ("invOut", "Inv Out")
+        modOut ("invOut", "Inv Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     d.params = {
         makeCombo       ("shape",    "Shape",    MultiLFOModule::shapeChoices(), 0, 0, 3).noMod(),   // (the table is rebuilt)

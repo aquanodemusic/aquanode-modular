@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/AntiAlias.h"
 
 // Oscillator - FM operator (true DX7-style phase modulation). PerVoice: the
 // engine calls processVoiceSample once per active global voice, and both FM In
@@ -43,6 +44,9 @@ private:
     float readSampleTable (double phase01) const;
 
     double phase   [aquanode::kMaxVoices] {};
+    // (6.9.21) CPU > Anti-alias: Tri / Saw / Square made at twice the rate with polyBLEP, brought back down
+    aquanode::Decimator2x aaDown [aquanode::kMaxVoices];
+    bool aaWasOn [aquanode::kMaxVoices] {};
     double freqHz  [aquanode::kMaxVoices] {};
     float  gateLvl [aquanode::kMaxVoices] {};
     bool   gateOn  [aquanode::kMaxVoices] {};

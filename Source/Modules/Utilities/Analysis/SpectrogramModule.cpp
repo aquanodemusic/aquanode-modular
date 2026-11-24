@@ -32,6 +32,7 @@
 //     moved around) shows the frequency and nearest note under it
 //==============================================================================
 #include "SpectralAnalysis.h"
+#include "LightColour.h"
 
 using namespace aquanode;
 using namespace aquanode::spectral;
@@ -47,8 +48,18 @@ namespace
     const juce::StringArray& winChoices()   { static const juce::StringArray c { "Hann", "Blackman", "Nuttall", "Kaiser" }; return c; }
     const juce::StringArray& decimChoices() { static const juce::StringArray c { "Auto", "Off", "/2", "/4", "/8", "/16" }; return c; }
 
-    // light colours, added up where the inputs overlap: cyan, pink, yellow
-    constexpr float kColour[kInputs][3] = { { 0.0f, 1.0f, 1.0f }, { 1.0f, 0.35f, 0.75f }, { 1.0f, 1.0f, 0.0f } };
+    // light colours, added up where the inputs overlap: A, B, C/Delta (cyan, pink, yellow to begin
+    // with; 6.9.15: their knobs, in nm, set them - each view sets these as it draws)
+    constexpr float kOriginal[kInputs][3] = { { 0.0f, 1.0f, 1.0f }, { 1.0f, 0.35f, 0.75f }, { 1.0f, 1.0f, 0.0f } };
+    constexpr float kDefaultNm[kInputs] = { 487.0f, 730.0f, 578.0f };
+    float kColour[kInputs][3] = { { 0.0f, 1.0f, 1.0f }, { 1.0f, 0.35f, 0.75f }, { 1.0f, 1.0f, 0.0f } };
+
+    ParamSpec lightKnob (const char* id, const char* label, float def)
+    {
+        auto p = makeRotary (id, label, aquanode::light::kMinNm, aquanode::light::kMaxNm, def, 4, {}, false, 1.0f).noMod();
+        p.textFromValue = [] (double v) { return aquanode::light::textOf (v); };
+        return p;
+    }
 
     // one hop's worth of all three inputs, handed from the analysis thread to the display
     struct FrameSet
@@ -68,7 +79,8 @@ class ReassignedSpectrogramModule final : public SynthModule,
 public:
     // (patches save knobs by name, so a new one can sit where it belongs)
     enum P { pLow, pHigh, pRange, pGain, pSpeed, pFft, pHop, pWindow, pSpeedLock, pDecim, pScale, pLabels, pTimeRe,
-             pThreshold, pMaxShift, pFreeze, pReassign, pDraw, pEnvelope, pDelta, pAccuracy };
+             pThreshold, pMaxShift, pFreeze, pReassign, pDraw, pEnvelope, pDelta, pAccuracy,
+             pColA, pColB, pColC, pFreezeA, pFreezeB, pFreezeC };
 
     // Accuracy: how far a reassigned point may move from its bin and still be
     // drawn (anything moved further is mostly noise). 0 % lets points move 4
@@ -87,13 +99,15 @@ public:
         d.description = "A scrolling spectrogram: x = time, y = frequency, brightness = amplitude. Reassign moves every "
                         "bin's energy to its true frequency (and time, with Time Fix), so tones are thin lines; Accuracy "
                         "drops the points that had to move too far (noise), stricter the higher it is. Off, the plain FFT. Draw Sharp or Smooth; Envelope adds each input's slow average spectrum, faintly, at "
-                        "the right edge. Three inputs - Cyan, Pink, Yellow - whose colours add up where they overlap; "
-                        "with Delta on, Yellow shows where Cyan and Pink differ. Low / High pick any range, a tap shows "
+                        "the right edge. Three inputs - A, B, C - whose colours add up where they overlap; "
+                        "with Delta on, C shows where A and B differ. Low / High pick any range, a tap shows "
                         "the frequency and note under it. Decimate trades time for finer frequencies (Off by default); "
-                        "Speed Lock keeps the scroll speed while it does. Thru passes Cyan on.";
+                        "Speed Lock keeps the scroll speed while it does. Thru passes A on. Each has its colour as light "
+                        "(nm; past 700 the purples, which no single wavelength makes) and its own Freeze (its last "
+                        "spectrum goes on being drawn).";
         d.section = ModuleSection::Utility;
         d.sidebarOrder = 40;
-        d.sockets = { audioIn ("in1", "Cyan"), audioIn ("in2", "Pink"), audioIn ("in3", "Yellow"),
+        d.sockets = { audioIn ("in1", "A"), audioIn ("in2", "B"), audioIn ("in3", "C"),
                       audioOut ("thru", "Thru") };
         d.params = {
             makeRotary ("low", "Low", 20.0f, 20000.0f, 20.0f, 0, "Hz", true),
@@ -114,13 +128,18 @@ public:
             makeRotary ("threshold", "Floor", -100.0f, -5.0f, -60.0f, 2, "dB"),
             // (5.19.3: Accuracy below took its place; kept for older patches)
             makeRotary ("maxShift", "Peak Shift", 0.1f, 4.0f, 1.0f, 2, "bins").hide(),
-            makeCombo ("freeze", "Freeze", { "Run", "Freeze" }, 0, 3, 1).noMod(),
+            makeCombo ("freeze", "Freeze (all)", { "Run", "Freeze" }, 0, 3, 1).noMod().hide(),   // (6.9.15: one each now)
             // (after the old ones: saved patches keep their places)
             makeCombo ("reassign", "Reassign", { "Off", "On" }, 1, 3, 1).noMod().whenMissing (1.0f),
             makeCombo ("draw", "Draw", { "Sharp", "Smooth" }, 0, 3, 1).noMod().whenMissing (0.0f),
             makeCombo ("envelope", "Envelope", { "Off", "On" }, 1, 3, 1).noMod().whenMissing (0.0f),
             makeCombo ("delta", "Delta", { "Off", "On" }, 0, 3, 1).noMod().whenMissing (0.0f),
-            makeRotary ("accuracy", "Accuracy", 0.0f, 100.0f, 50.0f, 2, "%")
+            makeRotary ("accuracy", "Accuracy", 0.0f, 100.0f, 50.0f, 2, "%"),
+            lightKnob ("colA", "A Colour", kDefaultNm[0]), lightKnob ("colB", "B Colour", kDefaultNm[1]),
+            lightKnob ("colC", "C/Delta Colour", kDefaultNm[2]),
+            makeCombo ("freezeA", "Freeze A", { "Off", "On" }, 0, 5, 1).noMod(),
+            makeCombo ("freezeB", "Freeze B", { "Off", "On" }, 0, 5, 1).noMod(),
+            makeCombo ("freezeC", "Freeze C/Delta", { "Off", "On" }, 0, 5, 1).noMod()
         };
         return d;
     }
@@ -254,7 +273,15 @@ private:
             if (mask & (1 << i))
                 rings[(size_t) i].pop (scratch[(size_t) i].data(), ready);
 
-        const bool frozen = knob (pFreeze) > 0.5f;
+        // (6.9.15) each its own Freeze: a frozen one keeps its last spectrum
+        bool frozenOne[kInputs];
+        bool allFrozen = true;
+        for (int i = 0; i < kInputs; ++i)
+        {
+            frozenOne[i] = knob (pFreeze) > 0.5f || knob (pFreezeA + i) > 0.5f;
+            if ((mask & (1 << i)) && ! frozenOne[i]) allFrozen = false;
+        }
+        const bool frozen = knob (pFreeze) > 0.5f || allFrozen;
         for (int s = 0; s < ready; ++s)
         {
             bool due = false;
@@ -270,7 +297,7 @@ private:
                     continue;   // the display is behind: drop this frame
             }
             for (int i = 0; i < kInputs; ++i)
-                if (mask & (1 << i))
+                if ((mask & (1 << i)) && ! frozenOne[i])
                     analyzers[(size_t) i].analyse();   // (outside the lock: the display keeps drawing)
 
             const juce::ScopedLock sl (queueLock);
@@ -329,6 +356,7 @@ namespace
             auto* m = dynamic_cast<ReassignedSpectrogramModule*> (module.get());
             if (m == nullptr)
                 return;
+            setColours (*m);
             const auto plot = plotArea();
 
             if (image.isValid())
@@ -390,7 +418,7 @@ namespace
                 auto legend = getLocalBounds().removeFromBottom (14).reduced (4, 0);
                 g.setFont (juce::Font (juce::FontOptions (9.5f)));
                 const bool deltaOn = m->knob (ReassignedSpectrogramModule::pDelta) > 0.5f;
-                const char* names[kInputs] = { "Cyan", "Pink", deltaOn ? "Cyan / Pink" : "Yellow" };
+                const char* names[kInputs] = { "A", "B", deltaOn ? "A / B" : "C" };
                 for (int i = 0; i < kInputs; ++i)
                 {
                     const auto c = juce::Colour::fromFloatRGBA (kColour[i][0], kColour[i][1], kColour[i][2], 1.0f);
@@ -403,7 +431,16 @@ namespace
                 g.setColour (juce::Colours::white.withAlpha (0.45f));
                 const auto lo = juce::jmin (m->knob (ReassignedSpectrogramModule::pLow), m->knob (ReassignedSpectrogramModule::pHigh));
                 const auto hi = juce::jmax (m->knob (ReassignedSpectrogramModule::pLow), m->knob (ReassignedSpectrogramModule::pHigh));
-                g.drawText (hzText (lo) + " - " + hzText (hi) + (m->knob (ReassignedSpectrogramModule::pFreeze) > 0.5f ? "   FROZEN" : ""),
+                juce::String frozen;
+                if (m->knob (ReassignedSpectrogramModule::pFreeze) > 0.5f) frozen = "   FROZEN";
+                else
+                {
+                    const char* fn[kInputs] = { "A", "B", deltaOn ? "Delta" : "C" };
+                    juce::StringArray f;
+                    for (int k = 0; k < kInputs; ++k) if (m->knob (ReassignedSpectrogramModule::pFreezeA + k) > 0.5f) f.add (fn[k]);
+                    if (! f.isEmpty()) frozen = "   FROZEN: " + f.joinIntoString (" ");
+                }
+                g.drawText (hzText (lo) + " - " + hzText (hi) + frozen,
                             legend, juce::Justification::centredRight);
             }
 
@@ -559,6 +596,8 @@ namespace
                 return bins[(size_t) lo] + (bins[(size_t) lo + 1] - bins[(size_t) lo]) * f;
             };
 
+            setColours (*m);
+            const bool deltaHeld = m->knob (ReassignedSpectrogramModule::pFreezeC) > 0.5f;   // (6.9.15)
             m->drainFrames ([&] (const FrameSet& set)
             {
                 if (set.serial != shownSerial)
@@ -639,15 +678,31 @@ namespace
                 // Delta: where Cyan and Pink differ, in yellow (from their plain spectra)
                 if (delta && set.numBins[0] > 2 && set.numBins[1] > 2)
                 {
+                    // (6.9.15) Freeze C/Delta: the difference as it was when frozen
+                    if ((int) heldDelta.size() != 2 * ih) { heldDelta.assign ((size_t) (2 * ih), 0.0f); heldDeltaValid = false; }
                     for (int cy = 0; cy < ih; ++cy)
                     {
-                        const float a = rowDb (set, 0, cy), b = rowDb (set, 1, cy);
-                        const float level = brightOf (juce::jmax (a, b));
-                        const float diff = juce::jlimit (0.0f, 1.0f, std::abs (a - b) / 24.0f);
-                        rowLevel[2 * (size_t) ih + (size_t) cy] = juce::jmax (a, b) - (1.0f - diff) * range;
+                        float shownLevel, rowL;
+                        if (deltaHeld && heldDeltaValid)
+                        {
+                            shownLevel = heldDelta[(size_t) cy];
+                            rowL = heldDelta[(size_t) (ih + cy)];
+                        }
+                        else
+                        {
+                            const float a = rowDb (set, 0, cy), b = rowDb (set, 1, cy);
+                            const float level = brightOf (juce::jmax (a, b));
+                            const float diff = juce::jlimit (0.0f, 1.0f, std::abs (a - b) / 24.0f);
+                            shownLevel = level * diff;
+                            rowL = juce::jmax (a, b) - (1.0f - diff) * range;
+                            heldDelta[(size_t) cy] = shownLevel;
+                            heldDelta[(size_t) (ih + cy)] = rowL;
+                        }
+                        rowLevel[2 * (size_t) ih + (size_t) cy] = rowL;
                         for (int cx = 0; cx < speed; ++cx)
-                            put (cx, cy, level * diff, 2);
+                            put (cx, cy, shownLevel, 2);
                     }
+                    if (! deltaHeld) heldDeltaValid = true;
                 }
 
                 // the slow average spectra (Envelope), in dB
@@ -680,6 +735,18 @@ namespace
                 repaint();
         }
 
+        // (6.9.15) the three colours from this module's knobs
+        static void setColours (const ReassignedSpectrogramModule& m)
+        {
+            for (int i = 0; i < kInputs; ++i)
+            {
+                const auto c = aquanode::light::colourAt (m.knob (ReassignedSpectrogramModule::pColA + i), kDefaultNm[i],
+                                                          juce::Colour::fromFloatRGBA (kOriginal[i][0], kOriginal[i][1], kOriginal[i][2], 1.0f));
+                kColour[i][0] = c.getFloatRed(); kColour[i][1] = c.getFloatGreen(); kColour[i][2] = c.getFloatBlue();
+            }
+        }
+        std::vector<float> heldDelta;
+        bool heldDeltaValid { false };
         juce::WeakReference<SynthModule> module;
         juce::Image image;
         int writeCol { 0 };

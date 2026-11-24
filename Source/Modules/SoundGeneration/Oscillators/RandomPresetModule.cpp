@@ -640,11 +640,12 @@ static ModuleDescriptor randomPresetDescriptor()
         "One of the synth plugins, playing a preset its own generator rolled: pick the Plugin, its Engine where it has "
         "two, the Kind of preset (and for Massif a Genre), then Apply rolls one. Plugin Window shows it in the plugin's "
         "own window, Save Preset writes it as the plugin's own preset file, Open in Plugin puts the plugin itself in "
-        "the module's place. Plays from the keys unless something is patched into Midi In.";
+        "the module's place. Plays from the keys unless something is patched into MIDI In.";
     d.section = ModuleSection::Oscillator;
     d.sockets = {
-        midiIn   ("midiIn",   "Midi In"),
-        audioOut ("audioOut", "Audio Out")
+        midiIn   ("midiIn",   "MIDI In"),
+        audioOut ("audioOut", "Audio Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     return d;
 }

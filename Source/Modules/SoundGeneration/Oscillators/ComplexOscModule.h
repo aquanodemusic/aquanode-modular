@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/AntiAlias.h"
 
 // Complex Osc - a West Coast-style voice. Two ideas, no filter:
 // a modulation oscillator FMs the principal oscillator, and the result is then
@@ -73,4 +74,7 @@ private:
     aquanode::ModuleVoiceGate gate;
     double phase [aquanode::kMaxVoices] {};
     double modPhase [aquanode::kMaxVoices] {};
+    aquanode::Decimator4x aaDown [aquanode::kMaxVoices];   // (6.9.21: CPU > Anti-alias - the fold at four times the rate)
+    double aaPrevPhase [aquanode::kMaxVoices] {}, aaPrevMod [aquanode::kMaxVoices] {};
+    bool aaWasOn [aquanode::kMaxVoices] {};
 };

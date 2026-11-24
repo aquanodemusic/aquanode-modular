@@ -12,6 +12,7 @@ static aquanode::ModuleDescriptor crossfadeDescriptor()
         "hard-switches them.";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 17;
+    d.listedInSidebar = false;   // (6.9.21: merged into the A/B Fader - its Equal Power; patches with it still load it)
     d.sockets = {
         audioIn  ("aIn",    "A In"),
         audioIn  ("bIn",    "B In"),
@@ -37,7 +38,9 @@ static aquanode::ModuleDescriptor abSwitchDescriptor()
         "B only (fully right), linearly, so two identical signals stay at the same level anywhere "
         "between; A or B alone; or Difference (A minus B: what one does that the other does not - "
         "silence means they are identical, and a latency mismatch shows as a comb). Every change "
-        "glides over 5 ms, so it never clicks.";
+        "glides over 5 ms, so it never clicks. Equal Power (6.9.21, the old Crossfade's way): the same knob moving "
+        "along a quarter circle, so two different sounds stay equally loud between - an LFO onto A - B morphs them.";
+    d.searchKeywords = "crossfade crossfader equal power morph compare ab switch";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 18;
     d.sockets = {
@@ -47,8 +50,9 @@ static aquanode::ModuleDescriptor abSwitchDescriptor()
     };
     d.params = {
         // (Fade is the last choice so that patches saved with A, B or Difference keep them)
-        makeCombo ("listen", "Listen", { "A", "B", "Difference", "Fade" }, 3, 0, 3),
-        makeRotary ("balance", "A - B", 0.0f, 100.0f, 50.0f, 0, "%").visibleWhen ("listen", 3.0f)
+        // (6.9.21: Equal Power after them - the Crossfade module's fade)
+        makeCombo ("listen", "Listen", { "A", "B", "Difference", "Fade", "Equal Power" }, 3, 0, 3),
+        makeRotary ("balance", "A - B", 0.0f, 100.0f, 50.0f, 0, "%").visibleFrom ("listen", 3.0f)
     };
     return d;
 }

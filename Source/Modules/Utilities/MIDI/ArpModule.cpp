@@ -8,17 +8,19 @@ static aquanode::ModuleDescriptor arpDescriptor()
     d.displayName = "Arp";
     d.description =
         "Holds whatever chord you play and walks through it in time, from the host tempo. Patch "
-        "its Midi Out into a generator's Add Midi In and that generator hears ONLY the arpeggio - "
-        "the difference from Midi Add, which layers notes on top of those you play. Generators "
+        "its MIDI Out into a generator's Add MIDI In and that generator hears ONLY the arpeggio - "
+        "the difference from MIDI Add, which layers notes on top of those you play. Generators "
         "with nothing patched keep playing the chord, so one Arp'd Oscillator over one plain pad "
-        "is a two-cable trick. Midi In arpeggiates another stream instead of your keys - a Piano Roll's chords, say. "
+        "is a two-cable trick. MIDI In arpeggiates another stream instead of your keys - a Piano Roll's chords, say. "
         "Chance: how likely each step is to play (the others rest); Ratchet: how often a step becomes a quick "
-        "burst of Hits (2-4) - at 100 % and 0 % they change nothing.";
+        "burst of Hits (2-4) - at 100 % and 0 % they change nothing. With MPE, each arp note keeps the bend, pressure "
+        "and slide of the key it comes from.";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 22;
     d.sockets = {
-        midiIn  ("midiIn",  "Midi In"),
-        midiOut ("midiOut", "Midi Out")
+        midiIn  ("midiIn",  "MIDI In"),
+        midiOut ("midiOut", "MIDI Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     d.params = {
         makeSteppedList ("division", "Rate", seqDivisionChoices(), 8, 0),

@@ -108,7 +108,8 @@ std::shared_ptr<SpectralResynthModule::BinModel> SpectralResynthModule::analyseB
                 return nullptr;
         }
     }
-    m->topDb = 20.0f * std::log10 (top + 1.0e-20f);
+    // (6.9.16: no quieter than a -60 dB sine - an empty sound, Init Blank's, shows dark)
+    m->topDb = juce::jmax (20.0f * std::log10 (top + 1.0e-20f), 20.0f * std::log10 ((float) N * 0.25f * 0.001f));
 
     // the sound's fundamental, from every other frame's peaks
     Model probe;
@@ -394,8 +395,8 @@ std::shared_ptr<SpectralResynthModule::BinModel> SpectralResynthModule::editBins
             const int fb = juce::jlimit (0, m->numFrames - 1, (int) std::floor (r.t1 / hopS));
             const int k0 = juce::jlimit (0, m->bins - 1, (int) std::ceil (binOf (r.f0)));
             const int k1 = juce::jlimit (0, m->bins - 1, (int) std::floor (binOf (r.f1)));
-            if (fb < fa || k1 < k0) continue;
-            const int width = k1 - k0 + 1;
+            if (fb < fa || (k1 < k0 && e.op != Op::Paint)) continue;   // (Paint: a tone may be narrower than a bin)
+            const int width = juce::jmax (1, k1 - k0 + 1);
             switch (e.op)
             {
                 case Op::Delete:
@@ -537,6 +538,74 @@ std::shared_ptr<SpectralResynthModule::BinModel> SpectralResynthModule::editBins
                                 ringFreq[j] = fr.freq[(size_t) k];
                         }
                     }
+                    break;
+                }
+                case Op::Paint:
+                {
+                    // (6.9.16) sound where the region is, at the Level set (a sine's level, dB):
+                    // a narrow stretch (a semitone or 60 Hz at most) a tone at its middle - its
+                    // window's main lobe, the bins' phases as a sine's - a wider one noise filling
+                    // it (each bin at its share of the level, its pitch and phase at random)
+                    const float full = juce::Decibels::decibelsToGain (e.amount) * (float) m->N * 0.25f;
+                    auto lobe = [] (float d)   // a Hann window's main lobe, 1 at its centre
+                    {
+                        d = std::abs (d);
+                        if (d >= 2.0f) return 0.0f;
+                        if (d < 1.0e-4f) return 1.0f;
+                        if (std::abs (d - 1.0f) < 1.0e-4f) return 0.5f;
+                        const float pd = juce::MathConstants<float>::pi * d;
+                        return std::abs (std::sin (pd) / (pd * (1.0f - d * d)));
+                    };
+                    juce::Random rng ((juce::int64) (fa * 7919 + k0 * 31 + fb));
+                    const float startPhase = rng.nextFloat() * juce::MathConstants<float>::twoPi;
+                    for (int f = fa; f <= fb; ++f)
+                    {
+                        r.slice ((float) (f * hopS), hzSpans);
+                        auto& fr = be.writable (f);
+                        for (const auto& [lo, hi] : hzSpans)
+                        {
+                            if (hi <= lo) continue;
+                            const bool tone = hi <= lo * 1.0594631f || hi - lo <= 60.0f;
+                            if (tone)
+                            {
+                                const float kc = binOf (std::sqrt (juce::jmax (1.0f, lo) * hi));
+                                // (the sine's phase where frame f is centred, as the frames go on)
+                                const float ph = startPhase + juce::MathConstants<float>::twoPi * kc * (float) (f * m->hop) / (float) m->N;
+                                for (int k = (int) std::floor (kc) - 1; k <= (int) std::ceil (kc) + 1; ++k)
+                                {
+                                    if (k < 0 || k >= m->bins) continue;
+                                    const float a = full * lobe ((float) k - kc);
+                                    if (a <= 0.0f) continue;
+                                    for (int c = 0; c < m->channels; ++c)
+                                        if (a > be.mag (fr, c, k))
+                                        {
+                                            be.setMag (fr, c, k, a);
+                                            fr.phase[(size_t) (c * m->bins + k)] = encodePhase (princarg (ph - juce::MathConstants<float>::pi * ((float) k - kc)));
+                                        }
+                                    fr.freq[(size_t) k] = kc;
+                                    fr.freePhase[(size_t) k] = 1;
+                                }
+                                continue;
+                            }
+                            const int a0 = juce::jlimit (0, m->bins - 1, (int) std::ceil (binOf (lo)));
+                            const int a1 = juce::jlimit (0, m->bins - 1, (int) std::floor (binOf (hi)));
+                            if (a1 < a0) continue;
+                            const float each = full * std::sqrt (3.0f / (float) (a1 - a0 + 1));
+                            for (int k = a0; k <= a1; ++k)
+                            {
+                                for (int c = 0; c < m->channels; ++c)
+                                    if (each > be.mag (fr, c, k))
+                                    {
+                                        be.setMag (fr, c, k, each);
+                                        fr.phase[(size_t) (c * m->bins + k)] = encodePhase (princarg (rng.nextFloat() * juce::MathConstants<float>::twoPi));
+                                    }
+                                fr.freq[(size_t) k] = (float) k + rng.nextFloat() - 0.5f;
+                                fr.freePhase[(size_t) k] = 1;
+                            }
+                        }
+                    }
+                    // (the map's brightness follows the loudest of the sound and the paint)
+                    m->topDb = juce::jmax (m->topDb, 20.0f * std::log10 (full + 1.0e-20f));
                     break;
                 }
                 default: break;

@@ -154,6 +154,7 @@ juce::String buildPolSweepPatchWith (AquanodeModularAudioProcessor& p, const juc
 
     const int voiceFilter = s.add ("filter.svf", 2);
     s.setChoice (voiceFilter, "mode", "Bandpass");
+    s.set (voiceFilter, "morph", 50.0f);   // (6.9.19: the Type knob, bandpass)
     s.set (voiceFilter, "cutoff", 220.0f);
     s.set (voiceFilter, "resonance", 0.12f);
     s.set (voiceFilter, "modDepth", 70.0f);

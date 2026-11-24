@@ -198,11 +198,18 @@ namespace
                 if (auto* prm = kit::findParam (*am, d.params[(size_t) i].id))
                     links.push_back ({ prm, i, -1.0f });
         }
+        // (6.9.14) section cards into Cards In
+        bool takesCardLinks() const override { return getDescriptor().inputIndexOf ("cardsIn") >= 0; }
+        void setCardLinks (std::vector<std::shared_ptr<CardLink>> l) override { cards.set (getDescriptor(), std::move (l)); }
+
         void pushKnobs()
         {
+            const juce::SpinLock::ScopedTryLockType cardLock (cards.lock);
             for (auto& l : links)
             {
-                const float raw = param (l.knob);   // unmoved knob: nothing to convert or send
+                float raw = param (l.knob);   // unmoved knob: nothing to convert or send
+                if (cardLock.isLocked())
+                    cards.read (*this, l.knob, false, raw);   // (a section card holds it)
                 if (juce::exactlyEqual (raw, l.raw)) continue;
                 l.raw = raw;
                 const float v = l.param->convertTo0to1 (raw);
@@ -215,13 +222,14 @@ namespace
     private:
         struct Link { juce::RangedAudioParameter* param; int knob; float last; float raw = std::numeric_limits<float>::quiet_NaN(); };
         std::vector<Link> links;
+        kit::CardReceiver cards;
     };
 }
 
 //==============================================================================
 // Massif - Voice
 //==============================================================================
-class AquaMassifVoiceModule final : public MassifHostModule
+class AquaMassifVoiceModule : public MassifHostModule
 {
 public:
     static ModuleDescriptor descriptor()
@@ -234,7 +242,7 @@ public:
                         "bus; the eight Mod outputs are the modulation of the effect knobs, for the Massif "
                         "Effects. The modulation slots, loops, shapes, steps and generated wavetables come with the "
                         "module (saved in the patch).";
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out"), audioOut ("bypassOut", "Bypass Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out"), audioOut ("bypassOut", "Bypass Out") };
         for (int m = 0; m < kMods; ++m)
             d.sockets.push_back (modOut (modId (m), juce::String ("Mod ") + modName (m)));
         for (const auto& k : voiceKnobs())
@@ -413,7 +421,81 @@ private:
     int pos { 0 };
 };
 
+//==============================================================================
+// (6.9.14) Massif in smaller cards: the voice's engine (Massif - Voice Engine: no knobs
+// of its own, the same sockets as Massif - Voice plus Cards In) and its sections
+// as cards - Osc 1, Osc 2, Osc 3, Mod Osc, Noise & Feedback, Filters, Inserts,
+// Amp & Voices, Macros, Envelopes, LFOs - chained into it. The effects stay
+// Massif - Effects.
+//==============================================================================
+namespace
+{
+    using kit::CardDef;
+
+    const std::vector<CardDef>& massifCards()
+    {
+        static const std::vector<CardDef> cards = []
+        {
+            struct G { const char* id; const char* kind; const char* text; std::vector<int> rows; };
+            const G groups[] = {
+                { "osc1", "Osc 1", "Massif's first wavetable oscillator: on, its table and mode, pitch, position, intensity, level and where it goes (Filter 1 or 2).", { 0 } },
+                { "osc2", "Osc 2", "Massif's second wavetable oscillator: on, its table and mode, pitch, position, intensity, level and where it goes (Filter 1 or 2).", { 1 } },
+                { "osc3", "Osc 3", "Massif's third wavetable oscillator: on, its table and mode, pitch, position, intensity, level and where it goes (Filter 1 or 2).", { 2 } },
+                { "modosc", "Mod Osc", "Massif's modulation oscillator: its pitch, and how much it ring-modulates, phase-modulates, moves the position of and frequency-modulates the filter of the oscillators it is sent to.", { 3 } },
+                { "noise", "Noise & Feedback", "Massif's noise (type, colour, level, filter balance) and its feedback (taken after a filter or the amp, its level and filter balance).", { 4 } },
+                { "filters", "Filters", "Massif's two filters: on, type, cutoff, bandwidth, resonance and level each, serial or parallel, and their mix.", { 5, 6 } },
+                { "inserts", "Inserts", "Massif's two inserts (on, type, where they sit, two knobs each).", { 7, 8 } },
+                { "amp", "Amp & Voices", "Massif's amp and pan, the bypass bus (source and level), voices, unison, voice mode and trigger, glide, vibrato and the unison spreads.", { 9, 10 } },
+                { "macros", "Macros", "Massif's eight macro knobs (what they move is in the sound's modulation).", { 11 } },
+                { "envs", "Envelopes", "Massif's four envelopes: attack, decay, level and release each.", { 12, 13 } },
+                { "lfos", "LFOs", "Massif's four modulation pages (LFO, stepper, performer...): type, rate, amount and morph each.", { 14, 15 } } };
+            std::vector<CardDef> v;
+            for (const auto& g : groups)
+            {
+                CardDef c;
+                c.pluginId = kPlugin; c.id = g.id; c.kind = g.kind; c.description = g.text;
+                for (size_t r = 0; r < g.rows.size(); ++r)
+                {
+                    if (r > 0) c.ids.push_back ({});
+                    for (const auto& k : voiceKnobs())
+                        if (k.row == g.rows[r]) c.ids.push_back (k.id);
+                }
+                c.spec = [] (const juce::String& id)
+                {
+                    for (const auto& k : voiceKnobs())
+                        if (id == k.id) return specFor (k);
+                    return makeRotary (id, id, 0.0f, 1.0f, 0.0f, 0);
+                };
+                v.push_back (std::move (c));
+            }
+            return v;
+        }();
+        return cards;
+    }
+}
+
+class AquaMassifEngineModule final : public AquaMassifVoiceModule
+{
+public:
+    static ModuleDescriptor descriptor()
+    {
+        auto d = AquaMassifVoiceModule::descriptor();
+        d.typeId = "plugin.aquamassif.engine";
+        d.displayName = kit::moduleName (kPlugin, "Voice Engine");
+        d.sidebarOrder = 399;
+        d.description = "Massif's voices, played by the plugin's own engine - as Massif - Voice, with its sections on "
+                        "cards of their own (Osc 1 - 3, Mod Osc, Noise & Feedback, Filters, Inserts, Amp & Voices, "
+                        "Macros, Envelopes, LFOs) chained into Cards In; without them it plays as they were last set. "
+                        "Bypass Out and the eight Mod outputs go to the Massif Effects.";
+        d.sockets.insert (d.sockets.begin() + 1, modIn ("cardsIn", "Cards In"));
+        for (auto& p : d.params) { p.hidden = true; p.modulatable = false; }
+        return d;
+    }
+};
+
 AQUANODE_REGISTER_MODULE (AquaMassifVoiceModule,   AquaMassifVoiceModule::descriptor)
+AQUANODE_REGISTER_MODULE (AquaMassifEngineModule,  AquaMassifEngineModule::descriptor)
+static const bool massifCardsRegistered = [] { for (const auto& c : massifCards()) kit::registerCard (c); return true; }();
 AQUANODE_REGISTER_MODULE (AquaMassifEffectsModule, AquaMassifEffectsModule::descriptor)
 
 //==============================================================================
@@ -425,9 +507,24 @@ namespace aquanode::plugins::aquamassif
         kit::Builder b { patch, origin };
         juce::MemoryBlock state;
         original.getStateInformation (state);
+        std::vector<int> cards;
 
-        const int voice = b.add ("plugin.aquamassif.voice", 0, 0);
-        const int fx = b.add ("plugin.aquamassif.effects", 1500, 0);
+        // (6.9.14) the voice in smaller cards, chained into the Voice Engine
+        std::vector<const kit::CardDef*> list;
+        for (const auto& c : massifCards()) list.push_back (&c);
+        const auto places = kit::cardPlaces (list, 0, 0, 4);
+        const int voice = b.add ("plugin.aquamassif.engine", 1240, 0);
+        const int fx = b.add ("plugin.aquamassif.effects", 1560, 0);
+        int prevCard = -1;
+        for (size_t i = 0; i < list.size(); ++i)
+        {
+            const int c = b.add (list[i]->typeId(), places[i].x, places[i].y);
+            if (c < 0) continue;
+            if (prevCard >= 0) b.cable (prevCard, "linkOut", c, "linkIn");
+            prevCard = c;
+            cards.push_back (c);
+        }
+        if (prevCard >= 0) b.cable (prevCard, "linkOut", voice, "cardsIn");
 
         for (const int m : { voice, fx })
             if (auto* h = dynamic_cast<MassifHostModule*> (b.dsp (m)))
@@ -435,6 +532,7 @@ namespace aquanode::plugins::aquamassif
                 {
                     h->setPluginState (state);
                     b.copy (m, *p);   // the knobs: the plugin's own parameters
+                    for (const int c : cards) b.copy (c, *p);   // (the cards' too)
                 }
 
         b.cable (voice, "audioOut", fx, "busIn");

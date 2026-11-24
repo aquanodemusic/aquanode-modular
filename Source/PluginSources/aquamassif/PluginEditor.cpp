@@ -1682,7 +1682,7 @@ void AquaMassifEditor::exportTable()
 void WaveView::timerCallback()
 {
     const int slot = ed.proc.choice ("wt" + juce::String (osc + 1));
-    const float pos = stack ? 0.0f : ed.proc.posView[juce::jlimit (0, 2, osc)].load();
+    const float pos = ed.proc.posView[juce::jlimit (0, 2, osc)].load();   // (6.9.16: the stack shows it too)
     const auto t = ed.proc.builtTable (slot);
     if (slot != lastSlot || std::abs (pos - lastPos) > 0.002f || t.get() != lastTable) { lastSlot = slot; lastPos = pos; lastTable = t.get(); repaint(); }
 }
@@ -1719,7 +1719,14 @@ void WaveView::paint (juce::Graphics& g)
     if (! stack)
     {
         g.setColour (phosphor.withAlpha (0.12f)); g.drawLine (in.getX(), in.getCentreY(), in.getRight(), in.getCentreY(), 1.0f);
-        frame (ed.proc.posView[juce::jlimit (0, 2, osc)].load(), in, 1.0f, 1.3f);
+        const float now = juce::jlimit (0.0f, 1.0f, ed.proc.posView[juce::jlimit (0, 2, osc)].load());
+        frame (now, in, 1.0f, 1.3f);
+        // (6.9.16) where in the table it plays: a bar along the bottom, its marker moving with the position
+        auto bar = in.reduced (4.0f, 0.0f).removeFromBottom (4.0f);
+        g.setColour (phosphor.withAlpha (0.18f)); g.fillRoundedRectangle (bar, 1.5f);
+        const float mx = bar.getX() + now * bar.getWidth();
+        g.setColour (accent.withAlpha (0.35f)); g.fillRoundedRectangle (juce::Rectangle<float> (mx - 4.0f, bar.getY() - 3.0f, 8.0f, bar.getHeight() + 6.0f), 2.0f);
+        g.setColour (phosphor); g.fillRoundedRectangle (juce::Rectangle<float> (mx - 2.0f, bar.getY() - 2.0f, 4.0f, bar.getHeight() + 4.0f), 1.5f);
         return;
     }
     // the whole table: frames stacked from the back (last frame) to the front (first)
@@ -1730,6 +1737,12 @@ void WaveView::paint (juce::Graphics& g)
         const float u = n > 1 ? (float) k / (float) (n - 1) : 0.0f;
         auto box = juce::Rectangle<float> (in.getX() + dx * u, in.getBottom() - in.getHeight() * 0.55f - dy * u, in.getWidth() - dx, in.getHeight() * 0.55f);
         frame (u, box, 0.35f + 0.65f * (1.0f - u), 1.1f);
+    }
+    // (6.9.16) where it plays now, bright in the stack, as it moves
+    {
+        const float u = juce::jlimit (0.0f, 1.0f, ed.proc.posView[juce::jlimit (0, 2, osc)].load());
+        auto box = juce::Rectangle<float> (in.getX() + dx * u, in.getBottom() - in.getHeight() * 0.55f - dy * u, in.getWidth() - dx, in.getHeight() * 0.55f);
+        frame (u, box, 1.0f, 1.9f);
     }
     glowText (g, juce::String (massif::slotInfos()[(size_t) slot].name) + "  -  " + juce::String (t->numFrames) + " frames", in.removeFromTop (12.0f),
               juce::Justification::topLeft, phosphor.withAlpha (0.8f), 10.0f);

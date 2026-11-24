@@ -39,9 +39,20 @@ public:
         const auto plot = plotArea();
         const auto c = accent ? accent() : juce::Colour (0xff74cc8a);
 
-        // the grid: 100 Hz, 1 kHz, 10 kHz; every 12 dB, 0 dB brighter
+        // the grid: 100 Hz, 1 kHz, 10 kHz (a linear scale: round steps across it); every 12 dB, 0 dB brighter
         g.setFont (juce::Font (juce::FontOptions (8.5f)));
-        for (const auto& [hz, label] : { std::pair<float, const char*> { 100.0f, "100" }, { 1000.0f, "1k" }, { 10000.0f, "10k" } })
+        std::vector<std::pair<float, juce::String>> ticks;
+        if (linear)
+        {
+            float step = 10.0f;
+            for (float s : { 10.0f, 20.0f, 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f })
+                if ((linHi - linLo) / s <= 6.0f) { step = s; break; }
+            for (float t = std::ceil (linLo / step) * step; t <= linHi; t += step)
+                ticks.push_back ({ t, t >= 1000.0f ? juce::String (t / 1000.0f, std::fmod (t, 1000.0f) == 0.0f ? 0 : 1) + "k" : juce::String ((int) t) });
+        }
+        else
+            ticks = { { 100.0f, "100" }, { 1000.0f, "1k" }, { 10000.0f, "10k" } };
+        for (const auto& [hz, label] : ticks)
         {
             const float x = xOf (hz, plot);
             g.setColour (juce::Colours::white.withAlpha (0.10f));
@@ -99,10 +110,27 @@ private:
 
     juce::Rectangle<float> plotArea() const { return getLocalBounds().toFloat().reduced (6.0f, 5.0f).withTrimmedBottom (9.0f); }
 
-    static float xOf (float hz, juce::Rectangle<float> plot)
+    float xOf (float hz, juce::Rectangle<float> plot) const
     {
+        if (linear) return plot.getX() + plot.getWidth() * (hz - linLo) / juce::jmax (1.0f, linHi - linLo);
         return plot.getX() + plot.getWidth() * std::log (hz / kMinHz) / std::log (kMaxHz / kMinHz);
     }
+    // (6.9.19) a linear frequency scale around the peaks: Center Comb with a Linear spread
+    // (its peaks stand evenly there, Spread Hz apart)
+    bool wantsLinear()
+    {
+        if (module->getDescriptor().typeId != "fx.centercomb" || module->getDescriptor().findParam ("spreadMode") == nullptr
+            || module->getParameter ("spreadMode") > 0.5f)
+            return false;
+        const float centre = module->getParameter ("freq"), spread = module->getParameter ("spread");
+        const float reach = (module->getParameter ("count") + 1.0f) * spread;
+        linLo = juce::jmax (kMinHz, centre - reach);
+        linHi = juce::jmin (kMaxHz, centre + reach);
+        if (linHi - linLo < 200.0f) { linLo = juce::jmax (kMinHz, centre - 100.0f); linHi = linLo + 200.0f; }
+        return true;
+    }
+    bool linear { false };
+    float linLo { kMinHz }, linHi { kMaxHz };
     float yOf (float db, juce::Rectangle<float> plot) const
     {
         const float t = juce::jlimit (0.0f, 1.0f, (db - bottomDb()) / kRangeDb);
@@ -124,6 +152,20 @@ private:
         }
         mix ((juce::uint64) module->tapSampleRate());
         mix ((juce::uint64) getWidth());
+        // (6.9.19) a curve that moves by itself (Ripple EQ's travelling ripples, Audio to
+        // Filter's spectrum): a few probes of it, so it is redrawn as it moves
+        {
+            static const float probes[12] = { 31.0f, 63.0f, 125.0f, 250.0f, 400.0f, 700.0f, 1100.0f, 1900.0f, 3200.0f, 5600.0f, 9000.0f, 15000.0f };
+            float db[12] {};
+            if (module->magnitudeResponseDb (probes, db, 12))
+                for (float v : db)
+                {
+                    const float q = std::round (v * 20.0f);   // (to 0.05 dB: no redraw for noise)
+                    juce::uint32 bits;
+                    std::memcpy (&bits, &q, sizeof bits);
+                    mix (bits);
+                }
+        }
         return h;
     }
 
@@ -149,9 +191,13 @@ private:
         // the column i covers x from i to i + 1; its kSub samples spread across that
         hz.resize ((size_t) (w * kSub));
         db.resize (hz.size());
+        linear = wantsLinear();
         const float span = std::log (kMaxHz / kMinHz);
         for (int i = 0; i < w * kSub; ++i)
-            hz[(size_t) i] = kMinHz * std::exp (span * ((float) i + 0.5f) / (float) (w * kSub));
+        {
+            const float t = ((float) i + 0.5f) / (float) (w * kSub);
+            hz[(size_t) i] = linear ? linLo + t * (linHi - linLo) : kMinHz * std::exp (span * t);
+        }
         if (! module->magnitudeResponseDb (hz.data(), db.data(), (int) hz.size()))
         {
             hiDb.clear(); loDb.clear();

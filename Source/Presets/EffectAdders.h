@@ -5,7 +5,8 @@
 // The "Add Effect" rows of the Random Preset section. Unlike the generators
 // they do not replace the patch: each adds a small, randomly varied chain to
 // whatever is loaded. The effect rows go in front of Audio Out (whatever fed
-// Audio Out now feeds the new chain); Midi Add goes at the start, feeding the
+// Audio Out now feeds the new chain) - or, with a module selected, right after
+// it / at the end of its lane (6.9.11); Midi Add goes at the start, feeding the
 // Add Midi In of every generator in the patch.
 namespace aquanode::presets
 {
@@ -20,6 +21,10 @@ namespace aquanode::presets
 
     const std::vector<EffectAdder>& effectAdders();
     const EffectAdder* findEffectAdder (const juce::String& id);
+
+    // (6.9.11) the module selected in the patch, for the next quick add (-1:
+    // none): the chain goes right after it, or at the end of its lane
+    void setQuickAddAnchor (int moduleId);
 
     // a Spectral Lock in front of Audio Out, its matrix set to one of
     // SpectralLockModule's scales (the Growl rows' occasional ending)

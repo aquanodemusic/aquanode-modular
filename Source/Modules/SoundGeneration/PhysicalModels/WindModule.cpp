@@ -127,7 +127,7 @@ void WindModule::processVoiceSample (int v, const StereoFrame* inputs, StereoFra
     // aftertouch (or the note's MPE pressure) blows harder while the note is held
     float pressNow = 0.0f;
     if (midiControls != nullptr)
-        pressNow = juce::jmax (midiControls->voicePressure[v], midiControls->aftertouch);
+        pressNow = juce::jmax (mpeVoicePressure (v), midiControls->aftertouch);   // (6.9.12: unless an MPE module takes it)
     s.touch += (pressNow - s.touch) * (1.0f - std::exp (-dt / 0.006f));
     const float amount = juce::jlimit (0.0f, 1.0f, param (pBreath) * 0.01f       // a cable onto Breath moves it
                                                     + 0.6f * param (pAfterTouch) * 0.01f * s.touch);
@@ -206,7 +206,7 @@ static ModuleDescriptor windDescriptor()
     d.sidebarOrder = 15;
     d.sockets = {
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

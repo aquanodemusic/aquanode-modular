@@ -141,12 +141,12 @@ namespace
                 p.push_back (inMode (intKnob ("cloudspread", "Spread", 0, 13, 3, 22), 1));
             else
                 p.push_back (inMode (intKnob (c + "octave", "Octaves", 0, 3, 1, 22), f.mode));
-            p.push_back (inMode (makeSteppedList (c + "velmin", "Vel Min", velNames(), 1, 22), f.mode));
-            p.push_back (inMode (makeSteppedList (c + "velmax", "Vel Max", velNames(), 4, 22), f.mode));
+            p.push_back (inMode (makeSteppedList (c + "velmin", "Vel Low", velNames(), 1, 22), f.mode));
+            p.push_back (inMode (makeSteppedList (c + "velmax", "Vel High", velNames(), 4, 22), f.mode));
             p.push_back (inMode (makeRotary (c + "decay", "Decay", 20.0f, 2000.0f, 200.0f, 22, "ms", true), f.mode));
         }
         p.push_back (inMode (intKnob ("wanderprob", "Wander %", 0, 9, 4, 23), 1));
-        p.push_back (inMode (intKnob ("wandermax", "Wander Max", 0, 6, 2, 23), 1));
+        p.push_back (inMode (intKnob ("wandermax", "Wander Range", 0, 6, 2, 23), 1));
 
         // Cluster (scale and per note)
         for (auto [prefix, mode] : { std::pair<const char*, int> { "clust", 1 }, std::pair<const char*, int> { "pnclust", 2 } })
@@ -158,8 +158,8 @@ namespace
             p.push_back (inMode (intKnob (c + "highnotes", "High Notes", 1, 12, 3, 25), mode));
             p.push_back (inMode (intKnob (c + "highostrt", "High Oct", 0, 9, 4, 25), mode));
             p.push_back (inMode (intKnob (c + "highoend", "High To", 0, 9, 6, 25), mode));
-            p.push_back (inMode (makeSteppedList (c + "velmin", "Vel Min", velNames(), 1, 26), mode));
-            p.push_back (inMode (makeSteppedList (c + "velmax", "Vel Max", velNames(), 6, 26), mode));
+            p.push_back (inMode (makeSteppedList (c + "velmin", "Vel Low", velNames(), 1, 26), mode));
+            p.push_back (inMode (makeSteppedList (c + "velmax", "Vel High", velNames(), 6, 26), mode));
             p.push_back (inMode (makeRotary (c + "decay", "Decay", 20.0f, 5000.0f, 2000.0f, 26, "ms", true), mode));
         }
         return p;
@@ -195,14 +195,14 @@ namespace
             p.push_back (when (intKnob ("cloudspread", "Spread", 0, 13, 3, r), cloudValue));
         else
             p.push_back (when (intKnob (c + "octave", "Octaves", 0, 3, 1, r), cloudValue));
-        p.push_back (when (makeSteppedList (c + "velmin", "Vel Min", velNames(), 1, r), cloudValue));
-        p.push_back (when (makeSteppedList (c + "velmax", "Vel Max", velNames(), 4, r), cloudValue));
+        p.push_back (when (makeSteppedList (c + "velmin", "Vel Low", velNames(), 1, r), cloudValue));
+        p.push_back (when (makeSteppedList (c + "velmax", "Vel High", velNames(), 4, r), cloudValue));
         p.push_back (when (makeRotary (c + "decay", "Decay", 20.0f, 2000.0f, 200.0f, r, "ms", true), cloudValue));
 
         if (wanderValue >= 0)
         {
             p.push_back (when (intKnob ("wanderprob", "Wander %", 0, 9, 4, r + 1), wanderValue));
-            p.push_back (when (intKnob ("wandermax", "Wander Max", 0, 6, 2, r + 1), wanderValue));
+            p.push_back (when (intKnob ("wandermax", "Wander Range", 0, 6, 2, r + 1), wanderValue));
         }
         if (clusterValue >= 0)
         {
@@ -213,8 +213,8 @@ namespace
             p.push_back (when (intKnob (k + "highnotes", "High Notes", 1, 12, 3, r + 3), clusterValue));
             p.push_back (when (intKnob (k + "highostrt", "High Oct", 0, 9, 4, r + 3), clusterValue));
             p.push_back (when (intKnob (k + "highoend", "High To", 0, 9, 6, r + 3), clusterValue));
-            p.push_back (when (makeSteppedList (k + "velmin", "Vel Min", velNames(), 1, r + 4), clusterValue));
-            p.push_back (when (makeSteppedList (k + "velmax", "Vel Max", velNames(), 6, r + 4), clusterValue));
+            p.push_back (when (makeSteppedList (k + "velmin", "Vel Low", velNames(), 1, r + 4), clusterValue));
+            p.push_back (when (makeSteppedList (k + "velmax", "Vel High", velNames(), 6, r + 4), clusterValue));
             p.push_back (when (makeRotary (k + "decay", "Decay", 20.0f, 5000.0f, 2000.0f, r + 4, "ms", true), clusterValue));
         }
     }
@@ -277,7 +277,7 @@ public:
         ModuleDescriptor d;
         d.section = ModuleSection::Utility;
         d.accent = kit::accentOf (kPlugin);
-        d.sockets = { midiIn ("midiIn", "Midi In"), midiOut ("midiOut", "Midi Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), midiOut ("midiOut", "MIDI Out") };
 
         if constexpr (S == Stage::Filter)
         {

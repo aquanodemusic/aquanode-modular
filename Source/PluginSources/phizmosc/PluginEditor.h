@@ -137,6 +137,7 @@ private:
     int  cycleSizeForSlot(int slot) const;
     void savePresetClicked();
     void loadPresetClicked();
+    void openPresetFileChooser();   // 7.0.0: the file part of LOAD
     void setSampleFolderClicked();
     void loadPresetFromFile(const juce::File& src);
     void refreshUIAfterPresetLoad();

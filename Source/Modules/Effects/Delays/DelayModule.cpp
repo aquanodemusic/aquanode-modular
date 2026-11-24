@@ -73,7 +73,8 @@ static ModuleDescriptor delayDescriptor()
     d.sidebarOrder = 0;
     d.sockets = {
         audioIn ("audioIn", "Audio In"),
-        audioOut ("audioOut", "Audio Out")
+        audioOut ("audioOut", "Audio Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     const juce::StringArray times { "1/16", "1/8", "1/4", "1/2", "1/1" };
     d.params = {

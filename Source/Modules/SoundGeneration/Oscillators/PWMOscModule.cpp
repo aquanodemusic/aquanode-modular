@@ -17,7 +17,7 @@ static ModuleDescriptor pwmOscDescriptor()
     d.sidebarOrder = 41;
     d.sockets = {
         modIn    ("pitchIn",   "Pitch In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         modIn    ("envIn",     "Env In"),      // (6.7.10; after the others, so old patches keep their indices)
         audioOut ("audioOut",  "Audio Out")
     };

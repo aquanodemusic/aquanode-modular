@@ -153,7 +153,7 @@ public:
 
         for (auto* b : allButtons())
             addAndMakeVisible (*b);
-        for (auto* s : { &semis, &degrees, &decibels, &smearMs, &unisonVoices, &unisonDetune })
+        for (auto* s : { &semis, &degrees, &decibels, &smearMs, &unisonVoices, &unisonDetune, &paintDb })
             addAndMakeVisible (*s);
 
         // the bars along the map's edges: time (linear) and frequency (log)
@@ -188,6 +188,8 @@ public:
         regionOp (opRotate, Module::Op::Rotate);
         regionOp (opGain, Module::Op::Gain);
         regionOp (opSmear, Module::Op::Smear);
+        regionOp (opPaint, Module::Op::Paint);   // (6.9.16)
+        opPaint.setTooltip ("Add sound where the selection is: a narrow one a tone, a wider one noise, at Level");
         noteOp (nRemove, Module::Op::NoteRemove);
         noteOp (nTranspose, Module::Op::NoteTranspose);
         noteOp (nGain, Module::Op::NoteGain);
@@ -244,7 +246,7 @@ public:
         };
         auto selRow = r.removeFromTop (kRowH);
         selLabel = selRow.removeFromLeft (64);
-        layoutRow (selRow, { &opDelete, &opKeep, &opReverse, &opTranspose, &opRotate, &opGain, &opSmear });
+        layoutRow (selRow, { &opDelete, &opKeep, &opReverse, &opTranspose, &opRotate, &opGain, &opSmear, &opPaint });
         r.removeFromTop (3);
 
         auto noteRow = r.removeFromTop (kRowH);
@@ -254,10 +256,10 @@ public:
 
         auto amounts = r.removeFromTop (kRowH);
         amountLabels.clear();
-        const int each = amounts.getWidth() / 6;
+        const int each = amounts.getWidth() / 7;
         for (auto [s, label] : std::initializer_list<std::pair<juce::Slider*, const char*>> {
                  { &semis, "Pitch" }, { &degrees, "Turn" }, { &decibels, "Gain" }, { &smearMs, "Smear" },
-                 { &unisonVoices, "Voices" }, { &unisonDetune, "Detune" } })
+                 { &unisonVoices, "Voices" }, { &unisonDetune, "Detune" }, { &paintDb, "Level" } })
         {
             auto cell = amounts.removeFromLeft (each);
             amountLabels.push_back ({ cell.removeFromLeft (36), label });
@@ -291,7 +293,7 @@ public:
         if (m == nullptr || shown == nullptr)
         {
             g.setColour (juce::Colours::white.withAlpha (0.5f));
-            g.drawText (m != nullptr && m->isAnalysing() ? "analysing..." : "Load Sound, or patch Rec In and press Record",
+            g.drawText (m != nullptr && m->isAnalysing() ? "analysing..." : "Load Sound, press Init Blank to paint, or patch Rec In and press Record",
                         mapArea, juce::Justification::centred);
             return;
         }
@@ -529,7 +531,7 @@ private:
     std::vector<juce::Button*> allButtons()
     {
         return { &selectTool, &drawTool, &noteTool, &clearSel, &undo, &reset, &zoomIn, &zoomOut, &up, &down,
-                 &opDelete, &opKeep, &opReverse, &opTranspose, &opRotate, &opGain, &opSmear,
+                 &opDelete, &opKeep, &opReverse, &opTranspose, &opRotate, &opGain, &opSmear, &opPaint,
                  &nRemove, &nTranspose, &nGain, &nUnison, &nFund, &nNoFund, &nOdd };
     }
 
@@ -546,7 +548,8 @@ private:
             e.amount = op == Module::Op::Transpose ? (float) semis.getValue()
                      : op == Module::Op::Rotate ? (float) degrees.getValue()
                      : op == Module::Op::Gain ? (float) decibels.getValue()
-                     : op == Module::Op::Smear ? (float) smearMs.getValue() : 0.0f;
+                     : op == Module::Op::Smear ? (float) smearMs.getValue()
+                     : op == Module::Op::Paint ? (float) paintDb.getValue() : 0.0f;
             m->addEdit (e);
             // the regions go with what a Transpose moved, so the next edit finds it
             if (op == Module::Op::Transpose)
@@ -634,7 +637,7 @@ private:
         lastEnd = en;
 
         const bool sel = ! m->selection.empty(), note = ! m->selectedNote.isEmpty();
-        for (auto* b : { &opDelete, &opKeep, &opReverse, &opTranspose, &opRotate, &opGain, &opSmear, &clearSel })
+        for (auto* b : { &opDelete, &opKeep, &opReverse, &opTranspose, &opRotate, &opGain, &opSmear, &opPaint, &clearSel })
             b->setEnabled (sel);
         for (auto* b : { &nRemove, &nTranspose, &nGain, &nUnison, &nFund, &nNoFund, &nOdd })
             b->setEnabled (note);
@@ -908,11 +911,12 @@ private:
                      undo { "Undo" }, reset { "Reset" }, zoomIn { "+" }, zoomOut { "-" },
                      up { juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xb2")) }, down { juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xbc")) },
                      opDelete { "Delete" }, opKeep { "Keep" }, opReverse { "Reverse" }, opTranspose { "Transpose" },
-                     opRotate { "Rotate" }, opGain { "Gain" }, opSmear { "Smear" },
+                     opRotate { "Rotate" }, opGain { "Gain" }, opSmear { "Smear" }, opPaint { "Paint" },
                      nRemove { "Remove" }, nTranspose { "Transpose" }, nGain { "Gain" }, nUnison { "Unison" },
                      nFund { "Fund Only" }, nNoFund { "No Fund" }, nOdd { "Odd Only" };
     AmountSlider semis { -48.0, 48.0, 1.0, 12.0, " st" }, degrees { -180.0, 180.0, 15.0, 90.0, juce::String (juce::CharPointer_UTF8 ("\xc2\xb0")) },
-                 decibels { -48.0, 24.0, 1.0, -6.0, " dB" }, smearMs { 20.0, 4000.0, 10.0, 400.0, " ms" }, unisonVoices { 2.0, 7.0, 1.0, 3.0, "" }, unisonDetune { 1.0, 100.0, 1.0, 12.0, " ct" };
+                 decibels { -48.0, 24.0, 1.0, -6.0, " dB" }, smearMs { 20.0, 4000.0, 10.0, 400.0, " ms" }, unisonVoices { 2.0, 7.0, 1.0, 3.0, "" }, unisonDetune { 1.0, 100.0, 1.0, 12.0, " ct" },
+                 paintDb { -60.0, 0.0, 1.0, -18.0, " dB" };   // (6.9.16) Paint's level (a sine's)
 
     juce::Rectangle<int> statusArea, mapArea, selLabel, noteLabel, editsArea;
     std::vector<std::pair<juce::Rectangle<int>, juce::String>> amountLabels;

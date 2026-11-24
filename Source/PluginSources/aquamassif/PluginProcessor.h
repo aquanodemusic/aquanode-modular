@@ -19,6 +19,7 @@ class AquaMassifProcessor : public juce::AudioProcessor,
 {
 public:
     void enableMpe (bool on) override { mpeOn = on; }
+    void setSlideWavetableDepth (float eachWay) override { engine.slideDepth = eachWay; }   // (6.9.13)
     bool mpeOn { false };
     AquaMassifProcessor();
     ~AquaMassifProcessor() override;

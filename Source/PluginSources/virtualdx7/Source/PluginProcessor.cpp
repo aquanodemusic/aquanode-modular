@@ -1,4 +1,5 @@
 /*  PluginProcessor.cpp  -  see PluginProcessor.h.  GPLv3.  */
+#include "AquanodeBanks.h"
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <cmath>
@@ -271,6 +272,8 @@ namespace vdx7 {
     Bank factoryBank(const RomStore& roms, int bank) {
         if (bank == kStarterBankIndex)
             return starterBank();
+        if (bank >= kFirstAquanodeBank && bank <= kLastBankIndex)
+            return Bank (vdx7aq::kBanks[bank - kFirstAquanodeBank]);
         bank = juce::jlimit(0, kNumFactoryBanks - 1, bank);
 
         Bank out;
@@ -282,6 +285,7 @@ namespace vdx7 {
 
     const char* factoryBankName(const RomStore& roms, int bank) {
         if (bank == kStarterBankIndex) return "STARTER";
+        if (bank >= kFirstAquanodeBank && bank <= kLastBankIndex) return vdx7aq::kNames[bank - kFirstAquanodeBank];
         if (bank < 0 || bank >= kNumFactoryBanks) return "ROM";
 
         if (usingStarterBank(roms))
@@ -1375,7 +1379,7 @@ void VDX7AudioProcessor::setVoice(const vdx7::Voice& v, bool /*sendNow*/)
 
 void VDX7AudioProcessor::selectFactory(int bank, int prog)
 {
-    bank_ = juce::jlimit(0, vdx7::kStarterBankIndex, bank);
+    bank_ = juce::jlimit(0, vdx7::kLastBankIndex, bank);
     prog_ = juce::jlimit(0, 31, prog);
     userActive_ = false;
     loadVoiceIntoModel(vdx7::factoryBank(roms_, bank_).voice(prog_));

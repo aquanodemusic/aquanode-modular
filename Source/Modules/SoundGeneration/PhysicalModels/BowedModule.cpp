@@ -32,7 +32,7 @@ void BowedModule::renderVoice (int v, const StereoFrame* inputs, StereoFrame* ou
     // rides on that knob
     float pressNow = 0.0f;
     if (midiControls != nullptr)
-        pressNow = juce::jmax (midiControls->voicePressure[v], midiControls->aftertouch);
+        pressNow = juce::jmax (mpeVoicePressure (v), midiControls->aftertouch);   // (6.9.12: unless an MPE module takes it)
     touch[v] += (pressNow - touch[v]) * (1.0f - std::exp (-1.0f / (0.006f * (float) sr)));
     const float lean = param (pAfterTouch) * 0.01f * touch[v];
     const float pressure = juce::jlimit (0.0f, 1.0f, param (pPressure) * 0.01f
@@ -145,7 +145,7 @@ static ModuleDescriptor bowedDescriptor()
     d.sockets = {
         modIn    ("pressIn",   "Pressure In"),
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

@@ -5,16 +5,16 @@ static aquanode::ModuleDescriptor alwaysMidiDescriptor()
     using namespace aquanode;
     ModuleDescriptor d;
     d.typeId = "util.alwaysmidi";
-    d.displayName = "Always Midi";
+    d.displayName = "Always MIDI";
     d.description =
         "Holds one note down forever, so a generator sounds with nobody at the keyboard. Patch "
-        "its Midi Out into a generator's Add Midi In or into a Midi Add's Midi In to "
+        "its MIDI Out into a generator's Add MIDI In or into a MIDI Add's MIDI In to "
         "drone a whole chord. Renew re-triggers the note rather than holding it, which is what "
         "keeps envelopes and one-shot voices like Pluck or Kick alive; it is the drone's pulse.";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 23;
     d.sockets = {
-        midiOut ("midiOut", "Midi Out")
+        midiOut ("midiOut", "MIDI Out")
     };
     d.params = {
         // same note naming as Resonator: shows "C#4", accepts a typed note

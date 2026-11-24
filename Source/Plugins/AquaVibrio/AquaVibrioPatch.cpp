@@ -306,7 +306,7 @@ public:
                         "effects rack. The seven Mod outputs are the matrix's effect destinations, for the "
                         "Aqua Vibrio Effects. Audio In is its Input oscillator and envelope follower. The "
                         "matrix slots, arpeggiator steps and note layers come with the module (saved in the patch).";
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out") };
         for (int m = 0; m < kMods; ++m)
             d.sockets.push_back (modOut (modId (m), juce::String ("Mod ") + modName (m)));
         for (const auto& k : voiceKnobs())

@@ -383,7 +383,7 @@ public:
                         "semitones. Osc A's Link Out drives Osc B's Link In: B reads A's phase for its "
                         "stereo pair and follows A's frame jumps. Ring Out feeds the Mixer's ring modulator.";
         d.sockets = { modIn ("posIn", "Pos In"), modIn ("pitchIn", "Pitch In"), audioIn ("linkIn", "Link In"),
-                      modIn ("offsetIn", "Offset In"), midiIn ("addMidiIn", "Add Midi In"),
+                      modIn ("offsetIn", "Offset In"), midiIn ("addMidiIn", "Add MIDI In"),
                       audioOut ("audioOut", "Audio Out"), audioOut ("ringOut", "Ring Out"), audioOut ("linkOut", "Link Out") };
         d.params = {
             makeCombo ("role", "Osc", { "A", "B" }, 0, 0, 1),

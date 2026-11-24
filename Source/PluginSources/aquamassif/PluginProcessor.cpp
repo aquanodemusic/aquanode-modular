@@ -330,6 +330,7 @@ void AquaMassifProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         else if (m.isNoteOff()) engine.noteOff (m.getNoteNumber());
         else if (m.isPitchWheel() && member) engine.chanBend[(size_t) ch] = (float) (m.getPitchWheelValue() - 8192) / 8192.0f;
         else if (m.isChannelPressure() && member) engine.chanPress[(size_t) ch] = (float) m.getChannelPressureValue() / 127.0f;
+        else if (m.isController() && member && m.getControllerNumber() == 74) engine.chanSlide[(size_t) ch] = (float) m.getControllerValue() / 127.0f;   // (6.9.12)
         else if (m.isPitchWheel()) engine.bend = (float) (m.getPitchWheelValue() - 8192) / 8192.0f;
         else if (m.isChannelPressure()) engine.aftertouch = (float) m.getChannelPressureValue() / 127.0f;
         else if (m.isAftertouch()) engine.aftertouch = (float) m.getAfterTouchValue() / 127.0f;
@@ -361,7 +362,9 @@ void AquaMassifProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     {
         for (int e = 0; e < 4; ++e) modView[e].store (first->env[(size_t) e].output());
         for (int m = 0; m < 4; ++m) modView[4 + m].store (first->page[(size_t) m].out);
-        for (int o = 0; o < 3; ++o) posView[o].store (juce::jlimit (0.0f, 1.0f, first->k[(size_t) (kOsc1Pos + 5 * o)] + first->uniWt));
+        // (6.9.16: with the finger's Slide too - where the newest voice plays)
+        for (int o = 0; o < 3; ++o) posView[o].store (juce::jlimit (0.0f, 1.0f, first->k[(size_t) (kOsc1Pos + 5 * o)] + first->uniWt
+                                                                             + engine.voiceSlidePos (*first, o)));
     }
     else for (int o = 0; o < 3; ++o) posView[o].store (audioPatch.knob[(size_t) (kOsc1Pos + 5 * o)]);
 }

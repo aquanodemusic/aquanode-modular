@@ -164,7 +164,7 @@ public:
             "and the tine's ping, Decay the length, Release the damper, Velocity how much the touch matters. Engine: "
             "Classic, Mellow - a darker, rounder piano whose drive warms only the lows and mids - or Studio, fitted key by key to a "
             "recorded Rhodes: long sustain, the second harmonic taking over in the middle when struck hard. The sustain pedal holds notes.";
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("out", "Audio Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("out", "Audio Out") };
         d.params = {
             makeRotary ("tone",     "Tone",        300.0f, 12000.0f, 3000.0f, 0, "Hz", true, 1.0f),
             makeRotary ("bark",     "Bark",          0.0f,   100.0f,   50.0f, 0, "%",  false, 1.0f),
@@ -255,7 +255,7 @@ private:
         k.note = note; k.age = ++ageCounter;
         // (each key a hair off true, as tuned tines are: under a cent)
         const double cents = ((double) ((note * 7919) % 17) - 8.0) * 0.08;
-        k.f0 = 440.0 * std::pow (2.0, (n - 69.0) / 12.0 + cents / 1200.0);
+        k.f0 = aquanode::midiNoteToHz ((double) n) * std::pow (2.0, cents / 1200.0);   // (patch tuning, 6.9.10)
         // (6.7.9: on the low keys the bell sits up near a kilohertz, where a recorded
         // Rhodes has it - a tine, not a clonk in the middle of the chord)
         k.bellRatio = juce::jlimit (5.4, 21.0, 7.0 * std::pow (2.0, -(n - 55.0) / 15.0));

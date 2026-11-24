@@ -26,7 +26,7 @@ using namespace aquanode;
 class SummerWindsModule final : public SynthModule
 {
 public:
-    enum P { pWind = 0, pTuning, pKey, pOctave, pDecay, pBright, pClack, pSpread, pAir, pLevel };
+    enum P { pWind = 0, pTuning, pKey, pOctave, pDecay, pBright, pClack, pSpread, pAir, pLevel, pTrim, pAirNew };
     static constexpr int kTubes = 6;
     static constexpr int kKeyVoices = 10;
     static constexpr int kVoices = kTubes + kKeyVoices;
@@ -52,7 +52,7 @@ public:
             addHeld (m.getNoteNumber());
             // a key strikes a chime at its own pitch
             int slot = kTubes + nextKey; nextKey = (nextKey + 1) % kKeyVoices;
-            const double f = 440.0 * std::pow (2.0, (m.getNoteNumber() - 69 + pitchBendSemitones()) / 12.0);
+            const double f = aquanode::midiNoteToHz ((double) m.getNoteNumber() + pitchBendSemitones());   // (patch tuning, 6.9.10)
             tune (voices[slot], f, 0.25f * (float) (((m.getNoteNumber() * 7) % 11) - 5) / 5.0f);
             strike (voices[slot], 0.35f + 0.65f * m.getFloatVelocity());
             if ((int) std::lround (param (pTuning)) == 3) retune = true;
@@ -78,7 +78,9 @@ public:
             for (int k = kTubes; k < kVoices; ++k) retuneDecay (voices[k]);
         }
         clackLevel = param (pClack) * 0.01f;
-        airLevel = param (pAir) * 0.01f;
+        // (6.9.15) Air: its whole range is what 0 - 10 % was (that was far too loud); a patch saved
+        // before keeps its old Air (hidden now) and sounds the same
+        airLevel = param (pAirNew) * 0.001f + param (pAir) * 0.01f;
         level = param (pLevel);
     }
 
@@ -171,7 +173,7 @@ public:
             "Recorded, the Major or Minor Pentatonic of Key (Octave), or Held Keys. Decay, Brightness, Clack (the "
             "knock), Spread, Air (a breath of the wind itself).";
         d.section = ModuleSection::Oscillator;
-        d.sockets = { midiIn ("midiIn", "Midi In"), modIn ("windIn", "Wind In"), audioOut ("out", "Audio Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), modIn ("windIn", "Wind In"), audioOut ("out", "Audio Out") };
         d.params = {
             makeRotary ("wind", "Wind", 0.0f, 100.0f, 40.0f, 0, "%", false, 1.0f),
             makeCombo ("tuning", "Tuning", { "As Recorded", "Major Pentatonic", "Minor Pentatonic", "Held Keys" }, 0, 0, 2).noMod(),
@@ -181,10 +183,11 @@ public:
             makeRotary ("bright", "Brightness", 0.0f, 100.0f, 55.0f, 1, "%", false, 1.0f),
             makeRotary ("clack", "Clack", 0.0f, 100.0f, 18.0f, 1, "%", false, 1.0f),
             makeRotary ("spread", "Spread", 0.0f, 100.0f, 70.0f, 2, "%", false, 1.0f),
-            makeRotary ("air", "Air", 0.0f, 100.0f, 0.0f, 2, "%", false, 1.0f),
+            makeRotary ("air", "Air (before 6.9.15)", 0.0f, 100.0f, 0.0f, 2, "%", false, 1.0f).hide(),
             makeRotary ("level", "Level", 0.0f, 1.0f, 0.6f, 2)
         };
         d.params.push_back (makeOutputTrim (-4.0f));
+        d.params.push_back (makeRotary ("airLevel", "Air", 0.0f, 100.0f, 0.0f, 2, "%", false, 1.0f).whenMissing (0.0f));
         return d;
     }
 
@@ -218,7 +221,7 @@ private:
     {
         // the recorded set (Hz)
         static const double recorded[kTubes] = { 659.2, 735.4, 823.2, 981.4, 1092.8, 1318.4 };
-        auto mtof = [] (double n) { return 440.0 * std::pow (2.0, (n - 69.0) / 12.0); };
+        auto mtof = [] (double n) { return aquanode::midiNoteToHz (n); };   // (patch tuning, 6.9.10)
         if (tuning == 1 || tuning == 2)
         {
             static const int maj[kTubes] = { 0, 2, 4, 7, 9, 12 }, mnr[kTubes] = { 0, 3, 5, 7, 10, 12 };

@@ -171,6 +171,10 @@ static constexpr int kNumFactoryBanks = 8;
 // banks 0..7 fall back to (and the selector lists it as the only bank); with a
 // voice ROM loaded it stays reachable here, listed after ROM1A..ROM4B.
 static constexpr int kStarterBankIndex = kNumFactoryBanks;
+// Aquanode's own banks (AquanodeBanks.h), always there, after the starter bank
+static constexpr int kNumAquanodeBanks = 12;
+static constexpr int kFirstAquanodeBank = kStarterBankIndex + 1;
+static constexpr int kLastBankIndex = kFirstAquanodeBank + kNumAquanodeBanks - 1;
 
 // The bundled starter bank on its own, with no RomStore involved. Used for
 // the APVTS's static default parameter values (created before any instance,

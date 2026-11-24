@@ -2,7 +2,6 @@
 #include "PluginProcessor.h"
 #include "../Editor/PluginEditor.h"
 #include "../Modules/Core/ModuleRegistry.h"
-#include "../Modules/Utilities/MIDI/MidiAddModule.h"
 #include "../Modules/Utilities/MIDI/DiscardMidiModule.h"
 #include "../Modules/Utilities/Control/DawModModule.h"
 #include "../Modules/Utilities/MIDI/PianoRollModule.h"
@@ -112,6 +111,7 @@ void AquanodeModularAudioProcessor::startVoice (const ProcessGraph& graph, int n
     mpeChannelOfVoice[v] = 0;
     midiState.voiceBend[v] = 0.0f;
     midiState.voiceSlide[v] = 0.0f;
+    midiState.voiceSlideSet[v] = false;
     midiState.voicePressure[v] = 0.0f;
 
     voiceStates[v].note = note;
@@ -201,7 +201,7 @@ void AquanodeModularAudioProcessor::emitMidi (const ProcessGraph& graph, int sou
             {
                 midiState.voiceBend[v] = e.bend;
                 if (e.pressure >= 0.0f) midiState.voicePressure[v] = e.pressure;
-                if (e.slide >= 0.0f) midiState.voiceSlide[v] = e.slide;
+                if (e.slide >= 0.0f) { midiState.voiceSlide[v] = e.slide; midiState.voiceSlideSet[v] = true; }
             }
     };
 
@@ -214,7 +214,14 @@ void AquanodeModularAudioProcessor::emitMidi (const ProcessGraph& graph, int sou
 
     if (! stream->rawListeners.empty())
     {
-        if (e.mpe || e.isExpression)
+        // a note-off whose note-on went out on a member channel goes there too
+        // (6.9.10: a processor may hand on a plain note-off for an MPE note)
+        bool onMember = false;
+        if (! e.isOn && ! e.isExpression && ! e.mpe)
+            for (const auto& m : mpeOutChannels)
+                onMember = onMember || (m.source == sourceId && m.note == e.note);
+
+        if (e.mpe || e.isExpression || onMember)
         {
             // as MPE: every note on a member channel of its own (2..16), its bend
             // (+-48 semitones), pressure and Slide (CC 74) on that channel
@@ -228,7 +235,9 @@ void AquanodeModularAudioProcessor::emitMidi (const ProcessGraph& graph, int sou
                 for (size_t k = 0; k < mpeOutChannels.size() && pick < 0; ++k)
                 {
                     const size_t i = (mpeOutNext + k) % mpeOutChannels.size();   // round the channels (a release tail keeps its own)
-                    if (mpeOutChannels[i].source < 0) pick = (int) i;
+                    // (6.9.10: not one a played finger holds right now - a plugin hearing
+                    // the keys too would mix the two notes' bends)
+                    if (mpeOutChannels[i].source < 0 && mpeChanNote[i + 2] < 0) pick = (int) i;
                 }
                 if (pick < 0)   // all taken: the oldest note's channel
                 {
@@ -240,27 +249,40 @@ void AquanodeModularAudioProcessor::emitMidi (const ProcessGraph& graph, int sou
                 mpeOutChannels[(size_t) pick] = { sourceId, e.note, pick + 2, mpeOutNext };
                 ch = pick + 2;
             }
-            if (ch == 0)
-                return;
-            auto send = [&] (const juce::MidiMessage& msg)
+            // (6.9.10) MPE goes only to what plays it; the others hear the
+            // note itself on channel 1 and none of its expression
+            auto takesMpe = [&graph] (int ni) { return (size_t) ni < graph.rawTakesMpe.size() && graph.rawTakesMpe[(size_t) ni] != 0; };
+            if (! e.isExpression)
             {
+                const auto plain = e.isOn ? juce::MidiMessage::noteOn (1, e.note, juce::jlimit (0.0f, 1.0f, e.velocity))
+                                          : juce::MidiMessage::noteOff (1, e.note);
                 for (int ni : stream->rawListeners)
-                    graph.nodes[(size_t) ni]->dsp->deliverRawMidi (msg);
-            };
-            if (e.isOn || e.isExpression)
-            {
-                const int wheel = juce::jlimit (0, 16383, 8192 + (int) std::lround (e.bend / 48.0f * 8192.0f));
-                send (juce::MidiMessage::pitchWheel (ch, wheel));
-                if (e.pressure >= 0.0f) send (juce::MidiMessage::channelPressureChange (ch, juce::jlimit (0, 127, (int) std::lround (e.pressure * 127.0f))));
-                if (e.slide >= 0.0f) send (juce::MidiMessage::controllerEvent (ch, 74, juce::jlimit (0, 127, (int) std::lround (e.slide * 127.0f))));
+                    if (! takesMpe (ni))
+                        graph.nodes[(size_t) ni]->dsp->deliverRawMidi (plain);
             }
-            if (e.isOn && ! e.isExpression)
-                send (juce::MidiMessage::noteOn (ch, e.note, juce::jlimit (0.0f, 1.0f, e.velocity)));
-            else if (! e.isOn && ! e.isExpression)
+            if (ch != 0)   // (no channel: the MPE modules miss it; the processors below still hear it)
             {
-                send (juce::MidiMessage::noteOff (ch, e.note));
-                for (auto& m : mpeOutChannels)
-                    if (m.source == sourceId && m.note == e.note) m.source = -1;
+                auto send = [&] (const juce::MidiMessage& msg)
+                {
+                    for (int ni : stream->rawListeners)
+                        if (takesMpe (ni))
+                            graph.nodes[(size_t) ni]->dsp->deliverRawMidi (msg);
+                };
+                if (e.isOn || e.isExpression)
+                {
+                    const int wheel = juce::jlimit (0, 16383, 8192 + (int) std::lround (e.bend / 48.0f * 8192.0f));
+                    send (juce::MidiMessage::pitchWheel (ch, wheel));
+                    if (e.pressure >= 0.0f) send (juce::MidiMessage::channelPressureChange (ch, juce::jlimit (0, 127, (int) std::lround (e.pressure * 127.0f))));
+                    if (e.slide >= 0.0f) send (juce::MidiMessage::controllerEvent (ch, 74, juce::jlimit (0, 127, (int) std::lround (e.slide * 127.0f))));
+                }
+                if (e.isOn && ! e.isExpression)
+                    send (juce::MidiMessage::noteOn (ch, e.note, juce::jlimit (0.0f, 1.0f, e.velocity)));
+                else if (! e.isOn && ! e.isExpression)
+                {
+                    send (juce::MidiMessage::noteOff (ch, e.note));
+                    for (auto& m : mpeOutChannels)
+                        if (m.source == sourceId && m.note == e.note) m.source = -1;
+                }
             }
         }
         else
@@ -272,9 +294,7 @@ void AquanodeModularAudioProcessor::emitMidi (const ProcessGraph& graph, int sou
         }
     }
 
-    if (e.isExpression)
-        return;     // (expression goes no further: MIDI processors take notes only)
-
+    // (expression goes on only to the processors that take MPE - feedProcessor)
     if (depth < kMaxMidiChainDepth)
         for (int nodeIndex : stream->processors)
             feedProcessor (graph, nodeIndex, e, depth + 1);
@@ -286,7 +306,21 @@ void AquanodeModularAudioProcessor::feedProcessor (const ProcessGraph& graph, in
     auto& node = *graph.nodes[(size_t) nodeIndex];
 
     MidiDriverEvent out[16];
-    const int n = node.dsp->processMidiEvent (e, out, 16);
+    int n = 0;
+    if (node.dsp->acceptsMpeEvents())
+        n = node.dsp->processMidiEvent (e, out, 16);
+    else
+    {
+        // a processor that knows notes only: no expression, and plain notes
+        // (so anything that is not a note-on is a real note-off)
+        if (e.isExpression)
+            return;
+        MidiDriverEvent plain;
+        plain.note = e.note;
+        plain.velocity = e.velocity;
+        plain.isOn = e.isOn;
+        n = node.dsp->processMidiEvent (plain, out, 16);
+    }
     for (int i = 0; i < n; ++i)
         emitMidi (graph, node.id, out[i], depth);
 }
@@ -305,13 +339,24 @@ void AquanodeModularAudioProcessor::mpeMessage (const ProcessGraph& graph, const
             {
                 midiState.voiceBend[v] = mpeChanBend[ch] * kMemberBendSemis;
                 midiState.voiceSlide[v] = mpeChanSlide[ch];
+                midiState.voiceSlideSet[v] = mpeChanSlideSet[ch];
                 midiState.voicePressure[v] = mpeChanPressure[ch];
             }
     };
 
     if (msg.isNoteOn())
     {
-        keyboardEvent (graph, { msg.getNoteNumber(), msg.getFloatVelocity(), true });
+        // (6.9.10) the processors fed by the keys (MIDI Add) get the finger as an MPE note
+        MidiDriverEvent on;
+        on.note = msg.getNoteNumber();
+        on.velocity = msg.getFloatVelocity();
+        on.isOn = true;
+        on.mpe = true;
+        on.bend = mpeChanBend[ch] * kMemberBendSemis;
+        on.pressure = mpeChanPressure[ch];
+        on.slide = mpeChanSlideSet[ch] ? mpeChanSlide[ch] : -1.0f;   // (6.9.12: none sent - none)
+        mpeChanNote[ch] = on.note;
+        keyboardEvent (graph, on);
         // the voice that took it: the newest held one on this key
         int best = -1;
         for (int v = 0; v < kMaxVoices; ++v)
@@ -328,21 +373,44 @@ void AquanodeModularAudioProcessor::mpeMessage (const ProcessGraph& graph, const
     {
         mpeChanBend[ch] = juce::jlimit (-1.0f, 1.0f, (float) (msg.getPitchWheelValue() - 8192) / 8192.0f);
         toVoices();
+        keyboardExpression (graph, ch);
     }
     else if (msg.isController() && msg.getControllerNumber() == 74)
     {
         mpeChanSlide[ch] = (float) msg.getControllerValue() / 127.0f;
+        mpeChanSlideSet[ch] = true;
         toVoices();
+        keyboardExpression (graph, ch);
         handleControlMessage (graph, msg);
     }
     else if (msg.isChannelPressure())
     {
         mpeChanPressure[ch] = (float) msg.getChannelPressureValue() / 127.0f;
         toVoices();
+        keyboardExpression (graph, ch);
         handleControlMessage (graph, msg);
     }
     else
         handleControlMessage (graph, msg);
+}
+
+// a member channel's bend, pressure or slide moved: the processors fed by the
+// keys hear it as the expression of the note held there (6.9.10)
+void AquanodeModularAudioProcessor::keyboardExpression (const ProcessGraph& graph, int ch)
+{
+    constexpr float kMemberBendSemis = 48.0f;
+    if (ch < 2 || ch > 16 || mpeChanNote[ch] < 0 || graph.keyboardProcessors.empty())
+        return;
+    MidiDriverEvent e;
+    e.note = mpeChanNote[ch];
+    e.velocity = 0.0f;
+    e.mpe = true;
+    e.isExpression = true;
+    e.bend = mpeChanBend[ch] * kMemberBendSemis;
+    e.pressure = mpeChanPressure[ch];
+    e.slide = mpeChanSlideSet[ch] ? mpeChanSlide[ch] : -1.0f;
+    for (int nodeIndex : graph.keyboardProcessors)
+        feedProcessor (graph, nodeIndex, e, 1);
 }
 
 // a played key (host MIDI or the on-screen keyboard)
@@ -352,7 +420,7 @@ void AquanodeModularAudioProcessor::handleControlMessage (const ProcessGraph& gr
     {
         midiState.bend = juce::jlimit (-1.0f, 1.0f, (float) (msg.getPitchWheelValue() - 8192) / 8192.0f);
         midiState.lastControl = 128;
-        ++midiState.controlCount;
+        if (! screenMidiNow) ++midiState.controlCount;   // (6.9.10: MIDI Learn skips the on-screen keys' own expression)
     }
     else if (msg.isController())
     {
@@ -360,7 +428,7 @@ void AquanodeModularAudioProcessor::handleControlMessage (const ProcessGraph& gr
         const float v = (float) msg.getControllerValue() / 127.0f;
         midiState.cc[cc & 127] = v;
         midiState.lastControl = cc & 127;
-        ++midiState.controlCount;
+        if (! screenMidiNow) ++midiState.controlCount;   // (6.9.10: MIDI Learn skips the on-screen keys' own expression)
 
         if (cc == 1)
             midiState.modWheel = v;
@@ -386,13 +454,13 @@ void AquanodeModularAudioProcessor::handleControlMessage (const ProcessGraph& gr
     {
         midiState.aftertouch = (float) msg.getChannelPressureValue() / 127.0f;
         midiState.lastControl = 129;
-        ++midiState.controlCount;
+        if (! screenMidiNow) ++midiState.controlCount;   // (6.9.10: MIDI Learn skips the on-screen keys' own expression)
     }
     else if (msg.isAftertouch())
     {
         midiState.aftertouch = (float) msg.getAfterTouchValue() / 127.0f;
         midiState.lastControl = 129;
-        ++midiState.controlCount;
+        if (! screenMidiNow) ++midiState.controlCount;   // (6.9.10: MIDI Learn skips the on-screen keys' own expression)
     }
 }
 

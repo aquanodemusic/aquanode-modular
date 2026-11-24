@@ -29,7 +29,9 @@
 // Change: how long a chord lasts (passing chords take one beat of the chord
 // before them; Passing: how often they come). Meter: 4/4, 3/4 or 5/4.
 // Voicing: Close, Open (drop 2), Wide (drop 2 and 4). Register: where the
-// chords sit. Bass: Off, Root, Root + Octave. Roll: the notes bloom upward
+// chords sit (C2 .. E6). Bass: Off, Root, Root + Octave. Extra Bass (6.9.3):
+// the root again one to three octaves further down. Transpose (6.9.3): all
+// it plays, up or down two octaves. Roll: the notes bloom upward
 // one after another. Velocity, Humanize. Hold Common: shared notes ring on.
 // Restrike (6.7.11): the chance a chord is struck again, once to three times,
 // on the Restrike Rate grid within it. The card rolls the chords past a line
@@ -38,6 +40,7 @@
 // Inputs: Midi In (the played keys when empty). Output: Midi Out.
 //==============================================================================
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/MpeFollow.h"
 #include "../../Shared/MidiTake.h"
 
 using namespace aquanode;
@@ -210,6 +213,29 @@ namespace bloom
                     C ("vi7(add11)", "m7(add11)", 9, { 3, 5, 7, 10 }, { { 0, 0.4f }, { 4, 0.3f }, { 2, 0.3f } }) };                                // 7
                 v.push_back (ch);
             }
+            {   // Bossa Nova
+                Character ch; ch.name = "Bossa Nova";
+                ch.description = "Major 7ths and 6/9 tonics, a major II that turns minor, tritone-substitute dominants sliding down "
+                                 "by a half step, diminished passing chords, the minor iv6 and flat-VII9 back door - soft and swaying.";
+                ch.chords = {
+                    C ("Imaj9", "maj9", 0, { 4, 7, 11, 14 }, { { 1, 0.25f }, { 2, 0.25f }, { 3, 0.2f }, { 9, 0.15f }, { 11, 0.15f } }),  // 0
+                    C ("II9", "9", 2, { 4, 10, 14 }, { { 2, 0.7f }, { 5, 0.3f } }),                                                      // 1  (major II turning minor)
+                    C ("ii9", "m9", 2, { 3, 7, 10, 14 }, { { 4, 0.4f }, { 5, 0.35f }, { 6, 0.25f } }),                                  // 2
+                    C ("vi9", "m9", 9, { 3, 7, 10, 14 }, { { 2, 0.5f }, { 1, 0.3f }, { 8, 0.2f } }),                                    // 3
+                    C ("bII7#11", "7#11", 1, { 4, 10, 14, 18 }, { { 0, 0.75f }, { 13, 0.25f } }),                                       // 4  (tritone substitute)
+                    C ("V13", "13", 7, { 4, 10, 14, 21 }, { { 0, 0.6f }, { 3, 0.4f } }),                                                // 5
+                    C ("V7b9", "7b9", 7, { 4, 10, 13, 20 }, { { 0, 0.5f }, { 3, 0.3f }, { 13, 0.2f } }, -1, true),                      // 6
+                    C ("iv6", "m6", 5, { 3, 7, 9 }, { { 0, 0.35f }, { 15, 0.35f }, { 9, 0.3f } }),                                      // 7
+                    C ("VI7b9", "7b9", 9, { 4, 10, 13 }, { { 2, 1.0f } }, -1, true, true),                                              // 8  (to ii, one beat)
+                    C ("iii7", "m7", 4, { 3, 7, 10 }, { { 8, 0.4f }, { 10, 0.3f }, { 3, 0.3f } }),                                      // 9
+                    C ("biiidim7", "dim7", 3, { 3, 6, 9 }, { { 2, 1.0f } }, -1, false, true),                                           // 10 (iii to ii, one beat)
+                    C ("I9", "9", 0, { 4, 10, 14 }, { { 12, 1.0f } }),                                                                  // 11 (to IV)
+                    C ("IVmaj9", "maj9", 5, { 4, 7, 11, 14 }, { { 7, 0.4f }, { 14, 0.3f }, { 9, 0.3f } }),                              // 12
+                    C ("I6/9", "6/9", 0, { 4, 7, 9, 14 }, { { 1, 0.4f }, { 2, 0.3f }, { 9, 0.3f } }),                                   // 13
+                    C ("#ivm7b5", "m7b5", 6, { 3, 6, 10 }, { { 7, 0.5f }, { 9, 0.5f } }),                                               // 14
+                    C ("bVII9", "9", 10, { 4, 10, 14 }, { { 0, 1.0f } }) };                                                             // 15 (back door)
+                v.push_back (ch);
+            }
             return v;
         }();
         return all;
@@ -252,15 +278,65 @@ namespace bloom
         if (c.bass != c.root) s << "/" << pcName (key + c.bass, key, ch.minor);
         return pretty (s);
     }
+
+    // (6.9.20) the chords Resolve's Home and Mixed modes play beside a character's own: the ones
+    // that lead home (plain 7ths, the jazz ones with a 9th or 13th) and the home chords - triad,
+    // 6 and 6/9 (the 6/9 as stacked fourths, 3rd - 6th - 9th, as pianists play it), no 7th on
+    // the home chord. 0..9 for the major characters, 10..19 for the minor ones. On the card they
+    // are shown as 1000 + their number.
+    enum Special { sIV = 0, sV7, sii7, sV7ofV, sii9, sV13, sbII9, sI, sI6, sI69,
+                   siv = 10, smV7, sii7b5, smV7ofV, smV7b9 = 15, smbII9, si, si6, si69, kNumSpecials };
+    inline const std::vector<Chord>& specials()
+    {
+        static const std::vector<Chord> all = []
+        {
+            std::vector<Chord> v ((size_t) kNumSpecials);
+            auto set = [&v] (int i, const char* roman, const char* quality, int root, std::initializer_list<int> iv, bool stack = false)
+            { v[(size_t) i] = C (roman, quality, root, iv, {}, -1, false, false, stack); };
+            set (sIV,    "IV",    "",     5, { 0, 4, 7 });
+            set (sV7,    "V7",    "7",    7, { 0, 4, 7, 10 });
+            set (sii7,   "ii7",   "m7",   2, { 0, 3, 7, 10 });
+            set (sV7ofV, "V7/V",  "7",    2, { 0, 4, 7, 10 });
+            set (sii9,   "ii9",   "m9",   2, { 3, 7, 10, 14 });
+            set (sV13,   "V13",   "13",   7, { 4, 10, 21 });
+            set (sbII9,  "bII9",  "9",    1, { 4, 10, 14 });
+            set (sI,     "I",     "",     0, { 0, 4, 7 });
+            set (sI6,    "I6",    "6",    0, { 0, 4, 7, 9 });
+            set (sI69,   "I6/9",  "6/9",  0, { 4, 9, 14 }, true);
+            set (siv,    "iv",    "m",    5, { 0, 3, 7 });
+            set (smV7,   "V7",    "7",    7, { 0, 4, 7, 10 });
+            set (sii7b5, "ii7b5", "m7b5", 2, { 0, 3, 6, 10 });
+            set (smV7ofV,"II7",   "7",    2, { 0, 4, 7, 10 });
+            set (14,     "V7",    "7",    7, { 0, 4, 7, 10 });   // (unused slot, kept for the numbering)
+            set (smV7b9, "V7b9",  "7b9",  7, { 4, 10, 13 });
+            set (smbII9, "bII9",  "9",    1, { 4, 10, 14 });
+            set (si,     "i",     "m",    0, { 0, 3, 7 });
+            set (si6,    "i6",    "m6",   0, { 0, 3, 7, 9 });
+            set (si69,   "i6/9",  "m6/9", 0, { 3, 9, 14 }, true);
+            return v;
+        }();
+        return all;
+    }
+    inline bool isHomeSpecial (int s) { return (s >= sI && s <= sI69) || (s >= si && s <= si69); }
+
+    // a chord the card shows: the character's own, or 1000 + a special one
+    inline const Chord* shownChordOf (const Character& ch, int idx)
+    {
+        if (idx >= 1000 && idx - 1000 < (int) specials().size()) return &specials()[(size_t) (idx - 1000)];
+        if (idx >= 0 && idx < (int) ch.chords.size()) return &ch.chords[(size_t) idx];
+        return nullptr;
+    }
 }
 
 class MidiBloomModule final : public SynthModule
 {
 public:
     enum P { pCharacter = 0, pPlay, pKey, pChange, pMeter, pPassing, pTension, pVoicing, pRegister, pBass, pRoll,
-             pVelocity, pHumanize, pHoldCommon, pSeed, pRestrike, pRestrikeRate };
+             pVelocity, pHumanize, pHoldCommon, pSeed, pRestrike, pRestrikeRate, pExtraBass, pTranspose, pResolve,
+             pResolveEvery, pHomeChord };
+    enum ResolveMode { rOff = 0, rOn, rHome, rMixed };
 
-    MidiBloomModule() { (void) bloom::characters(); }   // (the tables made here, not on the audio thread)
+    MidiBloomModule() { (void) bloom::characters(); (void) bloom::specials(); }   // (the tables made here, not on the audio thread)
 
     bool isMidiNoteDriver() const override { return true; }
     bool isMidiProcessor() const override { return true; }
@@ -274,13 +350,17 @@ public:
         for (auto& s : sounding) s = false;
         prevUpper.clear(); prevBass = -1;
         shownChord.store (-1); shownNext.store (-1);
+        curSpecial = nextSpecial = -1; cadLen = -1; lastCharIdx = 0;
     }
 
-    void blockStart() override { clock.blockStart (tempoBpm, sampleRate, hostPlayHead); }
+    void blockStart() override { clock.blockStart (tempoBpm, sampleRate, tempoFromLane() ? nullptr : hostPlayHead); }
 
     //=== the played keys (audio thread): they set the key, they do not sound =====
+    bool acceptsMpeEvents() const override { return true; }   // (6.9.11: its notes follow the leading finger)
     int processMidiEvent (const MidiDriverEvent& in, MidiDriverEvent*, int) override
     {
+        mpeFollow.heard (in);
+        if (in.isExpression) return 0;
         if (in.isOn) addHeld (in.note); else removeHeld (in.note);
         return 0;
     }
@@ -314,16 +394,46 @@ public:
             if (rng == 0) rng = 1;
             chordIdx = -1;
             nextIdx = startChord();
+            phrasePos = 0;
             changeAt = beat;
             prevUpper.clear(); prevBass = -1;
+            curSpecial = nextSpecial = -1; cadLen = -1; lastCharIdx = 0;
         }
         if (running && beat >= changeAt)
         {
             // the next chord: in the key held now, of the character chosen now
-            if (charIdx != character) { character = charIdx; nextIdx = startChord(); }
+            if (charIdx != character) { character = charIdx; nextIdx = startChord(); phrasePos = 0; nextSpecial = -1; cadLen = -1; }
             currentKey = key;
             chordIdx = nextIdx;
-            nextIdx = pickNext (chordIdx);
+            // Resolve: phrases of four chords (or three: Resolve Every), the last the home chord, low and
+            // mellow; the one before leaning toward it (chosen among the ones that can go home, still at
+            // random). Home (6.9.20): the same, landing on a triad, 6 or 6/9 with a deeper bass. Mixed: the
+            // chord or two before home a cadence (IV, V7, ii-V, IV-V, V7/V-V, ii9-V13 or bII9), a new one
+            // each phrase.
+            resolvingNow = false;
+            const int mode = juce::jlimit (0, 3, (int) std::lround (param (pResolve)));
+            const int every = param (pResolveEvery) > 0.5f ? 4 : 3;
+            curSpecial = mode >= rHome ? nextSpecial : -1;
+            nextSpecial = -1;
+            if (mode == rOn || mode == rHome)
+            {
+                if (! ch().chords[(size_t) chordIdx].passing) ++phrasePos;
+                if (phrasePos >= every) { resolvingNow = chordIdx == startChord(); phrasePos = 0; }
+                if (phrasePos == every - 1) nextIdx = startChord();
+                else if (phrasePos == every - 2) nextIdx = pickTowardHome (chordIdx);
+                else nextIdx = pickNext (chordIdx);
+                if (mode == rHome)
+                {
+                    if (! resolvingNow) curSpecial = -1;
+                    const int home = (ch().minor ? bloom::si : bloom::sI) + juce::jlimit (0, 2, (int) std::lround (param (pHomeChord)));
+                    if (resolvingNow) curSpecial = home;
+                    if (phrasePos == every - 1) nextSpecial = home;   // (so the card shows it coming)
+                }
+            }
+            else if (mode == rMixed)
+                mixedStep (every);
+            else
+                nextIdx = pickNext (chordIdx);
             playChord (beat);
         }
         // what is due goes out
@@ -351,7 +461,7 @@ public:
             }
             else ++i;
         }
-        return n;
+        return mpeFollow.decorate (events, n, maxEvents);
     }
 
     static ModuleDescriptor descriptor()
@@ -366,13 +476,17 @@ public:
             "nearest notes, over the root in the bass. Character picks the harmony - Mellow 7ths, Deep Minor, Bright "
             "Major, Floating Sus, Lydian Haze, Turnaround, Cinematic Minor, Quartal & Penta (the card describes each). "
             "Change: how long a chord lasts; Passing: how often one-beat passing chords come; Tension: how often altered "
-            "and sharp-fifth chords are chosen. Voicing, Register, Bass, Roll (the notes bloom upward), Velocity, Humanize, "
-            "Hold Common (shared notes ring on), Seed. Rec on the card saves what it plays as a .mid file.";
+            "and sharp-fifth chords are chosen. Voicing, Register, Bass, Extra Bass (the root again one to three octaves "
+            "further down), Roll (the notes bloom upward), Velocity, Humanize, Hold Common (shared notes ring on), Seed, "
+            "Transpose (all it plays, up to two octaves either way), Resolve (On: phrases of four chords - the fourth comes home, low and "
+            "mellow, the third leaning toward it; Home: the same, landing on a triad, 6 or 6/9 (Home Chord) over a deeper bass; "
+            "Mixed: the chords before home a cadence - IV, V7, ii-V, IV-V, V7/V-V or a jazz ii9-V13 - a new one each phrase; "
+            "Resolve Every: home on every 3rd or 4th chord). Rec on the card saves what it plays as a .mid file. With MPE, the notes it plays take the bend, pressure and slide of the finger that leads (the latest pressed) and follow them while they sound; what it records and saves is plain MIDI.";
         d.section = ModuleSection::Utility;
-        d.sockets = { midiIn ("midiIn", "Midi In"), midiOut ("midiOut", "Midi Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), midiOut ("midiOut", "MIDI Out"), tempoIn() };
         juce::StringArray chars;
         for (const auto& c : bloom::characters()) chars.add (c.name);
-        auto reg = makeRotary ("register", "Register", 48.0f, 76.0f, 60.0f, 2, {}, false, 1.0f);
+        auto reg = makeRotary ("register", "Register", 36.0f, 88.0f, 60.0f, 2, {}, false, 1.0f);
         reg.textFromValue = [] (double v) { return juce::MidiMessage::getMidiNoteName (juce::jlimit (0, 127, (int) std::lround (v)), true, true, 4); };
         d.params = {
             makeCombo ("character", "Character", chars, 0, 0, 3).noMod(),
@@ -391,7 +505,13 @@ public:
             makeCombo ("holdCommon", "Hold Common", { "Off", "On" }, 1, 3, 2).noMod(),
             makeRotary ("seed", "Seed", 0.0f, 999.0f, 0.0f, 3, {}, false, 1.0f).noMod(),
             makeRotary ("restrike", "Restrike", 0.0f, 100.0f, 0.0f, 4, "%", false, 1.0f),
-            makeSteppedList ("restrikeRate", "Rate", { "1/4", "1/8", "1/8T", "1/16" }, 1, 4)
+            makeSteppedList ("restrikeRate", "Rate", { "1/4", "1/8", "1/8T", "1/16" }, 1, 4),
+            makeRotary ("extraBass", "Extra Bass", 0.0f, 3.0f, 0.0f, 4, {}, false, 1.0f).noMod(),
+            makeRotary ("transpose", "Transpose", -24.0f, 24.0f, 0.0f, 4, "st", false, 1.0f),
+            // (6.9.20) its own row, wide enough to read (Home and Mixed added after On)
+            makeCombo ("resolve", "Resolve", { "Off", "On", "Home", "Mixed" }, 0, 5, 2).noMod(),
+            makeCombo ("resolveEvery", "Resolve Every", { "3rd Chord", "4th Chord" }, 1, 5, 2).noMod().visibleFrom ("resolve", 1.0f),
+            makeCombo ("homeChord", "Home Chord", { "Triad", "6", "6/9" }, 2, 6, 2).noMod().visibleWhen ("resolve", 2.0f)
         };
         return d;
     }
@@ -411,10 +531,12 @@ public:
     std::atomic<double> nextStart { 0.0 }, nextEnd { 0.0 }, changeBeat { 0.0 };
     MidiTake take;
     std::atomic<int> shownChord { -1 }, shownNext { -1 }, shownKey { 0 }, shownCharacter { 0 };
+    std::atomic<int> chordsPlayed { 0 };   // (for tests: one more each chord)
     double bpmNow() const { return tempoBpm; }
     int beatsPerBar() const { const int m = (int) std::lround (getParameterBase (pMeter)); return m == 1 ? 3 : (m == 2 ? 5 : 4); }
 
 private:
+    aquanode::MpeFollow mpeFollow;
     struct Queued { double beat; int note; float velocity; bool on; };
     static constexpr int kQueue = 256;
     Queued queue[kQueue] {};
@@ -424,7 +546,8 @@ private:
     int held[128] {};
     int numHeld { 0 };
     bool running { false };
-    int character { 0 }, currentKey { 0 }, chordIdx { -1 }, nextIdx { 0 };
+    int character { 0 }, currentKey { 0 }, chordIdx { -1 }, nextIdx { 0 }, phrasePos { 0 };
+    bool resolvingNow { false };
     double changeAt { 0.0 };
     juce::uint32 rng { 1 };
     std::vector<int> prevUpper;
@@ -547,7 +670,7 @@ private:
                     if (style >= 1 && v.size() >= 4) { auto& x = v[v.size() - 2]; x -= 12; }        // drop 2
                     if (style >= 2 && v.size() >= 5) { auto& x = v[v.size() - 4]; x -= 12; }        // and 4
                     std::sort (v.begin(), v.end());
-                    if (v.front() >= 40) cands.push_back (v);
+                    if (v.front() >= 28) cands.push_back (v);
                 }
         }
         if (cands.empty()) return {};
@@ -568,20 +691,107 @@ private:
         return cands[best];
     }
 
+    // the next chord, chosen among those that can lead home (the first that can, of a few drawn)
+    int pickTowardHome (int from)
+    {
+        const auto& chords = ch().chords;
+        auto leadsHome = [&] (int i)
+        {
+            if (i == startChord() || chords[(size_t) i].passing) return false;
+            for (const auto& nx : chords[(size_t) i].next) if (nx.to == startChord()) return true;
+            return false;
+        };
+        for (int tries = 0; tries < 8; ++tries)
+        {
+            const int pick = pickNext (from);
+            if (leadsHome (pick)) return pick;
+        }
+        // none drawn: one of the chords that can lead home, at random
+        std::vector<int> any;
+        for (int i = 0; i < (int) chords.size(); ++i) if (leadsHome (i)) any.push_back (i);
+        if (! any.empty()) return any[(size_t) juce::jmin ((int) any.size() - 1, (int) (rand01() * (float) any.size()))];
+        int pick = pickNext (from);
+        return pick == startChord() && chords.size() > 1 ? 1 : pick;
+    }
+
+    // (6.9.20) Mixed: where the phrase is, and what comes next - a character chord, a cadence chord or home
+    void mixedStep (int every)
+    {
+        const bool homeNow = curSpecial >= 0 && bloom::isHomeSpecial (curSpecial);
+        const bool passingNow = curSpecial < 0 && ch().chords[(size_t) chordIdx].passing;
+        if (! passingNow) ++phrasePos;
+        if (homeNow) { resolvingNow = true; phrasePos = 0; cadLen = -1; }
+        if (cadLen < 0) pickCadence (every);
+        const int nextPos = phrasePos + 1;
+        if (nextPos >= every) nextSpecial = cadHome;
+        else if (nextPos >= every - cadLen) nextSpecial = cad[nextPos - (every - cadLen)];
+        // a character chord follows the last character chord (after home: as from the home chord)
+        if (curSpecial < 0) lastCharIdx = chordIdx;
+        const int from = homeNow ? startChord() : lastCharIdx;
+        nextIdx = nextSpecial < 0 ? pickNext (from) : from;
+    }
+
+    // a cadence for this phrase (one chord before home in a phrase of three, one or two in four)
+    void pickCadence (int every)
+    {
+        using namespace bloom;
+        const bool mi = ch().minor;
+        const float r = rand01();
+        cadLen = 1;
+        int home = -1;   // (-1: a triad, 6 or 6/9 at random)
+        if (every >= 4)
+        {
+            const int kind = juce::jmin (5, (int) (r * 6.0f));   // plagal, dominant, ii-V, IV-V, secondary, jazz
+            switch (kind)
+            {
+                case 0:  cad[0] = mi ? siv : sIV; break;
+                case 1:  cad[0] = mi ? smV7 : sV7; break;
+                case 2:  cadLen = 2; cad[0] = mi ? sii7b5 : sii7; cad[1] = mi ? smV7 : sV7; break;
+                case 3:  cadLen = 2; cad[0] = mi ? siv : sIV; cad[1] = mi ? smV7 : sV7; break;
+                case 4:  cadLen = 2; cad[0] = mi ? smV7ofV : sV7ofV; cad[1] = mi ? smV7 : sV7; break;
+                default: cadLen = 2; cad[0] = mi ? sii7b5 : sii9;
+                         cad[1] = rand01() < 0.4f ? (mi ? smbII9 : sbII9) : (mi ? smV7b9 : sV13);
+                         home = mi ? si69 : sI69; break;
+            }
+        }
+        else
+        {
+            const int kind = juce::jmin (2, (int) (r * 3.0f));   // plagal, dominant, the tritone substitute
+            cad[0] = kind == 0 ? (mi ? siv : sIV) : kind == 1 ? (mi ? smV7 : sV7) : (mi ? smbII9 : sbII9);
+            if (kind == 2) home = mi ? si69 : sI69;
+        }
+        cadHome = home >= 0 ? home : (mi ? si : sI) + juce::jmin (2, (int) (rand01() * 3.0f));
+    }
+
+    int curSpecial { -1 }, nextSpecial { -1 }, cadLen { -1 }, cad[2] {}, cadHome { 0 }, lastCharIdx { 0 };
+
+    const bloom::Chord& nextChordRef() const
+    {
+        if (nextSpecial >= 0) return bloom::specials()[(size_t) nextSpecial];
+        const auto& chords = ch().chords;
+        return chords[(size_t) juce::jlimit (0, (int) chords.size() - 1, nextIdx)];
+    }
+
     void playChord (double beat)
     {
         const auto& chords = ch().chords;
-        const auto& c = chords[(size_t) chordIdx];
+        const auto& c = curSpecial >= 0 ? bloom::specials()[(size_t) curSpecial] : chords[(size_t) chordIdx];
         const int bpb = (int) std::lround (param (pMeter)) == 1 ? 3 : ((int) std::lround (param (pMeter)) == 2 ? 5 : 4);
         static constexpr double kChange[4] = { 0.5, 1.0, 2.0, 4.0 };
         const double base = kChange[juce::jlimit (0, 3, (int) std::lround (param (pChange)))] * bpb;
         const double passLen = juce::jmin (1.0, base * 0.5);
         double len = c.passing ? passLen : base;
-        if (! c.passing && nextIdx >= 0 && chords[(size_t) nextIdx].passing) len = juce::jmax (passLen, base - passLen);
+        if (! c.passing && nextIdx >= 0 && nextChordRef().passing) len = juce::jmax (passLen, base - passLen);
         changeAt = beat + len;
 
         // the notes
         auto upper = voice (c);
+        if (resolvingNow && ! upper.empty())
+        {
+            // the resolution: the home chord an octave down where it can go, softer
+            const int lo = *std::min_element (upper.begin(), upper.end());
+            if (lo - 12 >= 43) for (auto& u : upper) u -= 12;
+        }
         std::vector<int> notes = upper;
         const int bassMode = (int) std::lround (param (pBass));
         if (bassMode > 0)
@@ -594,7 +804,43 @@ private:
             notes.push_back (b);
             if (bassMode == 2) notes.push_back (b + 12);
         }
+        // Extra Bass: the root again, one to three octaves further down (below the bass, or below the chord)
+        const int extra = juce::jlimit (0, 3, (int) std::lround (param (pExtraBass)));
+        if (extra > 0)
+        {
+            const int pc = ((currentKey + c.bass) % 12 + 12) % 12;
+            int r = bassMode > 0 ? prevBass : 36 + pc;
+            if (bassMode == 0) { if (r > 46) r -= 12; }
+            for (int k = 1; k <= extra; ++k)
+                if (r - 12 * k >= 12) notes.push_back (r - 12 * k);
+        }
+        // (6.9.20) Home and Mixed: the home chord deeper - its root in the bass and the octave under it
+        if (curSpecial >= 0 && bloom::isHomeSpecial (curSpecial))
+        {
+            // the root nearest the bass before (always the root: the Bass row's clamp at E1 can
+            // land on another note), and the octave under it
+            const int pc = ((currentKey + c.bass) % 12 + 12) % 12;
+            int b = 36 + pc; if (b > 46) b -= 12;
+            if (prevBass >= 0) { while (b - prevBass > 6 && b - 12 >= 28) b -= 12; while (prevBass - b > 6 && b + 12 <= 50) b += 12; }
+            if (bassMode > 0 && prevBass >= 0 && ((prevBass % 12) + 12) % 12 != pc)
+                notes.erase (std::remove (notes.begin(), notes.end(), prevBass), notes.end());
+            notes.push_back (b);
+            if (b - 12 >= 24) notes.push_back (b - 12);
+            if (bassMode > 0) prevBass = b;
+            std::sort (notes.begin(), notes.end());
+            notes.erase (std::unique (notes.begin(), notes.end()), notes.end());
+        }
         prevUpper = upper;
+        // Transpose: everything it plays, moved
+        const int tr = (int) std::lround (param (pTranspose));
+        const int bassOut = prevBass >= 0 ? prevBass + tr : -1;
+        if (tr != 0)
+        {
+            std::vector<int> moved;
+            for (int p : notes) if (p + tr >= 0 && p + tr <= 127) moved.push_back (p + tr);
+            notes = moved;
+        }
+
 
         const bool holdCommon = param (pHoldCommon) > 0.5f;
         bool want[128] {};
@@ -607,7 +853,7 @@ private:
         std::sort (notes.begin(), notes.end());
         const double rollBeats = param (pRoll) * 0.001 * juce::jmax (1.0, tempoBpm) / 60.0;
         const float hum = param (pHumanize) * 0.01f;
-        const float vel0 = param (pVelocity) / 127.0f;
+        const float vel0 = param (pVelocity) / 127.0f * (resolvingNow ? 0.82f : 1.0f);
         int order = 0;
         for (int p : notes)
         {
@@ -615,7 +861,7 @@ private:
             if (keep) continue;
             const double jitter = hum * 0.012 * (rand01() - 0.5) * juce::jmax (1.0, tempoBpm) / 60.0;
             const double at = beat + 1.0e-6 + (double) order * rollBeats + juce::jmax (0.0, jitter);
-            const float vel = juce::jlimit (0.03f, 1.0f, vel0 * (1.0f - hum * 0.35f * rand01()) * (p == prevBass ? 0.92f : 1.0f));
+            const float vel = juce::jlimit (0.03f, 1.0f, vel0 * (1.0f - hum * 0.35f * rand01()) * (p == bassOut ? 0.92f : 1.0f));
             queueEvent (at, p, vel, true);
             ++order;
         }
@@ -650,7 +896,7 @@ private:
         }
         // the next chord, voiced ahead, for the card's rolling view
         {
-            const auto& nc = chords[(size_t) juce::jlimit (0, (int) chords.size() - 1, nextIdx)];
+            const auto& nc = nextChordRef();
             auto nv = voice (nc);
             if (bassMode > 0 && prevBass >= 0)
             {
@@ -665,7 +911,9 @@ private:
             nextEnd.store (changeAt + (nc.passing ? passLen : base));
             changeBeat.store (changeAt);
         }
-        shownChord.store (chordIdx); shownNext.store (nextIdx); shownKey.store (currentKey); shownCharacter.store (character);
+        chordsPlayed.fetch_add (1, std::memory_order_relaxed);
+        shownChord.store (curSpecial >= 0 ? 1000 + curSpecial : chordIdx); shownNext.store (nextSpecial >= 0 ? 1000 + nextSpecial : nextIdx);
+        shownKey.store (currentKey); shownCharacter.store (character);
     }
 };
 
@@ -709,9 +957,9 @@ namespace
             // the rolling view, right of the chord's name: the notes glide right to left
             // past the line where they play now, the next chord already coming in
             paintRoll (g, *m, juce::Rectangle<float> (area.getX() + area.getWidth() * 0.44f, area.getY(), area.getWidth() * 0.56f, 50.0f));
-            if (shown >= 0 && shown < (int) chars[(size_t) sc].chords.size())
+            if (const auto* shownC = bloom::shownChordOf (chars[(size_t) sc], shown))
             {
-                const auto& c = chars[(size_t) sc].chords[(size_t) shown];
+                const auto& c = *shownC;
                 g.setColour (juce::Colours::white);
                 g.setFont (juce::Font (juce::FontOptions (30.0f, juce::Font::bold)));
                 auto nameRow = area.removeFromTop (34.0f);
@@ -721,8 +969,8 @@ namespace
                 g.setFont (juce::Font (juce::FontOptions (13.0f, juce::Font::bold)));
                 auto line = area.removeFromTop (18.0f);
                 juce::String s = bloom::pretty (c.roman);
-                if (next >= 0 && next < (int) chars[(size_t) sc].chords.size())
-                    s << "   next: " << bloom::chordName (chars[(size_t) sc], chars[(size_t) sc].chords[(size_t) next], key);
+                if (const auto* nextC = bloom::shownChordOf (chars[(size_t) sc], next))
+                    s << "   next: " << bloom::chordName (chars[(size_t) sc], *nextC, key);
                 g.drawFittedText (s, line.withWidth (line.getWidth() * 0.43f).toNearestInt(), juce::Justification::centredLeft, 1, 0.55f);
             }
             else
@@ -835,9 +1083,16 @@ juce::String midiBloomShownChord (aquanode::SynthModule* m)
     if (b == nullptr) return {};
     const auto& chars = bloom::characters();
     const int sc = juce::jlimit (0, (int) chars.size() - 1, b->shownCharacter.load()), c = b->shownChord.load();
-    if (c < 0 || c >= (int) chars[(size_t) sc].chords.size()) return "-";
-    return bloom::chordName (chars[(size_t) sc], chars[(size_t) sc].chords[(size_t) c], b->shownKey.load())
-           + " (" + bloom::pretty (chars[(size_t) sc].chords[(size_t) c].roman) + ")";
+    const auto* chord = bloom::shownChordOf (chars[(size_t) sc], c);
+    if (chord == nullptr) return "-";
+    return bloom::chordName (chars[(size_t) sc], *chord, b->shownKey.load()) + " (" + bloom::pretty (chord->roman) + ")";
+}
+
+// for tests: how many chords it has played
+int midiBloomChordsPlayed (aquanode::SynthModule* m)
+{
+    auto* b = dynamic_cast<MidiBloomModule*> (m);
+    return b != nullptr ? b->chordsPlayed.load() : -1;
 }
 
 AQUANODE_REGISTER_MODULE (MidiBloomModule, MidiBloomModule::descriptor)

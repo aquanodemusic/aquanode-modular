@@ -155,6 +155,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         juce::MidiKeyboardComponent::paint (g);
+        paintScaleSteps (g);
         for (const auto& t : touches)
         {
             const auto glow = juce::Colour (0xff8dffb0);
@@ -171,6 +172,35 @@ public:
             if (std::abs (semis) >= 0.05f)
                 g.drawText ((semis > 0 ? "+" : "") + juce::String (semis, 1),
                             juce::Rectangle<float> (t.pos.x - 24.0f, t.pos.y - r - 14.0f, 48.0f, 12.0f), juce::Justification::centred);
+        }
+    }
+
+    // (6.9.15) a Global Microtuning playing Linear steps of a scale that is not 12 notes:
+    // each key shows its step, the first of every period marked - the keys still send
+    // their usual MIDI notes; only what they sound changes
+    void paintScaleSteps (juce::Graphics& g)
+    {
+        int notes = 0, zero = 60;
+        bool found = false;
+        for (int id : processor.getModuleIds())
+            if (auto* inst = processor.getInstance (id))
+                if (inst->dsp != nullptr && inst->dsp->keyboardSteps (notes, zero)) { found = true; break; }
+        if (! found || notes <= 0) return;
+        g.setFont (juce::Font (juce::FontOptions (juce::jlimit (7.0f, 10.0f, getKeyWidth() * 0.45f))));
+        for (int k = getLowestVisibleKey(); k <= juce::jmin (127, getLowestVisibleKey() + 120); ++k)
+        {
+            const auto r = getRectangleForKey (k);
+            if (r.getRight() < 0.0f) continue;
+            if (r.getX() > (float) getWidth()) break;
+            const int deg = ((k - zero) % notes + notes) % notes;
+            const bool black = juce::MidiMessage::isMidiNoteBlack (k);
+            if (deg == 0)
+            {
+                g.setColour (juce::Colour (0xff38b6d8));
+                g.fillRect (r.withHeight (4.0f));
+            }
+            g.setColour (black ? juce::Colours::white.withAlpha (0.8f) : juce::Colours::black.withAlpha (0.55f));
+            g.drawText (juce::String (deg), r.withTrimmedTop (5.0f).withHeight (12.0f), juce::Justification::centred, false);
         }
     }
 

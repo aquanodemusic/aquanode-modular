@@ -14,6 +14,7 @@
  * along with vital.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "sound_engine.h"
 #include "wavetable_3d.h"
 #include "line_generator.h"
 
@@ -247,6 +248,17 @@ void Wavetable3d::resized() {
   import_overlay_.setColor(findColour(Skin::kOverlayScreen, true));
 }
 
+// (Aquanode, 6.9.15) the latest note's Slide on the frame (the default MPE map): shown as it plays
+float Wavetable3d::aqFrameOffset() {
+  if (aq_engine_ == nullptr) {
+    if (SynthGuiInterface* parent = findParentComponentOfClass<SynthGuiInterface>())
+      aq_engine_ = parent->getSynth()->getEngine();
+    if (aq_engine_ == nullptr)
+      return 0.0f;
+  }
+  return aq_engine_->aqSlideShown(index_);
+}
+
 inline vital::poly_float Wavetable3d::getOutputsTotal(
     std::pair<vital::Output*, vital::Output*> outputs, vital::poly_float default_value) {
   if (!outputs.first->owner->enabled() || !animate_)
@@ -332,7 +344,7 @@ bool Wavetable3d::updateRenderValues() {
   last_spectral_phase_ = spectral_phase;
   last_spectral_curve_sum_ = curve_sum;
 
-  vital::poly_float wave_frame = getOutputsTotal(wave_frame_outputs_, frame_slider_->getValue());
+  vital::poly_float wave_frame = (getOutputsTotal(wave_frame_outputs_, frame_slider_->getValue()) + aqFrameOffset());
   vital::poly_float spectral_morph_value = getSpectralMorphValue();
   vital::poly_float distortion_value = getDistortionValue();
   vital::poly_int distortion_phase = getDistortionPhaseValue();
@@ -365,7 +377,7 @@ void Wavetable3d::loadWaveData(int index) {
   float start_y = height / 2.0f;
 
   if (last_render_type_ == kWave3d) {
-    float wave_frame = getOutputsTotal(wave_frame_outputs_, frame_slider_->getValue())[index];
+    float wave_frame = (getOutputsTotal(wave_frame_outputs_, frame_slider_->getValue()) + aqFrameOffset())[index];
     float frame_t = vital::utils::clamp(wave_frame / (vital::kNumOscillatorWaveFrames - 1.0f), 0.0f, 1.0f);
     start_x = (0.5f * (1.0f - wave_range_x_ - frame_range_x_) + frame_range_x_ * frame_t) * width;
     start_y = (0.5f * (1.0f - wave_range_y_ - frame_range_y_) + y_offset_ + frame_range_y_ * frame_t) * height;
@@ -776,7 +788,7 @@ void Wavetable3d::loadIntoTimeDomain(int index) {
 }
 
 void Wavetable3d::loadFrequencyData(int index) {
-  wavetable_index_ = std::round(getOutputsTotal(wave_frame_outputs_, frame_slider_->getValue())[index]);
+  wavetable_index_ = std::round((getOutputsTotal(wave_frame_outputs_, frame_slider_->getValue()) + aqFrameOffset())[index]);
   current_wavetable_data_ = wavetable_->getAllData();
   wavetable_index_ = std::max(0, std::min(wavetable_index_, current_wavetable_data_->num_frames - 1));
 }

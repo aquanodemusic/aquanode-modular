@@ -2,33 +2,21 @@
 
 #include "../../Core/ModuleCore.h"
 
-// Band Splitter - splits one audio signal into 3 frequency bands using two
-// cascaded Linkwitz-Riley 4th-order (24 dB/oct) crossovers. LR4 is the same
-// family of crossover professional "clean" multiband tools use:
-// each crossover is two cascaded 2-pole Butterworth stages, chosen so that
-// lowpass + highpass sum back to a flat 0 dB magnitude at the split point,
-// with only a well-behaved, symmetric phase rotation around it (no ripple,
-// no FFT block delay). Split 2 is always kept a little above Split 1 so the
-// bands can't collapse into each other.
-//
-// Topology is serial: Split 1 peels Band 1 (Low) off the input; everything
-// above Split 1 is fed into a second LR4 crossover at Split 2, which peels
-// off Band 2 (Mid) and leaves Band 3 (High). This is the same cascade shape
-// as the "Natural Phase" mode in commercial multiband splitters - simple,
-// cheap per sample, and free of the pre-ringing FFT-based splitters can show
-// on transients.
-//
-// Input: 0 = Audio In. Outputs: 0 = Band 1 (Low), 1 = Band 2 (Mid), 2 = Band 3 (High).
+// Band Splitter: one signal into 2 - 7 bands (6.9.4: Bands), Linkwitz-Riley 4th-order crossovers
+// in a tree - the lower bands each through the allpasses of the crossovers above them, so the bands
+// add back to the input's level at every frequency (an allpass in phase).
 class BandSplitterModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pSplit1 = 0, pSplit2 };
+    static constexpr int kMaxBands = 7, kMaxSplits = kMaxBands - 1;
+    enum ParamIndex { pSplit1 = 0, pSplit2, pBands, pSplit3, pSplit4, pSplit5, pSplit6 };
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Flexible; }
 
     void prepare (double sr) override
     {
         SynthModule::prepare (sr);
+        for (auto& v : last) v = -1.0;
         reset();
     }
 
@@ -42,10 +30,10 @@ public:
     {
         for (int c = 0; c < 2; ++c)
         {
-            lp1[v][c].reset();
-            hp1[v][c].reset();
-            lp2[v][c].reset();
-            hp2[v][c].reset();
+            auto& s = state[v][c];
+            for (auto& x : s.lp) for (auto& b : x) b.reset();
+            for (auto& x : s.hp) for (auto& b : x) b.reset();
+            for (auto& b : s.ap) b.reset();
         }
     }
 
@@ -58,37 +46,33 @@ public:
     }
 
 private:
-    // One 2-pole Butterworth biquad stage; two of these in series (same
-    // coefficients) make one LR4 (24 dB/oct) lowpass or highpass leg.
-    struct BiquadStage
+    struct Coef { float b0 { 1 }, b1 { 0 }, b2 { 0 }, a1 { 0 }, a2 { 0 }; };
+    // one biquad's memory (transposed direct form II)
+    struct Mem
     {
-        float b0 {}, b1 {}, b2 {}, a1 {}, a2 {};
-        float x1 {}, x2 {}, y1 {}, y2 {};
-
-        void reset() { x1 = x2 = y1 = y2 = 0.0f; }
-
-        float process (float in)
+        float z1 { 0 }, z2 { 0 };
+        void reset() { z1 = z2 = 0.0f; }
+        float process (const Coef& c, float x)
         {
-            const float out = b0 * in + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-            x2 = x1; x1 = in;
-            y2 = y1; y1 = out;
-            return out;
+            const float y = c.b0 * x + z1;
+            z1 = c.b1 * x - c.a1 * y + z2;
+            z2 = c.b2 * x - c.a2 * y;
+            return y;
         }
     };
-
-    // LR4 leg = 2 identical cascaded Butterworth stages (same biquad twice).
-    struct LR4Leg
+    // per voice and channel: each crossover's two low-pass and two high-pass stages (LR4 legs),
+    // and the allpasses the lower bands go through (band k: those of the crossovers above it)
+    struct State
     {
-        BiquadStage a, b;
-        void reset() { a.reset(); b.reset(); }
-        float process (float in) { return b.process (a.process (in)); }
+        Mem lp[kMaxSplits][2], hp[kMaxSplits][2];
+        Mem ap[kMaxSplits * (kMaxSplits - 1) / 2];
     };
 
-    static void setButterworthLowpass  (BiquadStage& s, double freq, double sr);
-    static void setButterworthHighpass (BiquadStage& s, double freq, double sr);
+    void updateCoefficients (int bands);
+    static Coef butterworth (double freq, double sr, int kind);   // 0 low-pass, 1 high-pass, 2 allpass
 
-    LR4Leg lp1[aquanode::kMaxVoices][2];   // Split 1: low leg  -> Band 1
-    LR4Leg hp1[aquanode::kMaxVoices][2];   // Split 1: high leg -> feeds Split 2
-    LR4Leg lp2[aquanode::kMaxVoices][2];   // Split 2: low leg  -> Band 2
-    LR4Leg hp2[aquanode::kMaxVoices][2];   // Split 2: high leg -> Band 3
+    State state[aquanode::kMaxVoices][2];
+    Coef lpC[kMaxSplits], hpC[kMaxSplits], apC[kMaxSplits];
+    double last[kMaxSplits + 1] {};
+    double splits[kMaxSplits] {};
 };

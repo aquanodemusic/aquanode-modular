@@ -46,13 +46,27 @@ void FormantModule::renderVoice (int v, const StereoFrame* inputs, StereoFrame* 
 
     // glottal source: a saw sharpened by Shape into a narrow pulse, which is
     // what gives the formants something harmonically rich to resonate on
+    const double prevPhase = phase[v];
     phase[v] += freq / sampleRate;
     phase[v] -= std::floor (phase[v]);
 
     const float shape = param (pShape) * 0.01f;
-    const float saw = (float) (2.0 * phase[v] - 1.0);
-    const float pulse = phase[v] < (0.5 - 0.45 * shape) ? 1.0f : -1.0f;
-    float source = saw * (1.0f - shape) + pulse * shape;
+    float source;
+    if (aquanode::antiAliasOn())
+    {
+        // (6.9.21) Anti-alias: the saw and the pulse band-limited at twice the rate, brought down
+        if (! aaWasOn[v]) { aaDown[v].reset(); aaWasOn[v] = true; }
+        const double inc = freq / sampleRate, dt = juce::jlimit (1.0e-9, 0.5, inc * 0.5), w = 0.5 - 0.45 * shape;
+        auto src = [&] (double t) { return (float) (aquanode::blSaw (t, dt) * (1.0 - shape) + aquanode::blPulse (t, w, dt) * shape); };
+        source = aaDown[v].process (src (aquanode::wrap01 (prevPhase + 0.5 * inc)), src (phase[v]));
+    }
+    else
+    {
+        aaWasOn[v] = false;
+        const float saw = (float) (2.0 * phase[v] - 1.0);
+        const float pulse = phase[v] < (0.5 - 0.45 * shape) ? 1.0f : -1.0f;
+        source = saw * (1.0f - shape) + pulse * shape;
+    }
 
     const float breath = param (pBreath) * 0.01f;
     if (breath > 0.0f)
@@ -106,7 +120,7 @@ static ModuleDescriptor formantDescriptor()
     d.sidebarOrder = 13;
     d.sockets = {
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

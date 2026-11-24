@@ -384,8 +384,9 @@ int PianoRollModule::midiDriverAdvanceEvents (double sr, MidiDriverEvent* events
 
     // ---- tempo: the host's when asked for AND available, else our own
     const bool hostAvailable = hostTransport.hasBpm && hostTransport.bpm > 0.0;
-    const bool useHost = param (pSync) > 0.5f && hostAvailable;
-    const double bpm = juce::jlimit (10.0, 999.0, useHost ? hostTransport.bpm : (double) param (pTempo));
+    // (6.9.10: a lane's tempo - its Tempo In, or the lane it plays into - wins)
+    const bool useHost = param (pSync) > 0.5f && hostAvailable && ! tempoFromLane();
+    const double bpm = juce::jlimit (10.0, 999.0, tempoFromLane() ? tempoBpm : useHost ? hostTransport.bpm : (double) param (pTempo));
     uiBpm.store (bpm, std::memory_order_relaxed);
     uiHostTempo.store (hostAvailable, std::memory_order_relaxed);
 
@@ -1809,7 +1810,7 @@ public:
         styleButton (recButton);
         recButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffe05560));
         recButton.setTooltip ("Record: what you play on the keyboard below or a MIDI keyboard goes into the roll while it plays, "
-                              "on the grid (1/16 at the coarsest). It plays through to this roll's Midi Out, and Undo takes the take back");
+                              "on the grid (1/16 at the coarsest). It plays through to this roll's MIDI Out, and Undo takes the take back");
         addAndMakeVisible (recButton);
         recButton.onClick = [this]
         {
@@ -2128,15 +2129,16 @@ static ModuleDescriptor pianoRollDescriptor()
     d.displayName = "Piano Roll";
     d.description =
         "A looping note sequencer you draw into, right in the card: time on x axis, pitch on y; drag the "
-        "corner grip to make it bigger. Import/Export to read and write .mid files. Its Midi Out feeds any "
-        "Midi In - generators, the drums, a Midi Add - and like the Arp it replaces the played "
+        "corner grip to make it bigger. Import/Export to read and write .mid files. Its MIDI Out feeds any "
+        "MIDI In - generators, the drums, a MIDI Add - and like the Arp it replaces the played "
         "keys there. Host locks to the DAW tempo, and keeps its own tempo when there is none.";
     d.section = ModuleSection::Utility;
     d.sidebarOrder = 25;
     d.sockets = {
-        midiOut ("midiOut", "Midi Out"),
+        midiOut ("midiOut", "MIDI Out"),
         // (6.7.12) the Fruit Arranger's link, wired by the graph itself - no cable
-        hiddenSocket (modIn ("songIn", "Song In"))
+        hiddenSocket (modIn ("songIn", "Song In")),
+        tempoIn()   // (6.9.10: tempo per lane - wins over its own Tempo and Sync)
     };
     d.params = {
         // all owned by the panel inside the card, saved with the patch

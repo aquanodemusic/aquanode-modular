@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include <JuceHeader.h>
 
 #include <algorithm>
@@ -278,8 +279,8 @@ struct Memo
     void clear() { in = std::numeric_limits<In>::quiet_NaN(); }
 };
 
-inline double midiNoteToHz (int note) { return 440.0 * std::pow (2.0, (note - 69) / 12.0); }
-inline double midiNoteToHz (double note) { return 440.0 * std::pow (2.0, (note - 69.0) / 12.0); }
+inline double midiNoteToHz (int note) { return ::aquanode::tuning::noteToHz ((double) note); }
+inline double midiNoteToHz (double note) { return ::aquanode::tuning::noteToHz (note); }
 
 // "C-1" ... "G9" for MIDI 0..127 (middle C = C4 = 60)
 inline juce::String midiNoteName (int note)

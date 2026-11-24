@@ -430,7 +430,7 @@ static ModuleDescriptor curveCvDescriptor()
         "A drawn control curve for automating any knob: place points, pick how it runs between "
         "them (Curved - drag empty space to bend a segment - Smooth or Step) and how fast it "
         "plays, in Hz or synced bars. Loops, plays once or ping-pongs; Restart In or a note on "
-        "Midi In starts it over. A cable into a knob takes it over: 0 to 1 is the knob's whole "
+        "MIDI In starts it over. A cable into a knob takes it over: 0 to 1 is the knob's whole "
         "range, wherever the knob is set, and Low/High narrow that. Cable depth blends between "
         "the knob's own setting and the curve (100%, the default, is the curve alone); a "
         "negative depth turns it upside down.";
@@ -438,8 +438,9 @@ static ModuleDescriptor curveCvDescriptor()
     d.sidebarOrder = 5;
     d.sockets = {
         modIn  ("restartIn", "Restart In"),
-        midiIn ("midiIn",    "Midi In"),
-        modOut ("cvOut",     "CV Out")
+        midiIn ("midiIn",    "MIDI In"),
+        modOut ("cvOut",     "CV Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     d.params = {
         makeRotary ("rate",   "Rate",   0.01f, 20.0f, 0.5f, 0, "Hz", true).visibleWhen ("sync", 0.0f),

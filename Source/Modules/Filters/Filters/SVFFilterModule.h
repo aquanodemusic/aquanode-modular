@@ -10,7 +10,15 @@
 class SVFFilterModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pCutoff = 0, pResonance, pMode, pModDepth };
+    enum ParamIndex { pCutoff = 0, pResonance, pMode, pModDepth, pMorph };
+
+    // (6.9.19) Type: a knob from lowpass (0) through bandpass (1) to highpass (2),
+    // the outputs blended in between (the old Filter Mode: 0, 1 or 2 exactly)
+    template <typename T> static T morphed (double m, T lp, T bp, T hp)
+    {
+        m = juce::jlimit (0.0, 2.0, m);
+        return m <= 1.0 ? lp * (1.0 - m) + bp * m : bp * (2.0 - m) + hp * (m - 1.0);
+    }
 
     aquanode::VoiceMode voiceMode() const override { return aquanode::VoiceMode::Flexible; }
 

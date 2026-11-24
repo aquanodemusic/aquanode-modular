@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/AntiAlias.h"
 
 // Formant - a singing oscillator. A buzzy glottal pulse feeds three parallel
 // band-pass "formants"; where those peaks sit is what makes a vowel a vowel,
@@ -68,6 +69,8 @@ private:
     aquanode::ModuleGlide glide;
     aquanode::ModuleVoiceGate gate;
     double phase [aquanode::kMaxVoices] {};
+    aquanode::Decimator2x aaDown [aquanode::kMaxVoices];   // (6.9.21: CPU > Anti-alias)
+    bool aaWasOn [aquanode::kMaxVoices] {};
     float low  [aquanode::kMaxVoices][kFormants] {};
     float band [aquanode::kMaxVoices][kFormants] {};
     juce::Random random;

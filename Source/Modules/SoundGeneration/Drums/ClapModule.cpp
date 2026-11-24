@@ -86,7 +86,7 @@ static ModuleDescriptor clapDescriptor()
     d.description =
         "The classic analog clap trick: three short noise bursts a few milliseconds apart (that stutter is "
         "what the ear reads as many hands), then a diffuse tail. Trig In takes a Clock, Euclid or "
-        "Step Seq gate. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a clap, alongside Trig In. "
+        "Step Seq gate. MIDI In plays it from notes instead (a Piano Roll, an Arp...; with nothing patched it hears the played keys): every note is a clap, alongside Trig In. "
         "Model Snappy and Clack were measured from a drum track: Snappy is a tight clap (three cracks, two resonances, a short room), "
         "Clack a bright crack with a thin hiss behind it. Their knobs scale the measured sound: Tone moves the colour, Spread the cracks, "
         "Burst Dec and Tail Dec the lengths, Tail Mix the room.";
@@ -95,7 +95,7 @@ static ModuleDescriptor clapDescriptor()
     d.sockets = {
         modIn    ("trigIn",   "Trig In"),
         audioOut ("audioOut", "Audio Out"),
-        midiIn   ("midiIn",   "Midi In")
+        midiIn   ("midiIn",   "MIDI In")
     };
     d.params = {
         makeRotary ("tone",       "Tone",      0.0f, 100.0f, 50.0f, 0, "%"),

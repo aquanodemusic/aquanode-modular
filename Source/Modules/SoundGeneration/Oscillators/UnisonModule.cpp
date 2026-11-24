@@ -76,14 +76,14 @@ static ModuleDescriptor unisonDescriptor()
     d.displayName = "Unison";
     d.description =
         "The supersaw: up to nine copies of one wave, detuned around the note and panned across "
-        "the stereo field. Note this is NOT what Midi Add does - Midi Add plays extra NOTES, this "
+        "the stereo field. Note this is NOT what MIDI Add does - MIDI Add plays extra NOTES, this "
         "thickens a SINGLE note, so it stays in tune whatever you play. Env In wants an ADSR.";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 12;
     d.sockets = {
         modIn    ("fmIn",      "FM In"),
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Core/ModuleCore.h"
+#include "../../Shared/SafetyLimiter.h"
 
 // Comb Filter - an actual delay-line comb filter: a delay one
 // wavelength long, fed back on itself, so the peaks land on the harmonic
@@ -27,7 +28,7 @@
 class CombFilterModule : public aquanode::SynthModule
 {
 public:
-    enum ParamIndex { pFreq = 0, pFeedback, pDamping, pBlend, pPitchDepth, pDryWet };
+    enum ParamIndex { pFreq = 0, pFeedback, pDamping, pBlend, pPitchDepth, pDryWet, pLimiter };   // (6.9.19: Limiter)
 
     static constexpr float kMinFreq = 20.0f;
     static constexpr float kMaxFreq = 8000.0f;
@@ -58,6 +59,7 @@ private:
 
     struct Lane
     {
+        aquanode::SafetyLimiter limiter;   // (6.9.19)
         int writePos { 0 };
         float loopLp [2] {};    // damping state, per channel
     };

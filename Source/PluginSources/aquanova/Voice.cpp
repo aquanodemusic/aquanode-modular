@@ -1,3 +1,4 @@
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "Voice.h"
 
 namespace aquanova {
@@ -297,7 +298,7 @@ void Voice::renderNextSample (float& outL, float& outR, float inL, float inR, fl
                + p.bip (P::Osc1PitchWheel + o) * modWheel * 12.0f
                + driftAmt;
 
-        const float hz = 440.0f * std::pow (2.0f, (baseNote + semis - 69.0f) / 12.0f);
+        const float hz = (float) ::aquanode::tuning::noteToHz ((double) (baseNote + semis));
 
         // --- pulse width
         float pw = p.uni (P::Osc1PulseWidth + o)

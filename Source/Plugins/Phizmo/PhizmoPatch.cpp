@@ -83,7 +83,7 @@ public:
                         "filter, LFO and the modulation matrix. Low / High Key and Level are its layer; Bus 1 / "
                         "Bus 2 send each oscillator to the insert effect or dry. Its three outputs go to the "
                         "Phizmo Bus. The matrix, curves and wavetables come with the Sound (saved in the patch).";
-        d.sockets = { midiIn ("midiIn", "Midi In"),
+        d.sockets = { midiIn ("midiIn", "MIDI In"),
                       audioOut ("dryOut", "Dry Out"), audioOut ("insOut", "Insert Out"), audioOut ("revOut", "Reverb Out") };
         d.params = {
             makeSteppedList ("sound", "Sound", { "1", "2", "3", "4" }, 0, 0).noMod(),

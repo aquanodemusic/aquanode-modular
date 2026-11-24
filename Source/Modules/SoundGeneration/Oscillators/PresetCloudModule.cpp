@@ -55,7 +55,9 @@ namespace presetcloud
         juce::String pluginId, pluginName, name, kind;
         bool stock { false };
         int program { -1 };                 // stock: the plugin's program
-        juce::MemoryBlock state;            // random: the whole plugin state
+        juce::MemoryBlock state;            // random: the whole plugin state (6.9.15: once played - till then its recipe)
+        int rollKind { -1 };                // (6.9.15) random: the recipe it is rolled again from when played -
+        juce::uint32 seed { 0 };            //   its kind and seed, on the synth's defaults
         std::vector<float> params;          // the knobs, 0..1 (for Morph)
         std::array<float, kFeatures> feat {};
         float classScore[kNumColours] {};
@@ -319,10 +321,17 @@ class PresetCloudModule final : public SynthModule,
                                 private juce::Timer
 {
 public:
-    enum ParamIndex { pPerRoll = 0, pRoll, pMorph, pSmoother };   // (Roll: the card's button, 6.7.5; Smoother 6.7.6)
+    enum ParamIndex { pPerRoll = 0, pRoll, pMorph, pSmoother, pMode, pClarity };   // (Roll: the card's button, 6.7.5; Smoother 6.7.6; Mode, Clarity 6.9.12)
     static constexpr int kPerRoll[] = { 25, 50, 100, 200, 400 };
 
-    PresetCloudModule() : layout (*this) { layout.startThread (juce::Thread::Priority::low); startTimerHz (30); }
+    PresetCloudModule() : layout (*this)
+    {
+        // (6.9.12) the Cepstral Morph mode's two cores: A heard through B's spectral envelope, and B through A's
+        cepAB = ModuleFactory::instance().createInstance ("fx.speccepmorph");
+        cepBA = ModuleFactory::instance().createInstance ("fx.speccepmorph");
+        layout.startThread (juce::Thread::Priority::low);
+        startTimerHz (30);
+    }
 
     ~PresetCloudModule() override
     {
@@ -374,7 +383,7 @@ public:
             const auto& l = rp::listsOf (*s);
             Slot sl; sl.id = s->pluginId;
             for (int k = 0; k < l.kinds.size(); ++k)
-                if (k != l.defaultKind && ! l.kinds[k].containsIgnoreCase ("random")) sl.kinds.push_back (k);
+                if (k != l.defaultKind && ! l.kinds[k].containsIgnoreCase ("random") && ! l.kinds[k].startsWithIgnoreCase ("Any ")) sl.kinds.push_back (k);
             if (sl.kinds.empty()) sl.kinds.push_back (l.defaultKind);
             juce::Random r; std::shuffle (sl.kinds.begin(), sl.kinds.end(), std::mt19937 ((unsigned) r.nextInt()));
             slots.push_back (std::move (sl));
@@ -517,6 +526,7 @@ public:
         const juce::SpinLock::ScopedLockType sl (swapLock);
         if (inner != nullptr) inner->prepare (sr);
         if (innerB != nullptr) innerB->prepare (sr);
+        for (auto* c : { cepAB.get(), cepBA.get() }) if (c != nullptr) c->prepare (sr);
         prepared = true;
     }
     void reset() override
@@ -525,7 +535,14 @@ public:
         if (! sl.isLocked()) return;
         if (inner != nullptr) inner->reset();
         if (innerB != nullptr) innerB->reset();
+        for (auto* c : { cepAB.get(), cepBA.get() }) if (c != nullptr) c->reset();
     }
+    // (6.9.12) Cepstral Morph: the cores' FFT frames - while a line is drawn in that mode
+    int latencySamples() const override
+    {
+        return cepstralMode() && connected() && cepAB != nullptr ? cepAB->latencySamples() : 0;
+    }
+    bool cepstralMode() const { return getParameterBase (pMode) > 0.5f; }
     void blockStart() override
     {
         {
@@ -538,6 +555,26 @@ public:
             else
                 xfadeTarget = juce::jlimit (0.0f, 1.0f, (m - 0.5f) / s + 0.5f);
             xfadeCoeff = 1.0f - std::exp (-1.0f / (0.008f * (float) juce::jmax (8000.0, sampleRate)));
+            // (6.9.12) Cepstral Morph: the preset nearer the line's position is the carrier, the
+            // other lends it its spectral envelope - not at all at the ends, fully at the middle,
+            // where the two directions cross over (Smoother widens that handover)
+            cepstralNow = cepstralMode() && connected() && cepAB != nullptr && cepBA != nullptr;
+            if (cepstralNow)
+            {
+                const float strength = 100.0f * (1.0f - std::abs (2.0f * m - 1.0f));
+                const float clarity = param (pClarity);
+                for (auto* c : { cepAB.get(), cepBA.get() })
+                {
+                    c->setParameter ("morph", strength);
+                    c->setParameter ("clarity", clarity);
+                    c->setParameter ("maxBoost", 36.0f);   // (no 72 dB peaks out of a quiet band)
+                    c->blockStart();
+                }
+                const float half = 0.03f + 0.3f * s;
+                cepTarget = juce::jlimit (0.0f, 1.0f, (m - (0.5f - half)) / (2.0f * half));
+                cepMorphNow = m;
+                levelCoeff = 1.0f - std::exp (-1.0f / (0.3f * (float) juce::jmax (8000.0, sampleRate)));
+            }
         }
         const juce::SpinLock::ScopedTryLockType sl (swapLock);
         if (! sl.isLocked()) return;
@@ -577,10 +614,35 @@ public:
         // which copy is heard: two synths - Morph itself; the same synth - the
         // second copy from the middle on (Smoother widens the handover into a
         // crossfade). Always eased over ~8 ms, so a handover never clicks.
-        xfade += (xfadeTarget - xfade) * xfadeCoeff;
-        const float ga = std::cos (xfade * 1.5707963f), gb = std::sin (xfade * 1.5707963f);
         StereoFrame b[8] {};
         innerB->processSample (inputs, b);
+        if (cepstralNow)
+        {
+            // both directions run all the time (an FFT core needs its frames full before it is heard)
+            const StereoFrame inAB[2] { outputs[0], b[0] }, inBA[2] { b[0], outputs[0] };
+            StereoFrame oAB[4] {}, oBA[4] {};
+            cepAB->processSample (inAB, oAB);
+            cepBA->processSample (inBA, oBA);
+            cepX += (cepTarget - cepX) * xfadeCoeff;
+            const float ga = std::cos (cepX * 1.5707963f), gb = std::sin (cepX * 1.5707963f);
+            StereoFrame y { oAB[0][0] * ga + oBA[0][0] * gb, oAB[0][1] * ga + oBA[0][1] * gb };
+            // as loud as the two presets crossfaded at the same place would be: both levels
+            // followed over ~300 ms, the morph's made up to the crossfade's (within -12..+12 dB)
+            {
+                const float m = cepMorphNow;
+                const float ca = std::cos (m * 1.5707963f), cb = std::sin (m * 1.5707963f);
+                const float rl = outputs[0][0] * ca + b[0][0] * cb, rr = outputs[0][1] * ca + b[0][1] * cb;
+                refEnergy += (0.5f * (rl * rl + rr * rr) - refEnergy) * levelCoeff;
+                outEnergy += (0.5f * (y[0] * y[0] + y[1] * y[1]) - outEnergy) * levelCoeff;
+                const float want = outEnergy > 1.0e-12f ? std::sqrt (refEnergy / outEnergy) : 1.0f;
+                const float g = juce::jlimit (0.25f, 4.0f, want);
+                levelGain += (g - levelGain) * levelCoeff * 4.0f;
+            }
+            outputs[0] = { y[0] * levelGain, y[1] * levelGain };
+            return;
+        }
+        xfade += (xfadeTarget - xfade) * xfadeCoeff;
+        const float ga = std::cos (xfade * 1.5707963f), gb = std::sin (xfade * 1.5707963f);
         outputs[0] = { outputs[0][0] * ga + b[0][0] * gb, outputs[0][1] * ga + b[0][1] * gb };
     }
     void rawMidiMessage (const juce::MidiMessage& m) override
@@ -601,6 +663,7 @@ public:
     std::atomic<bool> autoplay { false };
     void setAutoplay (bool on) { autoplay.store (on); ++changeCounter; }
     bool connectMode { false };   // (the card's Connect switch - a drag from a dot draws a line)
+    std::atomic<double> glidingUntil { 0.0 };   // (6.9.15) the card's highlighter glides till then: no jobs meanwhile
 
     std::unique_ptr<juce::Component> createExtraContentComponent() override;
     int preferredModuleWidth() const override { return 560; }
@@ -630,7 +693,8 @@ public:
             e->setAttribute ("y", (double) p.y);
             if (! p.stock)
             {
-                e->setAttribute ("state", p.state.toBase64Encoding());
+                if (p.seed != 0) { e->setAttribute ("seed", (int) (p.seed & 0x7fffffff)); e->setAttribute ("rollKind", p.rollKind); }
+                if (p.state.getSize() > 0) e->setAttribute ("state", p.state.toBase64Encoding());
                 juce::MemoryBlock mb (p.params.data(), p.params.size() * sizeof (float));
                 e->setAttribute ("params", mb.toBase64Encoding());
             }
@@ -674,6 +738,8 @@ public:
             p.x = (float) e->getDoubleAttribute ("x", 0.5);
             p.y = (float) e->getDoubleAttribute ("y", 0.5);
             p.state.fromBase64Encoding (e->getStringAttribute ("state"));
+            p.seed = (juce::uint32) e->getIntAttribute ("seed", 0);
+            p.rollKind = e->getIntAttribute ("rollKind", -1);
             juce::MemoryBlock pm;
             pm.fromBase64Encoding (e->getStringAttribute ("params"));
             p.params.assign ((const float*) pm.getData(), (const float*) pm.getData() + pm.getSize() / sizeof (float));
@@ -734,6 +800,7 @@ private:
     std::deque<Job> jobs;
     int jobsTotal { 0 };
     std::map<juce::String, std::unique_ptr<juce::AudioProcessor>> scratch;   // offscreen copies of the plugins
+    std::map<juce::String, juce::MemoryBlock> scratchDefaults;                // (6.9.15) their start-up states
     bool layoutWanted { false };
 
     void queueStock()
@@ -799,13 +866,20 @@ private:
             auto* p = scratchFor (j.pluginId);
             if (src == nullptr || p == nullptr) return;
             const auto& l = rp::listsOf (*src);
+            // (6.9.15) every roll from the synth's defaults, so the dot can be rolled again the
+            // same when it is played: only its recipe (kind, seed) and knobs are kept till then -
+            // a hundred whole states (Vita's with their tables) took far too much memory
+            auto& defaults = scratchDefaults[j.pluginId];
+            if (defaults.getSize() == 0) p->getStateInformation (defaults);
+            else p->setStateInformation (defaults.getData(), (int) defaults.getSize());
             presetcloud::Point pt;
             pt.pluginId = j.pluginId;
             pt.pluginName = src->name;
             pt.kind = j.rollKind < l.kinds.size() ? l.kinds[j.rollKind] : juce::String();
             pt.name = src->roll (*p, j.rollKind, l.defaultGenre, l.defaultEngine, j.seed);
             if (pt.name.isEmpty()) pt.name = pt.kind;
-            p->getStateInformation (pt.state);
+            pt.rollKind = j.rollKind;
+            pt.seed = j.seed;
             presetcloud::fingerprint (*p, pt);
             points.push_back (std::move (pt));
         }
@@ -817,6 +891,7 @@ private:
                 for (const auto& pt : kv.second)
                     points.push_back (pt);
             scratch.clear();   // (the offscreen plugins are not needed any more)
+            scratchDefaults.clear();
             layoutWanted = true;
         }
     }
@@ -864,9 +939,11 @@ private:
 
     void timerCallback() override
     {
-        // a few jobs at a time (each 30 ms at most), so the app keeps moving
+        // a few jobs at a time, so the app keeps moving (6.9.15: 6 ms a tick, not 30 - the
+        // highlighter's glide stays smooth while a Roll is made)
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
-        while (! jobs.empty() && juce::Time::getMillisecondCounterHiRes() - t0 < 30.0)
+        const bool gliding = t0 < glidingUntil.load();   // (a card's highlighter on its way: the jobs wait)
+        while (! gliding && ! jobs.empty() && juce::Time::getMillisecondCounterHiRes() - t0 < 6.0)
         {
             const auto j = jobs.front();
             jobs.pop_front();
@@ -911,6 +988,7 @@ private:
         if (connected())
         {
             const float m = juce::jlimit (0.0f, 1.0f, param (pMorph) * 0.01f);
+            if (cepstralMode() != lastCepstralApplied) { lastMorph = -1.0f; settleTicks = 0; }
             if (std::abs (m - lastMorph) > 0.002f)
             {
                 lastMorph = m;
@@ -939,10 +1017,12 @@ private:
     void applyMorph (float m)
     {
         if (! connected() || crossSynth.load()) return;
+        const bool cepstral = cepstralMode();
+        if (cepstral && lastCepstralApplied && settleTicks <= 0) return;
         auto& a = points[(size_t) morphA];
         auto& b = points[(size_t) morphB];
         ensureLoaded (a); ensureLoaded (b);
-        auto fade = [&a, &b, m] (juce::AudioProcessor& proc, bool switchesFromA)
+        auto fadeAt = [&a, &b] (juce::AudioProcessor& proc, bool switchesFromA, float m)
         {
             const auto& prms = proc.getParameters();
             const size_t n = juce::jmin ((size_t) prms.size(), a.params.size(), b.params.size());
@@ -956,10 +1036,13 @@ private:
                     if (std::abs (prm->getValue() - v) > 1.0e-5f) prm->setValueNotifyingHost (v);
                 }
         };
-        if (auto* p = playingProcessor()) fade (*p, true);
+        // (6.9.12) Cepstral Morph: each copy keeps its own preset whole (the morph is in the sound)
+        const float mA = cepstral ? 0.0f : m, mB = cepstral ? 1.0f : m;
+        if (auto* p = playingProcessor()) fadeAt (*p, true, mA);
         if (auto* h = dynamic_cast<plugins::HostedPluginModule*> (innerB.get()))
             if (auto* pb = h->getPlugin())
-                fade (*pb, false);
+                fadeAt (*pb, false, mB);
+        lastCepstralApplied = cepstral;
     }
 
     static bool isSwitch (juce::AudioProcessorParameter& prm)
@@ -978,6 +1061,16 @@ private:
         if (proc == nullptr) return;
         if (pt.stock) proc->setCurrentProgram (pt.program);
         else if (pt.state.getSize() > 0) proc->setStateInformation (pt.state.getData(), (int) pt.state.getSize());
+        else if (pt.seed != 0)   // (6.9.15) a rolled dot played for the first time: rolled again, the same
+            if (auto* src = rp::find (pt.pluginId))
+            {
+                const auto& l = rp::listsOf (*src);
+                src->roll (*proc, pt.rollKind, l.defaultGenre, l.defaultEngine, pt.seed);
+                proc->getStateInformation (pt.state);
+                pt.params.clear();
+                for (auto* prm : proc->getParameters()) pt.params.push_back (prm->getValue());
+                return;
+            }
         if (pt.state.getSize() == 0) proc->getStateInformation (pt.state);
         pt.params.clear();
         for (auto* prm : proc->getParameters()) pt.params.push_back (prm->getValue());
@@ -1057,6 +1150,11 @@ private:
     std::shared_ptr<SynthModule> inner, innerB;   // innerB: the second copy, while two presets are connected
     juce::SpinLock swapLock;
     std::atomic<bool> crossSynth { false };       // the line joins two different synths
+    std::unique_ptr<SynthModule> cepAB, cepBA;    // (6.9.12) Cepstral Morph: A through B's envelope, B through A's
+    bool cepstralNow { false };                   // audio thread
+    float cepTarget { 0.0f }, cepX { 0.0f };      // audio thread: 0 = A the carrier, 1 = B
+    float cepMorphNow { 0.0f }, refEnergy { 0.0f }, outEnergy { 0.0f }, levelGain { 1.0f }, levelCoeff { 1.0e-4f };
+    bool lastCepstralApplied { false };           // message thread
     float xfade { 0.0f }, xfadeTarget { 0.0f }, xfadeCoeff { 0.003f };   // audio thread: 0 = copy 1, 1 = copy 2
     int settleTicks { 0 };
     static constexpr int kAutoNote = 48;          // C3, as the keyboard names it
@@ -1602,7 +1700,7 @@ private:
             glideFromXY = from;
             glideT = (had && m->chosen >= 0 && m->chosen < n) ? 0.0f : 1.0f;
             glideStart = juce::Time::getMillisecondCounterHiRes();
-            if (glideT < 1.0f) startTimerHz (60);
+            if (glideT < 1.0f) { startTimerHz (60); m->glidingUntil.store (glideStart + 520.0); }
         }
         if (glideT < 1.0f)
         {
@@ -1669,11 +1767,15 @@ static ModuleDescriptor presetCloudDescriptor()
         "one it would join is lit while you hold); Morph then fades between the two - the same synth: every knob "
         "(Smoother crossfades where its switches change), two synths: a crossfade. Open Preset adds the synth as a card "
         "with the lit preset (with a line: Open Position, the sound at Morph's position); Disconnect removes the line; "
-        "Autoplay plays C3 by itself. Drag the map to move it, pinch to zoom; the lit dot sits under a lens.";
+        "Autoplay plays C3 by itself. Drag the map to move it, pinch to zoom; the lit dot sits under a lens. Mode Cepstral "
+        "Morph: both presets play whole, and the one the line's position is nearer is heard through the other's spectral "
+        "envelope (its formants, its tone) - not at all at the ends, fully at the middle, where the two cross over "
+        "(Smoother widens the crossover); Clarity as on Cepstral Morph. It takes 3072 samples (told to the host, and lined up "
+        "with the rest of the patch where it lines up latency).";
     d.section = ModuleSection::Oscillator;
     d.sidebarOrder = 8;
     d.searchKeywords = "preset map browser random cloud morph";
-    d.sockets = { midiIn ("midiIn", "Midi In"), audioOut ("audioOut", "Audio Out") };
+    d.sockets = { midiIn ("midiIn", "MIDI In"), audioOut ("audioOut", "Audio Out"), tempoIn() };
     auto perRoll = makeCombo ("perRoll", "Per Roll", { "25", "50", "100", "200", "400" }, 2, 0, 2);
     perRoll.modulatable = false;
     d.params = {
@@ -1682,7 +1784,11 @@ static ModuleDescriptor presetCloudDescriptor()
         makeRotary ("morph", "Morph", 0.0f, 100.0f, 0.0f, 0, "%"),
         // the same synth at both ends: a crossfade around the middle, where the
         // switches change (0: they change at once) - 6.7.6
-        makeRotary ("smoother", "Smoother", 0.0f, 100.0f, 0.0f, 0, "%")
+        makeRotary ("smoother", "Smoother", 0.0f, 100.0f, 0.0f, 0, "%"),
+        // (6.9.12) Crossfade (as before), or Cepstral Morph: one preset heard through the other's
+        // spectral envelope, as much as the line's position says
+        makeCombo ("mode", "Mode", { "Crossfade", "Cepstral Morph" }, 0, 0, 2).noMod(),
+        makeRotary ("clarity", "Clarity", 0.0f, 200.0f, 100.0f, 0, "%").visibleWhen ("mode", 1.0f)
     };
     d.extraSection = "Map";
     return d;

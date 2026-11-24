@@ -144,9 +144,13 @@ void InstanceModule::relink()
 
 void InstanceModule::pushKnobs (bool all)
 {
+    const juce::SpinLock::ScopedTryLockType cardLock (cards.lock);
     for (auto& l : links)
     {
-        const float v = l.param->convertTo0to1 (all ? getParameterBase (l.knob) : param (l.knob));
+        float raw = all ? getParameterBase (l.knob) : param (l.knob);
+        if (cardLock.isLocked())
+            cards.read (*this, l.knob, all, raw);   // (a section card holds it)
+        const float v = l.param->convertTo0to1 (raw);
         if (all || v != l.last)
         {
             l.param->setValueNotifyingHost (v);
@@ -238,7 +242,7 @@ void InstanceModule::runBlock()
     {
         juce::AudioPlayHead::PositionInfo info;
         bool fromHost = false;
-        if (hostPlayHead != nullptr)
+        if (hostPlayHead != nullptr && ! tempoFromLane())   // (6.9.14: a fed Tempo In wins over the host's tempo)
             if (auto host = hostPlayHead->getPosition(); host && host->getBpm() && *host->getBpm() > 0.0)   // (one without a tempo - standalone, Android - does not count)
             {
                 info = *host;
@@ -302,6 +306,152 @@ void InstanceModule::copyStateFrom (juce::AudioProcessor& source)
     juce::MemoryBlock mb;
     source.getStateInformation (mb);
     loadCustomState (mb.toBase64Encoding());
+}
+
+//==============================================================================
+// (6.9.14) section cards
+//==============================================================================
+void CardReceiver::set (const ModuleDescriptor& d, std::vector<std::shared_ptr<SynthModule::CardLink>> links)
+{
+    std::vector<Hit> hits (d.params.size());
+    for (const auto& l : links)
+        for (int i = 0; i < (int) l->ids.size(); ++i)
+            if (auto* spec = d.findParam (l->ids[(size_t) i]))
+            {
+                const auto k = (size_t) (spec - d.params.data());
+                if (k < hits.size() && hits[k].link == nullptr) hits[k] = { l.get(), i };
+            }
+    const juce::SpinLock::ScopedLockType sl (lock);
+    held.swap (links);
+    byKnob.swap (hits);
+}
+
+bool CardReceiver::read (SynthModule& engine, int knob, bool base, float& value) const
+{
+    if (knob < 0 || (size_t) knob >= byKnob.size()) return false;
+    const auto& h = byKnob[(size_t) knob];
+    if (h.link == nullptr || ! h.link->live.load (std::memory_order_acquire)) return false;
+    const float b = h.link->base[(size_t) h.idx].load (std::memory_order_relaxed);
+    if (! juce::exactlyEqual (engine.getParameterBase (knob), b))
+        engine.setParameterByIndex (knob, b);   // (saved with the engine too, and what it plays without the card)
+    value = base ? b : h.link->mod[(size_t) h.idx].load (std::memory_order_relaxed);
+    return true;
+}
+
+std::vector<juce::String> CardDef::knobIds() const
+{
+    std::vector<juce::String> out;
+    for (const auto& i : ids) if (i.isNotEmpty()) out.push_back (i);
+    return out;
+}
+
+int CardDef::rows() const
+{
+    int r = 0, used = 0;
+    for (const auto& i : ids)
+    {
+        if (i.isEmpty()) { if (used > 0) { ++r; used = 0; } continue; }
+        if (isDrawn (i)) continue;
+        if (r == 0 && used == 0) r = 1;
+        if (used >= 5) { ++r; used = 0; }
+        ++used;
+    }
+    return r;
+}
+
+ModuleDescriptor cardBaseDescriptor (const CardDef& def)
+{
+    ModuleDescriptor d;
+    d.typeId = def.typeId();
+    d.displayName = moduleName (def.pluginId, def.kind);
+    d.description = def.description;
+    d.section = ModuleSection::Utility;
+    d.accent = accentOf (def.pluginId);
+    d.sidebarOrder = 420;
+    d.sockets = { modIn ("linkIn", "Link In"), modOut ("linkOut", "Link Out") };
+    return d;
+}
+
+void completeCardDescriptor (const CardDef& def, ModuleDescriptor& d)
+{
+    // five places a row (a menu takes two), a new row where the def says
+    int row = 0, used = 0;
+    for (const auto& id : def.ids)
+    {
+        if (id.isEmpty()) { if (used > 0) { ++row; used = 0; } continue; }
+        if (d.findParam (id) != nullptr || def.spec == nullptr) continue;
+        auto spec = def.spec (id);
+        if (def.isDrawn (id)) { spec.hidden = true; spec.modulatable = false; spec.row = 0; d.params.push_back (std::move (spec)); continue; }
+        const int units = juce::jmax (1, spec.widthUnits);
+        if (used + units > 5) { ++row; used = 0; }
+        used += units;
+        spec.row = row;
+        d.params.push_back (std::move (spec));
+    }
+}
+
+bool registerCard (const CardDef& def)
+{
+    return ModuleFactory::instance().registerModule (cardBaseDescriptor (def),
+        [&def] { return std::make_unique<CardModule> (def); },
+        [&def] (ModuleDescriptor& d) { completeCardDescriptor (def, d); });
+}
+
+CardModule::CardModule (const CardDef& d)
+    : def (d), link (std::make_shared<CardLink> (d.knobIds()))
+{
+}
+
+void CardModule::prepare (double sr)
+{
+    SynthModule::prepare (sr);
+    index.clear();
+    for (const auto& id : link->ids) index.push_back (paramIndex (id));
+    counter = 0;
+    write();
+}
+
+void CardModule::write()
+{
+    for (size_t i = 0; i < index.size(); ++i)
+        if (index[i] >= 0)
+        {
+            link->base[i].store (getParameterBase (index[i]), std::memory_order_relaxed);
+            link->mod[i].store (param (index[i]), std::memory_order_relaxed);
+        }
+    link->live.store (! index.empty(), std::memory_order_release);
+}
+
+void CardModule::processSample (const StereoFrame*, StereoFrame* out)
+{
+    if (counter++ % 16 == 0) write();   // (the engine reads them every 32 samples)
+    out[0] = { 0.0f, 0.0f };
+}
+
+void CardModule::setParameter (const juce::String& id, float value)
+{
+    SynthModule::setParameter (id, value);
+    for (size_t i = 0; i < link->ids.size() && i < index.size(); ++i)
+        if (link->ids[i] == id && index[i] >= 0)
+        {
+            link->base[i].store (value, std::memory_order_relaxed);
+            link->mod[i].store (value, std::memory_order_relaxed);
+        }
+}
+
+std::vector<juce::Point<int>> cardPlaces (const std::vector<const CardDef*>& cards, int x0, int y0, int columns)
+{
+    // a card: its title and sockets (~90 px), ~92 px a row of knobs, its picture
+    std::vector<juce::Point<int>> out;
+    std::vector<int> colY ((size_t) juce::jmax (1, columns), y0);
+    for (size_t i = 0; i < cards.size(); ++i)
+    {
+        const auto c = i % colY.size();
+        const auto* cd = cards[i];
+        out.push_back ({ x0 + (int) c * 300, colY[c] });
+        colY[c] += 90 + cd->rows() * 92 + cd->extraHeight + 40;
+    }
+    return out;
 }
 
 } // namespace aquanode::plugins::kit

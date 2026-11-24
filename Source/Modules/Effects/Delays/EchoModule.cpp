@@ -141,7 +141,8 @@ static ModuleDescriptor echoDescriptor()
     d.sidebarOrder = 1;
     d.sockets = {
         audioIn  ("audioIn",  "Audio In"),
-        audioOut ("audioOut", "Audio Out")
+        audioOut ("audioOut", "Audio Out"),
+        tempoIn()   // (6.9.10: tempo per lane)
     };
     d.params = {
         makeRotary ("time", "Time", 1.0f, 3900.0f, 375.0f, 0, "ms", true).visibleWhen ("sync", 0.0f),

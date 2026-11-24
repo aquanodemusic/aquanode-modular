@@ -34,6 +34,8 @@ namespace vital {
 
 class LineGenerator;
 
+namespace vital { class SoundEngine; }
+
 class Wavetable3d : public OpenGlComponent, public AudioFileDropSource {
   public:
     static constexpr float kDefaultVerticalAngle = 1.132f;
@@ -149,6 +151,8 @@ class Wavetable3d : public OpenGlComponent, public AudioFileDropSource {
     vital::Wavetable* getWavetable() { return wavetable_; }
 
   private:
+    float aqFrameOffset();                          // (Aquanode, 6.9.15)
+    vital::SoundEngine* aq_engine_ = nullptr;
     bool updateRenderValues();
     void loadIntoTimeDomain(int index);
     void loadWaveData(int index);

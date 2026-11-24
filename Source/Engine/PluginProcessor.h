@@ -161,6 +161,16 @@ public:
 
     std::vector<int> getModuleIds() const;
     ModuleInstance* getInstance (int instanceId) const;
+
+    static const juce::Array<int>& blockSizeChoices();   // 1, 2, 4 .. 512 (the Plugin Block Size)
+    static void rebuildAllGraphs();                     // message thread: every Aquanode rebuilds
+    // (6.9.11) for all patches, saved in the settings: no lining up at all
+    // (off by default), and the patch's latency told to the host (on by default)
+    static std::atomic<bool>& neverCompensate();
+    static std::atomic<bool>& reportLatency();
+    static int reportedLatency (int samples) { return reportLatency().load (std::memory_order_relaxed) ? samples : 0; }
+    static juce::CriticalSection& liveProcessorsLock();
+    static std::vector<AquanodeModularAudioProcessor*>& liveProcessors();
     const std::vector<CableInfo>& getCables() const { return cables; }
 
     bool exportPatchToZip (const juce::File& zipFile);
@@ -398,6 +408,13 @@ private:
         std::vector<int> keyboardProcessors;    // processors fed by the played keys (empty Midi In)
         std::vector<int> rawNodes;              // every raw-MIDI module (hosted plugins)
         std::vector<int> keyboardRawNodes;      // raw-MIDI modules hearing the played keys
+        std::vector<char> rawTakesMpe;          // per node: a raw-MIDI module that plays MPE (typeAcceptsMpe)
+        // tempo per lane (6.9.10), per node: what feeds its Tempo In (-1: nothing),
+        // and whether its Tempo Out (a Tempo module's) is patched somewhere
+        std::vector<int> tempoInNode, tempoInSock;
+        std::vector<char> tempoOutPatched;
+        std::vector<int> tempoSource;    // per node: the Tempo (node) it follows, -1 the patch's BPM
+        std::vector<int> tempoOutSock;   // per node: its Tempo Out (a Tempo module), -1 none
 
         const MidiStream* findStream (int sourceId) const
         {
@@ -482,7 +499,7 @@ private:
         ~LatencyWatch() override { stopTimer(); }
         void timerCallback() override
         {
-            const int wanted = owner.patchLatency.load (std::memory_order_relaxed);
+            const int wanted = reportedLatency (owner.patchLatency.load (std::memory_order_relaxed));
             if (owner.getLatencySamples() != wanted)
                 owner.setLatencySamples (wanted);
             if (owner.compensationShort.exchange (false))
@@ -532,6 +549,13 @@ private:
     std::array<MpeOutChannel, 15> mpeOutChannels {};
     juce::uint32 mpeOutNext { 0 };
     float mpeChanBend[17] {}, mpeChanSlide[17] {}, mpeChanPressure[17] {};
+    bool mpeChanSlideSet[17] {};   // (6.9.12) a CC 74 came on the channel
+    // (6.9.10) the on-screen keys' own messages this block (their per-finger
+    // pressure, bend and slide), so MIDI Learn learns real controllers only
+    std::vector<juce::MidiMessage> screenMidi;   // audio thread (reserved)
+    bool screenMidiNow { false };
+    int mpeChanNote[17] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };   // the key held on a member channel (6.9.10)
+    void keyboardExpression (const ProcessGraph& graph, int channel);
     void mpeMessage (const ProcessGraph& graph, const juce::MidiMessage& msg);
     juce::SpinLock uiMidiLock;
     juce::MidiBuffer uiMidi;   // MIDI from the editor (the MPE keyboard), merged in at the next block

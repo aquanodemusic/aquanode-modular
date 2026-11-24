@@ -88,6 +88,8 @@ namespace vital {
       void setChannelSlide(int channel, mono_float value, int sample);
       void setChannelRangeSlide(int from_channel, int to_channel, mono_float value, int sample);
       Wavetable* getWavetable(int index);
+      void setAqSlideDepth(int index, float frames);   // (Aquanode, 6.9.12)
+      float aqSlideShown(int index) const;               // (Aquanode, 6.9.15) for the oscillators' display
       void setOscillatorRandomSeed(int index, int seed);
       void setOscillatorWarpCurve(int index, const LineGenerator* curve);
       Sample* getSample();
@@ -110,6 +112,10 @@ namespace vital {
       void setOversamplingAmount(int oversampling_amount, int sample_rate);
     
       SynthVoiceHandler* voice_handler_;
+    public:
+      // (Aquanode, 6.9.10) the per-finger bend range of the voices
+      void setLocalPitchBendRange(mono_float semis);
+    private:
       ReorderableEffectChain* effect_chain_;
       Add* output_total_;
 

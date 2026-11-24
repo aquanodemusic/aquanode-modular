@@ -58,7 +58,7 @@ public:
         d.section = ModuleSection::Oscillator;
         d.accent = kit::accentOf (kPlugin);
         d.sidebarOrder = 400 + Drum;
-        d.sockets = { midiIn ("midiIn", "Midi In"), audioIn ("coupleIn", "Couple In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { midiIn ("midiIn", "MIDI In"), audioIn ("coupleIn", "Couple In"), audioOut ("audioOut", "Audio Out") };
         d.params = {
             makeRotary (tb::pid::tuning,       "Tuning",     -12.0f, 12.0f, 0.0f, 0, "st"),
             makeRotary (tb::pid::tension,      "Tension",      0.0f, 1.0f, 0.25f, 0),

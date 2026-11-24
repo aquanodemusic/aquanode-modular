@@ -161,11 +161,18 @@ bool PhizmoAudioProcessor::randomPreset (int style, juce::int64 seed, juce::Stri
         const int frames = g.pick ({ 32, 64, 64 });
         const int archA = archetypeFor();
         const int archB = g.chance (0.5f) ? archA : archetypeFor();
+        // 7.0.0: a built-in transwave of the style can stand in for a generated one
+        const int styleBits = style == RandPad ? ::twremake::Pad : style == RandBass ? ::twremake::Bass
+                            : style == RandLead ? ::twremake::Lead : style == RandPluck ? ::twremake::Pluck
+                            : style == RandKeys ? ::twremake::Keys : style == RandBell ? ::twremake::Bell
+                            : style == RandTexture ? ::twremake::Texture : ::twremake::Arp;
         for (int o = 0; o < 2; ++o)
         {
             juce::String st;
-            if (generateRandomWavetable (k * 2 + o, g.r.nextInt64(), frames, getCycleSizeParam (o), st,
-                                         o == 0 ? archA : archB))
+            const int builtin = g.chance (0.4f) ? ::twremake::pick (styleBits, g.r) : -1;
+            if (builtin >= 0 ? loadBuiltinTranswave (k * 2 + o, builtin, st)
+                             : generateRandomWavetable (k * 2 + o, g.r.nextInt64(), frames, getCycleSizeParam (o), st,
+                                                        o == 0 ? archA : archB))
                 ++wavesOk;
         }
 

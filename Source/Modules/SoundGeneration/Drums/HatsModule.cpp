@@ -94,7 +94,7 @@ static ModuleDescriptor hatsDescriptor()
     d.description =
         "Classic analog metallic percussion: six detuned squares summed, band-passed and shaped by "
         "a snappy decay - short Decay is a closed hat, long an open one. Trig In takes a Clock, "
-        "Euclid or Step Seq gate; it also fires on MIDI note-on. Midi In plays it from notes instead (Keyboard Midi, Piano Roll, Arp...): every note is a hit, alongside Trig In. "
+        "Euclid or Step Seq gate; it also fires on MIDI note-on. MIDI In plays it from notes instead (a Piano Roll, an Arp...): every note is a hit, alongside Trig In. "
         "Model Snip plays a short bright snip measured from a drum track (airy noise with two faint rings): Decay scales its length, "
         "Tone its brightness, Tune its rings.";
     d.section = ModuleSection::Oscillator;
@@ -102,7 +102,7 @@ static ModuleDescriptor hatsDescriptor()
     d.sockets = {
         modIn    ("trigIn",   "Trig In"),
         audioOut ("audioOut", "Audio Out"),
-        midiIn   ("midiIn",   "Midi In")
+        midiIn   ("midiIn",   "MIDI In")
     };
     d.params = {
         makeRotary ("tune",  "Tune",  100.0f, 500.0f, 205.0f, 0, "Hz", true),

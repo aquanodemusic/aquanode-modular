@@ -125,6 +125,21 @@ namespace aquanode::plugins
         int latencySamples() const override;
 
         bool wantsRawMidi() const override { return spec.midiIn; }
+        // (6.9.10) a patch tuning: the bundled instruments read it themselves
+        // (their pitch goes through aquanode::tuning, on this thread); any
+        // other instrument gets its notes bent on MPE channels of their own
+        // (only one that plays MPE understands that; drum machines and samplers keep their pitch)
+        bool retunesByMpeBend() const override
+        {
+            return spec.midiIn && ! followsTuningItself (spec.pluginId) && dynamic_cast<const aquanode::MpeReceiver*> (plugin.get()) != nullptr;
+        }
+        static bool followsTuningItself (const juce::String& pluginId)
+        {
+            static const juce::StringArray ids { "aquanode", "fruitgui", "vita", "virtualdx7", "aquamassif", "aquanova", "aquavibrio",
+                                                 "alphabeta", "am20", "fm12", "aliassynth", "additivekeys", "phizmosc",
+                                                 "phizmo", "reflex", "tidebreeze" };
+            return ids.contains (pluginId);
+        }
         void rawMidiMessage (const juce::MidiMessage& message) override;
         bool timesItself() const override { return true; }   // (CPU / RAM module: its blocks, exactly)
         // sleep on silence: the tail the plugin reports, but never under 8 s -
@@ -185,7 +200,10 @@ namespace aquanode::plugins
         juce::MidiBuffer midiInBuffer, midiOutScratch;
         int blockSize { 128 };            // the block running now (audio thread)
         int pBlock { -1 };
+        int pMpeMode { -1 }, pBendRange { -1 }, lastMpePolicy { -1 };   // (6.9.10: Vita's card)
         bool mpeOn { false };
+        struct MemberChannel { int held { 0 }; bool resetDue { false }; };
+        std::array<MemberChannel, 17> memberState {};   // (6.9.15) for each MPE channel's next note
         int wantedBlock() const;
         std::array<std::array<float, kMaxBlockSize>, 2> outFifo {};
         int pos { 0 };                    // sample inside the current block

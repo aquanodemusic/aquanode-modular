@@ -1,3 +1,4 @@
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include "AquaVibrioOriginalEngine.h"
 #include "EmbeddedModules/OscillatorModule.h"
 
@@ -2896,7 +2897,7 @@ void Engine::renderVoice (int v, const LayerState& L, float& outL, float& outR, 
 
     float fmSource = 0.0f;
     voice.fmTriPhase += (double) (r1 * voice.memo.noteHz.get (voice.glideNote,
-                                     [] (float n) { return 440.0f * std::exp2 ((n - 69.0f) / 12.0f); })) / sampleRate;
+                                     [] (float n) { return (float) ::aquanode::tuning::noteToHz (n); })) / sampleRate;
     voice.fmTriPhase -= std::floor (voice.fmTriPhase);
     if (fmIndex > 0.0f)
     {
@@ -3214,7 +3215,7 @@ void Engine::renderVoice (int v, const LayerState& L, float& outL, float& outR, 
 
     // Saturation after filter 1: level matched for curves 1..6 (the drive
     // changes tone, not loudness), the hardware's curves as the native engine has them.
-    const float noteHz = voice.memo.noteHz.get (voice.glideNote, [] (float n) { return 440.0f * std::exp2 ((n - 69.0f) / 12.0f); });
+    const float noteHz = voice.memo.noteHz.get (voice.glideNote, [] (float n) { return (float) ::aquanode::tuning::noteToHz (n); });
     // An Analog filter mode replaces the saturation stage (the reference sets its
     // saturation to the ladder's own whenever filter 1 is analog).
     const bool satOn = b.satCurve > 0 && ! analog1;

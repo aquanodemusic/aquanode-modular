@@ -16,7 +16,8 @@ namespace
     {
         if (spec.visibleWhenParamId.isEmpty())
             return true;
-        return std::abs (inst.dsp->getParameter (spec.visibleWhenParamId) - spec.visibleWhenEquals) < 0.5f
+        return (spec.visibleFromMin ? inst.dsp->getParameter (spec.visibleWhenParamId) > spec.visibleWhenEquals - 0.5f
+                                    : std::abs (inst.dsp->getParameter (spec.visibleWhenParamId) - spec.visibleWhenEquals) < 0.5f)
             && (spec.visibleWhen2ParamId.isEmpty()
                 || std::abs (inst.dsp->getParameter (spec.visibleWhen2ParamId) - spec.visibleWhen2Equals) < 0.5f);
     }

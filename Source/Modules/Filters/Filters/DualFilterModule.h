@@ -11,7 +11,7 @@
 // unit of CV). An external CV patched in takes over the EG2/Ext
 // knob - patch it the same way here.
 // Flexible lane: one filter pair per note when fed per-voice.
-// Inputs: 0 Audio In, 1 HPF MG, 2 HPF Ext, 3 LPF MG, 4 LPF Ext. Output: 0 Audio Out.
+// Inputs: 0 Audio In, 1 HPF CV, 2 LPF CV (6.9.19: the MG inputs went). Output: 0 Audio Out.
 class DualFilterModule : public aquanode::SynthModule
 {
 public:
@@ -42,8 +42,10 @@ public:
                              aquanode::StereoFrame* outputs) override
     {
         constexpr float octPerUnit = 3.0f * 0.1f;   // knob 10 = 3 octaves per unit CV
-        const float hpfOct = octPerUnit * (param (pHpfMg) * cv (inputs, 1) + param (pHpfExt) * cv (inputs, 2));
-        const float lpfOct = octPerUnit * (param (pLpfMg) * cv (inputs, 3) + param (pLpfExt) * cv (inputs, 4));
+        // (6.9.19) one CV input per filter (the MG inputs went: a patch's cable into
+        // one comes into the CV input, see ProcessorState); any knob takes a cable too
+        const float hpfOct = octPerUnit * param (pHpfExt) * cv (inputs, 1);
+        const float lpfOct = octPerUnit * param (pLpfExt) * cv (inputs, 2);
         const double hpfHz = param (pHpfCutoff) * std::exp2 (hpfOct);
         const double lpfHz = param (pLpfCutoff) * std::exp2 (lpfOct);
         const float hpfPeak = param (pHpfPeak) * 0.1f, lpfPeak = param (pLpfPeak) * 0.1f;

@@ -179,7 +179,7 @@ public:
 
     void blockStart() override
     {
-        clock.blockStart (tempoBpm, sampleRate, hostPlayHead);
+        clock.blockStart (tempoBpm, sampleRate, tempoFromLane() ? nullptr : hostPlayHead);
         lengthBeats = lanes::kLengthBars[juce::jlimit (0, 4, (int) std::lround (param (pLength)))] * 4.0;
         for (int k = 0; k < lanes::kLanes; ++k)
         {
@@ -344,7 +344,7 @@ public:
             "steps off. From the sidebar it can come with four random effects already wired to its lanes.";
         d.section = ModuleSection::Utility;
         d.sockets = { modIn ("restartIn", "Restart In"),
-                      unipolarOut ("lane1", "Lane 1"), unipolarOut ("lane2", "Lane 2"), unipolarOut ("lane3", "Lane 3"), unipolarOut ("lane4", "Lane 4") };
+                      unipolarOut ("lane1", "Lane 1"), unipolarOut ("lane2", "Lane 2"), unipolarOut ("lane3", "Lane 3"), unipolarOut ("lane4", "Lane 4"), tempoIn() };
         d.params = {
             makeSteppedList ("length", "Length", lanes::kLengthNames, 1, 0),
             makeRotary ("smooth", "Smooth", 0.0f, 50.0f, 4.0f, 0, "ms", false, 0.1f),

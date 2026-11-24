@@ -92,14 +92,32 @@ MidiKeyboard::MidiKeyboard(MidiKeyboardState& state) :
   }
 }
 
+// (Vita) a key's edge: one pixel of the interface, thinner when the keys are
+// only a few pixels wide (a small window the canvas zooms)
+float MidiKeyboard::lineWidth() const {
+  return std::min(1.0f, 0.12f * getWidth() / kNumWhiteKeys);
+}
+
+bool MidiKeyboard::snapsToPixels() const {
+  return getWidth() / (1.0f * kNumWhiteKeys) >= 8.0f;
+}
+
 void MidiKeyboard::paintBackground(Graphics& g) {
   float width = getWidth();
   int height = getHeight();
   g.setColour(black_key_color_);
-  for (int i = 1; i < kNumWhiteKeys; ++i) {
-    int x = i * width / kNumWhiteKeys;
-    g.fillRect(x, 0, 1, height);
+  if (snapsToPixels()) {
+    for (int i = 1; i < kNumWhiteKeys; ++i) {
+      int x = i * width / kNumWhiteKeys;
+      g.fillRect(x, 0, 1, height);
+    }
+    return;
   }
+  // (Vita) keys a few pixels wide: placed exactly, not rounded to whole pixels
+  // (rounding moved the black keys off their places)
+  float line = lineWidth();
+  for (int i = 1; i < kNumWhiteKeys; ++i)
+    g.fillRect(i * width / kNumWhiteKeys - 0.5f * line, 0.0f, line, (float)height);
 }
 
 void MidiKeyboard::parentHierarchyChanged() {
@@ -122,10 +140,12 @@ void MidiKeyboard::resized() {
 
   float width = getWidth();
   float height = getHeight();
-  float black_key_height = 2.0f * ((int)(height * kBlackKeyHeightRatio)) / height;
+  const bool snap = snapsToPixels();
+  float black_key_height = snap ? 2.0f * ((int)(height * kBlackKeyHeightRatio)) / height : 2.0f * kBlackKeyHeightRatio;
   float black_key_y = 1.0f - black_key_height;
   float white_key_width = 2.0f / kNumWhiteKeys;
-  float black_key_width = (((int)(kBlackKeyWidthRatio * white_key_width * width / 4.0f)) * 4.0f + 2.0f) / width;
+  float black_key_width = snap ? (((int)(kBlackKeyWidthRatio * white_key_width * width / 4.0f)) * 4.0f + 2.0f) / width
+                               : kBlackKeyWidthRatio * white_key_width;
   float octave_width = kNumWhiteKeysPerOctave * white_key_width;
   
   for (int i = 0; i < kNumBlackKeys; ++i) {
@@ -133,7 +153,8 @@ void MidiKeyboard::resized() {
     int index = i % kNumBlackKeysPerOctave;
 
     float x = -1.0f + octave_width * octave + kBlackKeyOffsets[index] * white_key_width;
-    x = ((int)((x + 1.0f) * width / 2.0f)) * 2.0f / width - 1.0f;
+    if (snap)
+      x = ((int)((x + 1.0f) * width / 2.0f)) * 2.0f / width - 1.0f;
     black_notes_.setQuad(i, x, black_key_y, black_key_width, black_key_height + 0.5f);
   }
 
@@ -236,8 +257,15 @@ void MidiKeyboard::setPressedKeyPositions() {
 
 void MidiKeyboard::setWhiteKeyQuad(OpenGlMultiQuad* quads, int quad_index, int white_key_index) {
   float full_width = getWidth();
-  int start_x = white_key_index * full_width / kNumWhiteKeys + 1;
-  int end_x = (white_key_index + 1) * full_width / kNumWhiteKeys;
+  float start_x, end_x;
+  if (snapsToPixels()) {
+    start_x = (int)(white_key_index * full_width / kNumWhiteKeys + 1);
+    end_x = (int)((white_key_index + 1) * full_width / kNumWhiteKeys);
+  }
+  else {
+    start_x = white_key_index * full_width / kNumWhiteKeys + 0.5f * lineWidth();
+    end_x = (white_key_index + 1) * full_width / kNumWhiteKeys - 0.5f * lineWidth();
+  }
   float x = 2.0f * start_x / full_width - 1.0f;
   float width = 2.0f * (end_x - start_x) / full_width;
 
@@ -249,8 +277,8 @@ void MidiKeyboard::setBlackKeyQuad(OpenGlMultiQuad* quads, int quad_index, int b
   float y = black_notes_.getQuadY(black_key_index);
   float width = black_notes_.getQuadWidth(black_key_index);
   float height = black_notes_.getQuadHeight(black_key_index);
-  float border = 2.0f / getWidth();
-  float y_adjust = 2.0f / getHeight();
+  float border = (snapsToPixels() ? 2.0f : 2.0f * lineWidth()) / getWidth();
+  float y_adjust = (snapsToPixels() ? 2.0f : 2.0f * lineWidth()) / getHeight();
 
   quads->setQuad(quad_index, x + border, y + y_adjust, width - 2.0f * border, height);
 }

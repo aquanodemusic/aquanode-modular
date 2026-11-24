@@ -26,6 +26,8 @@
 #include "synth_parameters.cpp"
 #include "load_save.cpp"
 #include "vita_library.cpp"
+#include "vita_soundscapes.cpp"
+#include "vita_wavetables.cpp"   // (Aquanode, 6.9.12)
 #include "synth_types.cpp"
 #include "synth_base.cpp"
 #include "wavetable_component_factory.cpp"

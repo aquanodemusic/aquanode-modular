@@ -106,7 +106,7 @@ public:
             "goes off. Gate: how much of each repeat sounds; Decay: each repeat quieter; Ramp: each repeat faster or "
             "slower (semitones). Smooth: the fades. Mix, Level (for an Automation Lane to open and close).";
         d.section = ModuleSection::Effect;
-        d.sockets = { audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out") };
+        d.sockets = { audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out"), tempoIn() };
         d.params = {
             makeRotary ("stutter", "Stutter", 0.0f, 100.0f, 0.0f, 0, "%", false, 1.0f),
             makeSteppedList ("size", "Size", { "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" }, 4, 0),

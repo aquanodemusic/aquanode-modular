@@ -17,6 +17,13 @@
 // ordinary levels) and Output. EQ Out passes the sound through the tube
 // stage alone.
 //
+// (6.9.19) Character: Strong (new cards) - the low trick as the hardware is
+// heard: the boost a resonant shelf at the frequency, the attenuation a broad
+// dip about three times above it plus a gentle shelf below, so Boost and Atten
+// together lift the very lows and carve the mud right above (at 60 Hz, both at
+// 10: about +10 dB at 30 Hz, -12 dB at 200 Hz; both at 5: +5 / -6 dB), and the
+// tube stage driven twice as hard. Gentle is the curve from before (patches
+// from before keep it).
 // Every band is a biquad, and the card's curve (Graph) is worked out from
 // those same coefficients - the curve is exactly what it does.
 //
@@ -62,10 +69,10 @@ namespace programeq
     constexpr double kHighHz[] = { 3000, 4000, 5000, 8000, 10000, 12000, 16000 };
     constexpr double kAttHz[]  = { 5000, 10000, 20000 };
 
-    struct Bands { Coeffs c[4]; };
+    struct Bands { Coeffs c[5]; };   // (the fifth: Strong's shelf under the dip; else flat)
 
-    // the four bands from the knobs
-    inline Bands design (const float* k, double sr)
+    // the bands from the knobs
+    inline Bands design (const float* k, double sr, bool strong = false)
     {
         // k: lowFreq, lowBoost, lowAtten, highFreq, highBoost, bandwidth, attFreq, highAtten
         const double lowF = kLowHz[juce::jlimit (0, 3, (int) std::lround (k[0]))];
@@ -73,8 +80,18 @@ namespace programeq
         const double attF = kAttHz[juce::jlimit (0, 2, (int) std::lround (k[6]))];
         const double bw = juce::jlimit (0.0, 10.0, (double) k[5]) / 10.0;      // 0 sharp .. 1 broad
         Bands b;
-        b.c[0] = shelf (true,  lowF * 1.2, 13.5 * juce::jlimit (0.0, 10.0, (double) k[1]) / 10.0, 1.2, sr);   // the resonant boost
-        b.c[1] = shelf (true,  lowF * 0.7, -17.5 * juce::jlimit (0.0, 10.0, (double) k[2]) / 10.0, 0.4, sr);  // the broad attenuation
+        const double boost = juce::jlimit (0.0, 10.0, (double) k[1]) / 10.0, atten = juce::jlimit (0.0, 10.0, (double) k[2]) / 10.0;
+        if (strong)
+        {
+            b.c[0] = shelf (true, lowF, 13.5 * boost, 1.0, sr);          // the resonant boost, at the frequency
+            b.c[1] = bell (lowF * 3.0, -12.0 * atten, 0.7, sr);          // the dip above it
+            b.c[4] = shelf (true, lowF * 0.5, -6.0 * atten, 0.5, sr);    // and a gentle shelf under
+        }
+        else
+        {
+            b.c[0] = shelf (true,  lowF * 1.2, 13.5 * boost, 1.2, sr);   // the resonant boost
+            b.c[1] = shelf (true,  lowF * 0.7, -17.5 * atten, 0.4, sr);  // the broad attenuation
+        }
         b.c[2] = bell (highF, 18.0 * juce::jlimit (0.0, 10.0, (double) k[4]) / 10.0, 2.5 * std::pow (0.16, bw), sr);   // Q 2.5 .. 0.4
         b.c[3] = shelf (false, attF, -16.0 * juce::jlimit (0.0, 10.0, (double) k[7]) / 10.0, 0.7, sr);
         return b;
@@ -96,7 +113,17 @@ namespace programeq
 class ProgramEQModule : public SynthModule
 {
 public:
-    enum P { pLowFreq = 0, pLowBoost, pLowAtten, pHighFreq, pHighBoost, pBandwidth, pAttFreq, pHighAtten, pOutput, pEq };
+    // (6.9.15) the low-end trick in one press: Boost and Atten together at 60 Hz
+    void uiButtonClicked (const juce::String& id) override
+    {
+        if (id != "lowTrick") return;
+        setParameter ("lowFreq", 2.0f);    // 60 Hz
+        setParameter ("lowBoost", 6.0f);
+        setParameter ("lowAtten", 4.0f);
+        setParameter ("eq", 0.0f);         // In
+    }
+    enum P { pLowFreq = 0, pLowBoost, pLowAtten, pHighFreq, pHighBoost, pBandwidth, pAttFreq, pHighAtten, pOutput, pEq,
+             pTrick, pCharacter };
 
     static ModuleDescriptor descriptor()
     {
@@ -108,7 +135,9 @@ public:
             "low frequency (20, 30, 60, 100 Hz) do not cancel - the very lows rise with a bump around it and a dip "
             "opens right above (deep bass, the mud taken out). Up top a boost bell (3 to 16 kHz, Bandwidth sharp to "
             "broad) and an attenuation shelf (5, 10, 20 kHz). Then a tube make-up stage and Output. Its curve "
-            "(Graph) is worked out from the filters it runs.";
+            "(Graph) is worked out from the filters it runs. Boost + Cut Low sets the trick up in one press: 60 Hz, "
+            "Boost 6 and Atten 4 (then move them to taste). Character: Strong (the trick as the hardware is heard, "
+            "a hotter tube) or Gentle (the softer curve of earlier versions).";
         d.section = ModuleSection::Filter;
         d.sidebarOrder = 24;
         d.sockets = { audioIn ("audioIn", "Audio In"), audioOut ("audioOut", "Audio Out") };
@@ -122,7 +151,10 @@ public:
             makeCombo  ("attFreq",   "Atten Sel", { "5 kHz", "10 kHz", "20 kHz" }, 1, 2, 1).noMod(),
             makeRotary ("highAtten", "Atten",     0.0f, 10.0f, 0.0f, 2),
             makeRotary ("output",    "Output",    -12.0f, 12.0f, 0.0f, 2, "dB"),
-            makeCombo  ("eq",        "EQ",        { "In", "Out" }, 0, 2, 1).noMod()
+            makeCombo  ("eq",        "EQ",        { "In", "Out" }, 0, 2, 1).noMod(),
+            makeButton ("lowTrick",  "Boost + Cut Low", 3, 3),   // (6.9.15) the trick, set up in one press
+            // (6.9.19) Strong for new cards; patches from before keep Gentle
+            makeCombo  ("character", "Character", { "Gentle", "Strong" }, 1, 3, 2).noMod().whenMissing (0.0f)
         };
         d.rowSections = { { 0, "Low" }, { 1, "High" }, { 2, "High Atten & Out" } };
         return d;
@@ -150,10 +182,12 @@ public:
         float k[8];
         double key = sampleRate;
         for (int i = 0; i < 8; ++i) { k[i] = param (i); key = key * 1.000173 + k[i]; }
+        const bool strong = param (pCharacter) > 0.5f;
+        key += strong ? 0.5 : 0.0;
         if (key != lastKey)
         {
             lastKey = key;
-            bands = programeq::design (k, sampleRate);
+            bands = programeq::design (k, sampleRate, strong);
         }
     }
 
@@ -165,7 +199,7 @@ public:
     {
         float k[8];
         for (int i = 0; i < 8; ++i) k[i] = getParameterBase (i);
-        const auto b = programeq::design (k, sampleRate);
+        const auto b = programeq::design (k, sampleRate, getParameterBase (pCharacter) > 0.5f);
         const bool eqOn = getParameterBase (pEq) < 0.5f;
         const double outGain = std::pow (10.0, getParameterBase (pOutput) / 20.0) * kTubeSlope;
         for (int i = 0; i < n; ++i)
@@ -187,7 +221,7 @@ private:
 
     struct Lane
     {
-        programeq::Biquad f[2][4];
+        programeq::Biquad f[2][5];
         double dcX[2] {}, dcY[2] {};
     };
 
@@ -196,14 +230,15 @@ private:
         auto& lane = lanes[(size_t) l];
         const bool eqOn = param (pEq) < 0.5f;
         const double outGain = std::pow (10.0, param (pOutput) / 20.0);
+        const double drive = param (pCharacter) > 0.5f ? 1.2 : 0.6;   // (Strong: the tube driven twice as hard)
         for (int c = 0; c < 2; ++c)
         {
             double x = in[0][(size_t) c];
             if (eqOn)
-                for (int s = 0; s < 4; ++s)
+                for (int s = 0; s < 5; ++s)
                     x = lane.f[c][s].tick (bands.c[s], x);
             // the tube stage: transparent when quiet, a touch of even colour when hot
-            const double t = (std::tanh (0.6 * x + 0.04) - kTubeBias) / 0.6;
+            const double t = (std::tanh (drive * x + 0.04) - kTubeBias) / drive;
             const double y = t - lane.dcX[c] + dcR * lane.dcY[c];
             lane.dcX[c] = t;
             lane.dcY[c] = std::isfinite (y) ? y : 0.0;

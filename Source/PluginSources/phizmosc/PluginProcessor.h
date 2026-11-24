@@ -1,4 +1,5 @@
 #pragma once
+#include "../../Engine/Tuning.h"   // (Aquanode: the patch tuning, 6.9.10)
 #include <JuceHeader.h>
 
 //==============================================================================
@@ -139,7 +140,7 @@ struct TranswaveVoice
         scanDir = 1;  curveFinished = false;
         frameOffset = 0.0f;
         velFrameOffset = vel * velFrameAmt;
-        glideTargetFreq = 440.0 * std::pow(2.0, (note - 69.0) / 12.0);
+        glideTargetFreq = ::aquanode::tuning::noteToHz((double) note);
         if (prevFreq > 0.0 && glideTime > 0.001f) {
             glideStartFreq = prevFreq;
             glideProgress = 0.0f;
@@ -252,8 +253,11 @@ public:
         int cycleSamples, bool forceUnpitched, juce::String& statusOut);
     bool rerollSlot(int slot, juce::String& statusOut);
     bool exportSlotAsWav(int slot, const juce::File& dest, juce::String& statusOut) const;
+    // 7.0.0: one of the built-in transwaves (TranswaveRemakes.h), by bank index
+    bool loadBuiltinTranswave(int slot, int index, juce::String& statusOut);
 
-    // 0 = loaded from a file, 1 = random recipe, 2 = transwavified sample.
+    // 0 = loaded from a file, 1 = random recipe, 2 = transwavified sample,
+    // 3 = built-in transwave (genSeed holds its bank index).
     int          getSlotOrigin(int slot) const;
     juce::String getSlotStatus(int slot) const;
 
@@ -290,6 +294,10 @@ public:
     static juce::File getPresetsDirectory();
     bool savePreset(const juce::File& destFile);
     bool loadPreset(const juce::File& srcFile);
+    // 7.0.0: the factory presets (state only; their tables are built-in transwaves)
+    static int          getNumFactoryPresets();
+    static juce::String getFactoryPresetName(int index);
+    bool                loadFactoryPreset(int index);
 
     // --- User sample folder (persisted in plugin/project state, NOT in shared presets) ---
     juce::String getSampleFolder() const { return sampleFolder; }
@@ -464,6 +472,11 @@ private:
     // wavetable WAV into originalFileData (so the preset zip embeds a
     // generated table exactly like a loaded one), quantises to 16 bit to match
     // the file-loading path, then installs them into the slot.
+    bool loadPresetZip(juce::ZipFile& zip);
+    bool loadPresetLegacy(const juce::File& src);
+    // 7.0.0: rebuilds the slots a preset names as built-in transwaves
+    void restoreBuiltins(const juce::XmlElement& xml);
+
     bool installGeneratedFrames(int slot,
         std::vector<std::vector<float>>&& frames,
         int cycleSamples,

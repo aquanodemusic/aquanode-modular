@@ -221,7 +221,7 @@ static ModuleDescriptor additiveDescriptor()
     d.sidebarOrder = 16;
     d.sockets = {
         modIn    ("envIn",     "Env In"),
-        midiIn   ("addMidiIn", "Add Midi In"),
+        midiIn   ("addMidiIn", "Add MIDI In"),
         audioOut ("audioOut",  "Audio Out")
     };
     d.params = {
